@@ -112,8 +112,10 @@ phase4_tools_setup() {
     # Other essential Python tools
     log_info "Installing Python pentesting tools"
     pip3 install --break-system-packages \
-        crackmapexec \
+        netexec \
         bloodhound \
+        bloodyAD \
+        bloodhound-python \
         mitm6 \
         responder \
         certipy-ad \
@@ -123,11 +125,21 @@ phase4_tools_setup() {
         enum4linux-ng \
         dnsrecon \
         git-dumper \
-        penelope-shell || true
+        penelope-shell \
+        kerbrute || true
     
     # Install Rust tools
     log_info "Installing Rust-based tools"
     cargo install rustscan feroxbuster || true
+    
+    # Install Go tools
+    log_info "Installing Go-based tools"
+    go install github.com/nicocha30/ligolo-ng/cmd/proxy@latest || true
+    go install github.com/nicocha30/ligolo-ng/cmd/agent@latest || true
+    go install github.com/jpillora/chisel@latest || true
+    
+    # Copy go binaries to path
+    cp ~/go/bin/* /usr/local/bin/ 2>/dev/null || true
     
     # Clone useful repos
     log_info "Cloning useful repositories"
@@ -135,10 +147,23 @@ phase4_tools_setup() {
     
     sudo -u jamie bash << 'REPOS_EOF'
 [ ! -d "PayloadsAllTheThings" ] && git clone https://github.com/swisskyrepo/PayloadsAllTheThings.git || true
-[ ! -d "LinPEAS" ] && git clone https://github.com/carlospolop/PEASS-ng.git || true
+[ ! -d "PEASS-ng" ] && git clone https://github.com/carlospolop/PEASS-ng.git || true
 [ ! -d "Windows-Exploit-Suggester" ] && git clone https://github.com/AonCyberLabs/Windows-Exploit-Suggester.git || true
 [ ! -d "PowerSploit" ] && git clone https://github.com/PowerShellMafia/PowerSploit.git || true
 REPOS_EOF
+    
+    # Create quick access directory for PEAS scripts
+    log_info "Setting up PEAS scripts quick access"
+    sudo -u jamie mkdir -p $USER_HOME/peas
+    
+    # Create symlinks to PEAS scripts for easy access
+    if [ -d "$USER_HOME/tools/repos/PEASS-ng" ]; then
+        sudo -u jamie ln -sf $USER_HOME/tools/repos/PEASS-ng/linPEAS/linpeas.sh $USER_HOME/peas/linpeas.sh 2>/dev/null || true
+        sudo -u jamie ln -sf $USER_HOME/tools/repos/PEASS-ng/winPEAS/winPEASx64.exe $USER_HOME/peas/winpeas64.exe 2>/dev/null || true
+        sudo -u jamie ln -sf $USER_HOME/tools/repos/PEASS-ng/winPEAS/winPEASx86.exe $USER_HOME/peas/winpeas86.exe 2>/dev/null || true
+        sudo -u jamie ln -sf $USER_HOME/tools/repos/PEASS-ng/winPEAS/winPEASany.exe $USER_HOME/peas/winpeas.exe 2>/dev/null || true
+        sudo -u jamie ln -sf $USER_HOME/tools/repos/PEASS-ng/winPEAS/winPEAS.bat $USER_HOME/peas/winpeas.bat 2>/dev/null || true
+    fi
     
     # Download wordlists
     log_info "Setting up wordlists"
@@ -148,6 +173,318 @@ REPOS_EOF
     if [ ! -d "SecLists" ]; then
         sudo -u jamie git clone https://github.com/danielmiessler/SecLists.git
     fi
+    
+    # Create tool reference guide
+    log_info "Creating tool reference guide"
+    cat > $USER_HOME/Desktop/CTF_TOOLS_REFERENCE.txt << 'TOOLS_EOF'
+╔═══════════════════════════════════════════════════════════════════════════╗
+║                        CTF TOOLS QUICK REFERENCE                          ║
+╚═══════════════════════════════════════════════════════════════════════════╝
+
+═══════════════════════════════════════════════════════════════════════════
+RECONNAISSANCE & ENUMERATION
+═══════════════════════════════════════════════════════════════════════════
+
+nmap
+  Network scanner for host discovery and port enumeration
+  Usage: nmap -sC -sV -oA output <target>
+
+rustscan
+  Fast port scanner that feeds results to nmap
+  Usage: rustscan -a <target> -- -sC -sV
+
+gobuster
+  Directory/file brute-forcing tool for web enumeration
+  Usage: gobuster dir -u http://target -w wordlist.txt
+
+feroxbuster
+  Fast content discovery tool with recursion
+  Usage: feroxbuster -u http://target -w wordlist.txt
+
+enum4linux-ng
+  SMB enumeration tool for Windows/Samba systems
+  Usage: enum4linux-ng -A <target>
+
+kerbrute
+  Kerberos username enumeration and password spraying
+  Usage: kerbrute userenum --dc <dc-ip> -d <domain> users.txt
+
+bloodhound / bloodhound-python
+  Active Directory relationship mapper
+  Usage: bloodhound-python -u user -p pass -d domain -dc dc.domain.com -c all
+
+dnsrecon
+  DNS enumeration and zone transfer testing
+  Usage: dnsrecon -d <domain> -a
+
+═══════════════════════════════════════════════════════════════════════════
+EXPLOITATION & LATERAL MOVEMENT
+═══════════════════════════════════════════════════════════════════════════
+
+msfconsole
+  Metasploit Framework - exploitation and post-exploitation
+  Usage: msfconsole -q
+
+searchsploit
+  Offline exploit database search
+  Usage: searchsploit <software name>
+
+═══════════════════════════════════════════════════════════════════════════
+ACTIVE DIRECTORY TOOLS (IMPACKET SUITE)
+═══════════════════════════════════════════════════════════════════════════
+
+psexec / smbexec / wmiexec / dcomexec / atexec
+  Remote command execution on Windows systems
+  Usage: psexec <domain>/<user>:<pass>@<target>
+
+secretsdump
+  Extract credentials from Windows systems (SAM, LSA, NTDS.dit)
+  Usage: secretsdump <domain>/<user>:<pass>@<target>
+
+GetNPUsers
+  Find users with Kerberos pre-authentication disabled (AS-REP roasting)
+  Usage: GetNPUsers <domain>/ -dc-ip <dc-ip> -usersfile users.txt
+
+GetUserSPNs
+  Find service accounts for Kerberoasting
+  Usage: GetUserSPNs <domain>/<user>:<pass> -dc-ip <dc-ip> -request
+
+getTGT / getST
+  Request Kerberos tickets for pass-the-ticket attacks
+  Usage: getTGT <domain>/<user>:<pass>
+
+ntlmrelayx
+  NTLM relay attacks against SMB, HTTP, LDAP
+  Usage: ntlmrelayx -tf targets.txt -smb2support
+
+smbserver
+  Quick SMB server for file transfers
+  Usage: smbserver share . -smb2support
+
+smbclient
+  SMB client for file operations
+  Usage: smbclient //<target>/share -U <user>
+
+ticketer
+  Create silver/golden Kerberos tickets
+  Usage: ticketer -nthash <hash> -domain-sid <sid> -domain <domain> <user>
+
+═══════════════════════════════════════════════════════════════════════════
+CREDENTIAL ATTACKS
+═══════════════════════════════════════════════════════════════════════════
+
+crackmapexec / netexec
+  Swiss army knife for pentesting Windows/AD networks
+  Usage: crackmapexec smb <target> -u user -p pass
+  Usage: netexec smb <target> -u user -p pass --shares
+
+hydra
+  Network login brute-forcer
+  Usage: hydra -l user -P wordlist.txt <target> ssh
+
+john
+  Password hash cracking tool
+  Usage: john --wordlist=rockyou.txt hashes.txt
+
+hashcat
+  GPU-accelerated password cracking
+  Usage: hashcat -m 1000 -a 0 hashes.txt rockyou.txt
+
+responder
+  LLMNR/NBT-NS/mDNS poisoner for credential capture
+  Usage: responder -I eth0 -wf
+
+mitm6
+  IPv6 man-in-the-middle for credential relay
+  Usage: mitm6 -d <domain>
+
+certipy-ad
+  Active Directory certificate abuse tool
+  Usage: certipy find -u user@domain -p pass -dc-ip <dc-ip>
+
+coercer
+  Force Windows authentication for relay attacks
+  Usage: coercer -u user -p pass -d domain -t <target> -l <listener>
+
+pypykatz
+  Mimikatz implementation in Python
+  Usage: pypykatz lsa minidump lsass.dmp
+
+lsassy
+  Remote LSASS credential dumping
+  Usage: lsassy -u user -p pass -d domain <target>
+
+═══════════════════════════════════════════════════════════════════════════
+SHELLS & POST-EXPLOITATION
+═══════════════════════════════════════════════════════════════════════════
+
+penelope
+  Advanced shell handler with auto-upgrade and file transfer
+  Usage: penelope 4444
+
+nc (netcat)
+  Basic network connections and listeners
+  Usage: nc -lvnp 4444
+
+evil-winrm
+  WinRM shell with PowerShell capabilities
+  Usage: evil-winrm -i <target> -u user -p pass
+
+LinPEAS / WinPEAS
+  Privilege escalation enumeration scripts
+  Location: ~/peas/ (symlinked for easy access)
+  Usage: linpeas (on target) or winpeas (on target)
+  Full repo: ~/tools/repos/PEASS-ng/
+
+═══════════════════════════════════════════════════════════════════════════
+PIVOTING & TUNNELING
+═══════════════════════════════════════════════════════════════════════════
+
+ligolo-ng
+  Creates TUN interface for pivoting (NO proxychains needed!)
+  Server: proxy -selfcert
+  Agent: agent -connect <attacker-ip>:11601 -ignore-cert
+  Then: session, ifconfig, start
+
+chisel
+  Fast TCP/UDP tunnel over HTTP
+  Server: chisel server -p 8080 --reverse
+  Client: chisel client <server-ip>:8080 R:socks
+
+ssh
+  SSH tunneling for port forwarding
+  Usage: ssh -L 8080:localhost:80 user@<target>
+  Usage: ssh -D 1080 user@<target>  # SOCKS proxy
+
+═══════════════════════════════════════════════════════════════════════════
+WEB APPLICATION TESTING
+═══════════════════════════════════════════════════════════════════════════
+
+burpsuite
+  Web application security testing platform
+  Usage: burpsuite
+
+sqlmap
+  Automated SQL injection tool
+  Usage: sqlmap -u "http://target/?id=1" --batch
+
+nikto
+  Web server vulnerability scanner
+  Usage: nikto -h http://target
+
+wpscan
+  WordPress vulnerability scanner
+  Usage: wpscan --url http://target
+
+ffuf
+  Fast web fuzzer
+  Usage: ffuf -u http://target/FUZZ -w wordlist.txt
+
+═══════════════════════════════════════════════════════════════════════════
+FILE OPERATIONS & UTILITIES
+═══════════════════════════════════════════════════════════════════════════
+
+serve / serve80
+  Quick Python HTTP server
+  Usage: serve (port 8000) or serve80 (port 80)
+
+git-dumper
+  Dump exposed .git repositories
+  Usage: git-dumper http://target/.git/ output/
+
+base64
+  Encode/decode base64
+  Aliases: b64e "string" / b64d "encoded"
+
+═══════════════════════════════════════════════════════════════════════════
+CUSTOM FUNCTIONS
+═══════════════════════════════════════════════════════════════════════════
+
+newengagement <name>
+  Creates engagement folder structure in ~/engagements/
+  Includes: recon, exploit, loot, screenshots, notes
+
+quickscan <target>
+  Runs nmap with default scripts and version detection
+  Saves output as scan_<target>
+
+extract <file>
+  Universal archive extractor (zip, tar, gz, bz2, etc.)
+
+revshell <ip> <port>
+  Generates common reverse shell one-liners
+
+update-tools.sh
+  Updates all installed tools and repositories
+
+backup-engagement.sh <name>
+  Creates timestamped backup of engagement folder
+
+═══════════════════════════════════════════════════════════════════════════
+USEFUL WORDLISTS
+═══════════════════════════════════════════════════════════════════════════
+
+Location: ~/tools/wordlists/SecLists/
+
+Common paths:
+  - Discovery/Web-Content/directory-list-2.3-medium.txt
+  - Passwords/Leaked-Databases/rockyou.txt
+  - Usernames/Names/names.txt
+  - Fuzzing/command-injection-commix.txt
+  - Discovery/DNS/subdomains-top1million-5000.txt
+
+═══════════════════════════════════════════════════════════════════════════
+USEFUL REPOSITORIES
+═══════════════════════════════════════════════════════════════════════════
+
+Location: ~/tools/repos/
+
+PayloadsAllTheThings/
+  Comprehensive payload and technique reference
+
+PEASS-ng/
+  LinPEAS and WinPEAS privilege escalation scripts
+  Quick access: ~/peas/ directory with symlinks
+
+PowerSploit/
+  PowerShell post-exploitation framework
+
+Windows-Exploit-Suggester/
+  Finds missing patches on Windows systems
+
+═══════════════════════════════════════════════════════════════════════════
+TIPS & TRICKS
+═══════════════════════════════════════════════════════════════════════════
+
+• All Impacket tools work WITHOUT the 'impacket-' prefix
+• Docker commands don't require sudo (jamie is in docker group)
+• Tmux prefix is Ctrl-a (split with | and -)
+• Alt+arrows to switch tmux panes without prefix
+• Tab completion works for most commands and arguments
+• Up arrow searches command history based on what you've typed
+• Use 'extract' function for any compressed file
+• Ligolo-ng creates a real network interface - no proxychains needed!
+
+═══════════════════════════════════════════════════════════════════════════
+ENGAGEMENT WORKFLOW
+═══════════════════════════════════════════════════════════════════════════
+
+1. newengagement <target-name>
+2. cd ~/engagements/<target-name>
+3. quickscan <target-ip>
+4. Document findings in notes/
+5. Store loot in loot/
+6. Take screenshots in screenshots/
+7. backup-engagement.sh <target-name> when done
+
+═══════════════════════════════════════════════════════════════════════════
+
+Last updated: $(date)
+Script version: 1.0
+
+TOOLS_EOF
+    
+    chown jamie:jamie $USER_HOME/Desktop/CTF_TOOLS_REFERENCE.txt
     
     log_info "Phase 4 complete"
 }
@@ -232,6 +569,12 @@ alias msf='msfconsole -q'
 alias penelope='penelope'
 alias pen='penelope'
 
+# AD Tools shortcuts
+alias nxc='netexec'
+alias bh='bloodhound'
+alias bhp='bloodhound-python'
+alias bloody='bloodyAD'
+
 # Network enumeration
 alias nse='ls /usr/share/nmap/scripts | grep'
 alias portscan='nmap -p- -T4 --min-rate=1000'
@@ -243,6 +586,10 @@ alias ferox='feroxbuster -w ~/tools/wordlists/SecLists/Discovery/Web-Content/dir
 
 # Quick SMB enumeration
 alias smbenum='enum4linux-ng -A'
+
+# PEAS scripts quick access
+alias linpeas='~/peas/linpeas.sh'
+alias winpeas='~/peas/winpeas.exe'
 
 # Python HTTP servers
 alias serve='python3 -m http.server 8000'
