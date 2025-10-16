@@ -174,6 +174,22 @@ REPOS_EOF
         sudo -u jamie git clone https://github.com/danielmiessler/SecLists.git
     fi
     
+    # Unzip rockyou.txt if it exists and isn't already unzipped
+    log_info "Unzipping rockyou.txt"
+    if [ -f "/usr/share/wordlists/rockyou.txt.gz" ] && [ ! -f "/usr/share/wordlists/rockyou.txt" ]; then
+        gunzip /usr/share/wordlists/rockyou.txt.gz
+        log_info "rockyou.txt unzipped"
+    elif [ -f "/usr/share/wordlists/rockyou.txt" ]; then
+        log_info "rockyou.txt already unzipped"
+    else
+        log_warn "rockyou.txt not found in /usr/share/wordlists/"
+    fi
+    
+    # Create symlink to rockyou in our wordlists folder for convenience
+    if [ -f "/usr/share/wordlists/rockyou.txt" ]; then
+        sudo -u jamie ln -sf /usr/share/wordlists/rockyou.txt $USER_HOME/tools/wordlists/rockyou.txt 2>/dev/null || true
+    fi
+    
     # Create tool reference guide
     log_info "Creating tool reference guide"
     cat > $USER_HOME/Desktop/CTF_TOOLS_REFERENCE.txt << 'TOOLS_EOF'
