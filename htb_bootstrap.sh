@@ -15,36 +15,10 @@ log_warn() { echo -e "${YELLOW}[!]${NC} $1"; }
 log_error() { echo -e "${RED}[-]${NC} $1"; }
 
 # ============================================
-# PHASE 1: User Setup
+# PHASE 1: System Updates & Base Packages
 # ============================================
-phase1_user_setup() {
-    log_info "Phase 1: Setting up user account"
-    
-    # Create jamie user as essentially root
-    if ! id "jamie" &>/dev/null; then
-        useradd -m -s /bin/zsh -u 1000 -G sudo jamie
-        passwd -d jamie  # Remove password entirely
-        
-        # Give jamie full root privileges without password
-        echo "jamie ALL=(ALL) NOPASSWD:ALL" > /etc/sudoers.d/jamie
-        chmod 440 /etc/sudoers.d/jamie
-        
-        log_info "User 'jamie' created with no password"
-    else
-        log_warn "User 'jamie' already exists, skipping creation"
-    fi
-    
-    # Set up home directory
-    export USER_HOME=/home/jamie
-    
-    log_info "Phase 1 complete"
-}
-
-# ============================================
-# PHASE 2: System Updates & Base Packages
-# ============================================
-phase2_system_setup() {
-    log_info "Phase 2: Updating system and installing base packages"
+phase1_system_setup() {
+    log_info "Phase 1: Updating system and installing base packages"
     
     apt update
     apt upgrade -y
@@ -60,8 +34,34 @@ phase2_system_setup() {
         fonts-powerline \
         silversearcher-ag
     
+    log_info "Phase 1 complete"
+}
+
+# ============================================
+# PHASE 2: User Setup
+# ============================================
+phase2_user_setup() {
+    log_info "Phase 2: Setting up user account"
+    
+    # Create jamie user as essentially root (let system assign UID, use bash for now)
+    if ! id "jamie" &>/dev/null; then
+        useradd -m -s /bin/bash -G sudo jamie
+        passwd -d jamie  # Remove password entirely
+        
+        # Give jamie full root privileges without password
+        echo "jamie ALL=(ALL) NOPASSWD:ALL" > /etc/sudoers.d/jamie
+        chmod 440 /etc/sudoers.d/jamie
+        
+        log_info "User 'jamie' created with no password"
+    else
+        log_warn "User 'jamie' already exists, skipping creation"
+    fi
+    
     # Enable docker without sudo
     usermod -aG docker jamie || true
+    
+    # Set up home directory
+    export USER_HOME=/home/jamie
     
     log_info "Phase 2 complete"
 }
@@ -853,8 +853,8 @@ EOF
     log_warn "Press Ctrl+C to cancel, or Enter to continue..."
     read
     
-    phase1_user_setup
-    phase2_system_setup
+    phase1_system_setup
+    phase2_user_setup
     phase3_shell_setup
     phase4_tools_setup
     phase5_dotfiles_setup
