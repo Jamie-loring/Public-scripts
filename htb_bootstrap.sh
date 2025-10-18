@@ -915,13 +915,21 @@ phase7_vm_guest_tools() {
     
     # Detect VirtualBox
     if lspci | grep -i "virtualbox" > /dev/null 2>&1 || dmidecode -s system-product-name 2>/dev/null | grep -i "virtualbox" > /dev/null 2>&1; then
-        log_info "VirtualBox detected! Installing repository-based Guest Additions..."
+        log_info "VirtualBox detected! Installing Guest Additions..."
         
         log_progress "Installing VirtualBox dependencies from repositories..."
-        apt install -y \
-            virtualbox-guest-x11 \
-            virtualbox-guest-utils \
-            virtualbox-guest-dkms
+        # Try to install from repos, but don't fail if not available
+        apt install -y virtualbox-guest-x11 virtualbox-guest-utils 2>/dev/null || log_warn "Repository packages not available"
+        
+        # If repo packages failed or aren't available, install essential packages manually
+        if ! command -v VBoxClient &> /dev/null; then
+            log_warn "VirtualBox guest additions not found in repos, installing build dependencies..."
+            apt install -y build-essential dkms linux-headers-$(uname -r) || true
+            
+            log_info "Guest additions will need to be installed manually via:"
+            log_info "  1. In VirtualBox menu: Devices -> Insert Guest Additions CD Image"
+            log_info "  2. Run: sudo sh /media/cdrom/VBoxLinuxAdditions.run"
+        fi
         
         # Enable bidirectional clipboard and drag-and-drop
         log_info "Enabling bidirectional clipboard and drag-and-drop"
