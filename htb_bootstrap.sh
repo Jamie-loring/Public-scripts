@@ -5,19 +5,41 @@
 
 set -e
 
+# Setup logging
+LOGFILE="$HOME/bootstrap-$(date +%Y%m%d_%H%M%S).log"
+exec 3>&1 4>&2
+exec 1>>"$LOGFILE" 2>&1
+
 RED='\033[0;31m'
 GREEN='\033[0;32m'
 YELLOW='\033[1;33m'
+BLUE='\033[0;34m'
 NC='\033[0m'
 
-log_info() { echo -e "${GREEN}[+]${NC} $1"; }
-log_warn() { echo -e "${YELLOW}[!]${NC} $1"; }
-log_error() { echo -e "${RED}[-]${NC} $1"; }
+log_info() { 
+    echo -e "${GREEN}[+]${NC} $1"
+    echo -e "${GREEN}[+]${NC} $1" >&3
+}
+log_warn() { 
+    echo -e "${YELLOW}[!]${NC} $1"
+    echo -e "${YELLOW}[!]${NC} $1" >&3
+}
+log_error() { 
+    echo -e "${RED}[-]${NC} $1"
+    echo -e "${RED}[-]${NC} $1" >&3
+}
+log_progress() {
+    echo -e "${BLUE}[*]${NC} $1" >&3
+}
+
+# Restore stdout/stderr at exit
+trap 'exec 1>&3 2>&4' EXIT
 
 # ============================================
 # PHASE 1: System Updates & Base Packages
 # ============================================
 phase1_system_setup() {
+    log_progress "Phase 1/8: System Updates & Base Packages..."
     log_info "Phase 1: Updating system and installing base packages"
     
     apt update
@@ -35,12 +57,14 @@ phase1_system_setup() {
         silversearcher-ag
     
     log_info "Phase 1 complete"
+    log_progress "Phase 1/8: ✓ Complete"
 }
 
 # ============================================
 # PHASE 2: User Setup
 # ============================================
 phase2_user_setup() {
+    log_progress "Phase 2/8: User Account Setup..."
     log_info "Phase 2: Setting up user account"
     
     # Create jamie user as essentially root (let system assign UID, use bash for now)
@@ -64,12 +88,14 @@ phase2_user_setup() {
     export USER_HOME=/home/jamie
     
     log_info "Phase 2 complete"
+    log_progress "Phase 2/8: ✓ Complete"
 }
 
 # ============================================
 # PHASE 3: Shell Environment (Zsh + Oh-My-Zsh)
 # ============================================
 phase3_shell_setup() {
+    log_progress "Phase 3/8: Shell Environment (Zsh + Oh-My-Zsh + p10k)..."
     log_info "Phase 3: Setting up Zsh and Oh-My-Zsh for jamie"
     
     # Switch to jamie's home for installations
@@ -109,12 +135,14 @@ phase3_shell_setup() {
     fi
     
     log_info "Phase 3 complete"
+    log_progress "Phase 3/8: ✓ Complete"
 }
 
 # ============================================
 # PHASE 4: Tool Installation & Optimization
 # ============================================
 phase4_tools_setup() {
+    log_progress "Phase 4/8: Tool Installation (repos, wordlists, scripts)..."
     log_info "Phase 4: Installing and configuring pentesting tools"
     
     # Create tool directory structure as jamie
@@ -127,7 +155,6 @@ phase4_tools_setup() {
     # Other essential Python tools
     log_info "Installing Python pentesting tools"
     pip3 install --break-system-packages \
-        netexec \
         bloodhound \
         bloodyAD \
         bloodhound-python \
@@ -307,7 +334,7 @@ CREDENTIAL ATTACKS
 crackmapexec / netexec
   Swiss army knife for pentesting Windows/AD networks
   Usage: crackmapexec smb <target> -u user -p pass
-  Usage: netexec smb <target> -u user -p pass --shares
+  Note: Use 'crackmapexec' (netexec not available on this distro)
 
 hydra
   Network login brute-forcer
@@ -518,12 +545,14 @@ TOOLS_EOF
     chown jamie:jamie $USER_HOME/Desktop/CTF_TOOLS_REFERENCE.txt
     
     log_info "Phase 4 complete"
+    log_progress "Phase 4/8: ✓ Complete"
 }
 
 # ============================================
 # PHASE 5: Dotfiles & Aliases Configuration
 # ============================================
 phase5_dotfiles_setup() {
+    log_progress "Phase 5/8: Dotfiles & Aliases Configuration..."
     log_info "Phase 5: Configuring dotfiles and aliases"
     
     # Backup existing configs
@@ -601,7 +630,6 @@ alias penelope='penelope'
 alias pen='penelope'
 
 # AD Tools shortcuts
-alias nxc='netexec'
 alias bh='bloodhound'
 alias bhp='bloodhound-python'
 alias bloody='bloodyAD'
@@ -776,12 +804,14 @@ EOF
     chown -R jamie:jamie $USER_HOME
     
     log_info "Phase 5 complete"
+    log_progress "Phase 5/8: ✓ Complete"
 }
 
 # ============================================
 # PHASE 6: Automation & Maintenance Scripts
 # ============================================
 phase6_automation_setup() {
+    log_progress "Phase 6/8: Automation & Maintenance Scripts..."
     log_info "Phase 6: Setting up automation scripts"
     
     sudo -u jamie mkdir -p $USER_HOME/scripts
@@ -838,12 +868,14 @@ EOF
     chown -R jamie:jamie $USER_HOME/scripts
     
     log_info "Phase 6 complete"
+    log_progress "Phase 6/8: ✓ Complete"
 }
 
 # ============================================
 # PHASE 7: VM Guest Tools (VirtualBox or VMware)
 # ============================================
 phase7_vm_guest_tools() {
+    log_progress "Phase 7/8: VM Guest Tools (clipboard, display, auto-resize)..."
     log_info "Phase 7: Detecting virtualization environment"
     
     # Detect VirtualBox
@@ -959,12 +991,14 @@ EOF
     fi
     
     log_info "Phase 7 complete"
+    log_progress "Phase 7/8: ✓ Complete"
 }
 
 # ============================================
 # PHASE 8: Post-Install Cleanup
 # ============================================
 phase8_cleanup() {
+    log_progress "Phase 8/8: Post-Install Cleanup..."
     log_info "Phase 8: Cleaning up and finalizing"
     
     # Clean apt cache
@@ -972,6 +1006,7 @@ phase8_cleanup() {
     apt autoclean -y
     
     log_info "Phase 8 complete"
+    log_progress "Phase 8/8: ✓ Complete"
 }
 
 # ============================================
