@@ -42,13 +42,13 @@ phase1_system_setup() {
     log_info "Phase 1: Updating system and installing base packages"
     
     log_progress "Updating package lists..."
-    DEBIAN_FRONTEND=noninteractive apt update
+    apt update
     
     log_progress "Upgrading installed packages (this may take a while)..."
-    DEBIAN_FRONTEND=noninteractive apt upgrade -y
+    apt upgrade -y
     
     log_progress "Installing base packages..."
-    DEBIAN_FRONTEND=noninteractive apt install -y \
+    apt install -y \
         build-essential git curl wget \
         vim neovim tmux zsh \
         python3-pip python3-venv \
@@ -110,7 +110,7 @@ phase3_shell_setup() {
     # Install Oh-My-Zsh
     if [ ! -d "$USER_HOME/.oh-my-zsh" ]; then
         log_progress "Installing Oh-My-Zsh..."
-        sudo -u jamie sh -c "RUNZSH=no $(curl -fsSL https://raw.githubusercontent.com/ohmyzsh/ohmyzsh/master/tools/install.sh)" "" --unattended
+        sudo -u jamie sh -c "$(curl -fsSL https://raw.githubusercontent.com/ohmyzsh/ohmyzsh/master/tools/install.sh)" "" --unattended
     fi
     
     # Install zsh-autosuggestions
@@ -164,7 +164,7 @@ phase4_tools_setup() {
     
     # Install pipx for isolated Python tool installations
     log_progress "Installing pipx for isolated Python environments..."
-    DEBIAN_FRONTEND=noninteractive apt install -y pipx
+    apt install -y pipx
     pipx ensurepath
     
     # Modern Python pentesting tools with pipx
@@ -228,7 +228,7 @@ phase4_tools_setup() {
     
     # Fallback pivoting tool
     log_progress "Installing sshuttle (VPN over SSH)..."
-    DEBIAN_FRONTEND=noninteractive apt install -y sshuttle || true
+    apt install -y sshuttle || true
     
     # Copy go binaries to path
     cp ~/go/bin/* /usr/local/bin/ 2>/dev/null || true
@@ -1285,10 +1285,10 @@ phase8_cleanup() {
     
     # Clean apt cache
     log_progress "Removing unnecessary packages..."
-    DEBIAN_FRONTEND=noninteractive apt autoremove -y
+    apt autoremove -y
     
     log_progress "Cleaning package cache..."
-    DEBIAN_FRONTEND=noninteractive apt autoclean -y
+    apt autoclean -y
     
     log_info "Phase 8 complete"
     log_progress "Phase 8/8: ✓ Complete"
@@ -1302,13 +1302,13 @@ main() {
 ╔═══════════════════════════════════════════════════╗
 ║   Parrot Security VM Enhancement Script           ║
 ║   Fresh install → Fully loaded pentesting box    ║
-║   Modern 2025 Edition - Unattended Installation   ║
+║   Modern 2025 Edition                             ║
 ╚═══════════════════════════════════════════════════╝
 EOF
     
-    log_info "Starting unattended installation..."
-    log_info "This will take 10-20 minutes depending on your connection"
-    sleep 2
+    log_warn "This script will modify your system configuration"
+    log_warn "Press Ctrl+C to cancel, or Enter to continue..."
+    read
     
     phase1_system_setup
     phase2_user_setup
