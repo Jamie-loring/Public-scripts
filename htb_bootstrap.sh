@@ -7,8 +7,6 @@ set -e
 
 # Setup logging
 LOGFILE="$HOME/bootstrap-$(date +%Y%m%d_%H%M%S).log"
-exec 3>&1 4>&2
-exec 1>>"$LOGFILE" 2>&1
 
 RED='\033[0;31m'
 GREEN='\033[0;32m'
@@ -17,46 +15,25 @@ BLUE='\033[0;34m'
 NC='\033[0m'
 
 log_info() { 
-    echo -e "${GREEN}[+]${NC} $1"
-    echo -e "${GREEN}[+]${NC} $1" >&3
+    echo -e "${GREEN}[+]${NC} $1" | tee -a "$LOGFILE"
 }
 log_warn() { 
-    echo -e "${YELLOW}[!]${NC} $1"
-    echo -e "${YELLOW}[!]${NC} $1" >&3
+    echo -e "${YELLOW}[!]${NC} $1" | tee -a "$LOGFILE"
 }
 log_error() { 
-    echo -e "${RED}[-]${NC} $1"
-    echo -e "${RED}[-]${NC} $1" >&3
+    echo -e "${RED}[-]${NC} $1" | tee -a "$LOGFILE"
 }
 log_progress() {
-    echo -e "${BLUE}[*]${NC} $1" >&3
+    echo -e "${BLUE}[*]${NC} $1" | tee -a "$LOGFILE"
 }
 
 show_progress() {
     local phase=$1
     local total=8
     local percent=$((phase * 100 / total))
-    echo -e "${BLUE}╔══════════════════════════════════════════════════╗${NC}" >&3
-    echo -e "${BLUE}║${NC} Overall Progress: ${GREEN}${percent}%${NC} (Phase ${phase}/${total})                ${BLUE}║${NC}" >&3
-    echo -e "${BLUE}╚══════════════════════════════════════════════════╝${NC}" >&3
-}
-
-# Restore stdout/stderr at exit
-trap 'exec 1>&3 2>&4' EXIT
-
-# ============================================
-# APT wrapper - show what's happening
-# ============================================
-apt_install_with_progress() {
-    apt-get install -y "$@" 
-}
-
-apt_update_with_progress() {
-    apt-get update
-}
-
-apt_upgrade_with_progress() {
-    apt-get upgrade -y
+    echo -e "${BLUE}╔══════════════════════════════════════════════════╗${NC}" | tee -a "$LOGFILE"
+    echo -e "${BLUE}║${NC} Overall Progress: ${GREEN}${percent}%${NC} (Phase ${phase}/${total})                ${BLUE}║${NC}" | tee -a "$LOGFILE"
+    echo -e "${BLUE}╚══════════════════════════════════════════════════╝${NC}" | tee -a "$LOGFILE"
 }
 
 # ============================================
@@ -68,13 +45,13 @@ phase1_system_setup() {
     log_info "Phase 1: Updating system and installing base packages"
     
     log_progress "Updating package lists..."
-    apt_update_with_progress
+    apt update 2>&1 | tee -a "$LOGFILE"
     
     log_progress "Upgrading installed packages (this may take a while)..."
-    apt_upgrade_with_progress
+    apt upgrade -y 2>&1 | tee -a "$LOGFILE"
     
     log_progress "Installing base packages..."
-    apt_install_with_progress \
+    apt install -y \
         build-essential git curl wget \
         vim neovim tmux zsh \
         python3-pip python3-venv \
@@ -83,7 +60,7 @@ phase1_system_setup() {
         jq ripgrep fd-find bat \
         htop ncdu tree \
         fonts-powerline \
-        silversearcher-ag
+        silversearcher-ag 2>&1 | tee -a "$LOGFILE"
     
     log_info "Phase 1 complete"
     log_progress "Phase 1/8: ✓ Complete"
@@ -186,7 +163,7 @@ phase4_tools_setup() {
     
     # Impacket - properly installed
     log_progress "Installing Impacket..."
-    pip3 install impacket --break-system-packages 2>&1 | tee -a /dev/fd/3 || pip3 install impacket 2>&1 | tee -a /dev/fd/3
+    pip3 install impacket --break-system-packages 2>&1 | tee -a "$LOGFILE" || pip3 install impacket 2>&1 | tee -a "$LOGFILE"
     
     # Other essential Python tools
     log_progress "Installing Python pentesting tools (this may take several minutes)..."
@@ -204,34 +181,20 @@ phase4_tools_setup() {
         dnsrecon \
         git-dumper \
         penelope-shell \
-        kerbrute 2>&1 | {
-            while IFS= read -r line; do
-                # Show download progress
-                if [[ "$line" =~ "Downloading" ]] || [[ "$line" =~ "Installing" ]] || [[ "$line" =~ "Successfully installed" ]]; then
-                    echo "$line" >&3
-                fi
-            done
-        } || true
+        kerbrute 2>&1 | tee -a "$LOGFILE" || true
     
     # Install Rust tools
     log_progress "Installing Rust-based tools..."
-    cargo install rustscan feroxbuster 2>&1 | {
-        while IFS= read -r line; do
-            # Show compilation progress
-            if [[ "$line" =~ "Compiling" ]] || [[ "$line" =~ "Finished" ]] || [[ "$line" =~ "Installing" ]]; then
-                echo "$line" >&3
-            fi
-        done
-    } || true
+    cargo install rustscan feroxbuster 2>&1 | tee -a "$LOGFILE" || true
     
     # Install Go tools
     log_progress "Installing Go-based tools..."
     log_progress "Installing ligolo-ng proxy..."
-    go install github.com/nicocha30/ligolo-ng/cmd/proxy@latest 2>&1 | tee -a /dev/fd/3 || true
+    go install github.com/nicocha30/ligolo-ng/cmd/proxy@latest 2>&1 | tee -a "$LOGFILE" || true
     log_progress "Installing ligolo-ng agent..."
-    go install github.com/nicocha30/ligolo-ng/cmd/agent@latest 2>&1 | tee -a /dev/fd/3 || true
+    go install github.com/nicocha30/ligolo-ng/cmd/agent@latest 2>&1 | tee -a "$LOGFILE" || true
     log_progress "Installing chisel..."
-    go install github.com/jpillora/chisel@latest 2>&1 | tee -a /dev/fd/3 || true
+    go install github.com/jpillora/chisel@latest 2>&1 | tee -a "$LOGFILE" || true
     
     # Copy go binaries to path
     cp ~/go/bin/* /usr/local/bin/ 2>/dev/null || true
@@ -242,23 +205,23 @@ phase4_tools_setup() {
     
     sudo -u jamie bash << 'REPOS_EOF'
 if [ ! -d "PayloadsAllTheThings" ]; then
-    echo "Cloning PayloadsAllTheThings..." >&3
-    git clone --progress https://github.com/swisskyrepo/PayloadsAllTheThings.git 2>&1 | grep -E "Cloning|Receiving|Resolving" | tee -a /dev/fd/3
+    echo "Cloning PayloadsAllTheThings..."
+    git clone --progress https://github.com/swisskyrepo/PayloadsAllTheThings.git 2>&1
 fi
 
 if [ ! -d "PEASS-ng" ]; then
-    echo "Cloning PEASS-ng..." >&3
-    git clone --progress https://github.com/carlospolop/PEASS-ng.git 2>&1 | grep -E "Cloning|Receiving|Resolving" | tee -a /dev/fd/3
+    echo "Cloning PEASS-ng..."
+    git clone --progress https://github.com/carlospolop/PEASS-ng.git 2>&1
 fi
 
 if [ ! -d "Windows-Exploit-Suggester" ]; then
-    echo "Cloning Windows-Exploit-Suggester..." >&3
-    git clone --progress https://github.com/AonCyberLabs/Windows-Exploit-Suggester.git 2>&1 | grep -E "Cloning|Receiving|Resolving" | tee -a /dev/fd/3
+    echo "Cloning Windows-Exploit-Suggester..."
+    git clone --progress https://github.com/AonCyberLabs/Windows-Exploit-Suggester.git 2>&1
 fi
 
 if [ ! -d "PowerSploit" ]; then
-    echo "Cloning PowerSploit..." >&3
-    git clone --progress https://github.com/PowerShellMafia/PowerSploit.git 2>&1 | grep -E "Cloning|Receiving|Resolving" | tee -a /dev/fd/3
+    echo "Cloning PowerSploit..."
+    git clone --progress https://github.com/PowerShellMafia/PowerSploit.git 2>&1
 fi
 REPOS_EOF
     
@@ -282,7 +245,7 @@ REPOS_EOF
     # SecLists if not already present
     if [ ! -d "SecLists" ]; then
         log_progress "Cloning SecLists (large download, ~1.5GB)..."
-        sudo -u jamie git clone --progress https://github.com/danielmiessler/SecLists.git 2>&1 | grep -E "Cloning|Receiving|Resolving|%" | tee -a /dev/fd/3
+        sudo -u jamie git clone --progress https://github.com/danielmiessler/SecLists.git 2>&1 | tee -a "$LOGFILE"
     fi
     
     # Unzip rockyou.txt if it exists and isn't already unzipped
@@ -958,10 +921,10 @@ phase7_vm_guest_tools() {
         log_info "VirtualBox detected! Installing repository-based Guest Additions..."
         
         log_progress "Installing VirtualBox dependencies from repositories..."
-        apt_install_with_progress \
+        apt install -y \
             virtualbox-guest-x11 \
             virtualbox-guest-utils \
-            virtualbox-guest-dkms
+            virtualbox-guest-dkms 2>&1 | tee -a "$LOGFILE"
         
         # Enable bidirectional clipboard and drag-and-drop
         log_info "Enabling bidirectional clipboard and drag-and-drop"
@@ -1016,9 +979,9 @@ EOF
         log_info "VMware detected! Installing open-vm-tools for bidirectional clipboard"
         
         log_progress "Installing VMware tools from repositories..."
-        apt_install_with_progress \
+        apt install -y \
             open-vm-tools \
-            open-vm-tools-desktop
+            open-vm-tools-desktop 2>&1 | tee -a "$LOGFILE"
         
         # Enable and start vmtoolsd
         systemctl enable open-vm-tools
@@ -1030,7 +993,7 @@ EOF
     else
         log_info "No virtualization environment detected (VirtualBox/VMware)"
         log_info "Installing xclip for clipboard management anyway"
-        apt_install_with_progress xclip xsel
+        apt install -y xclip xsel 2>&1 | tee -a "$LOGFILE"
     fi
     
     log_info "Phase 7 complete"
@@ -1047,10 +1010,10 @@ phase8_cleanup() {
     
     # Clean apt cache
     log_progress "Removing unnecessary packages..."
-    apt autoremove -y 2>&1 | tee -a /dev/fd/3
+    apt autoremove -y 2>&1 | tee -a "$LOGFILE"
     
     log_progress "Cleaning package cache..."
-    apt autoclean -y 2>&1 | tee -a /dev/fd/3
+    apt autoclean -y 2>&1 | tee -a "$LOGFILE"
     
     log_info "Phase 8 complete"
     log_progress "Phase 8/8: ✓ Complete"
