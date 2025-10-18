@@ -188,7 +188,8 @@ phase4_tools_setup() {
         git-dumper \
         penelope-shell \
         roadrecon \
-        manspider || true
+        manspider \
+        mitmproxy || true
     
     # Modern Go-based tools (ProjectDiscovery suite + essentials)
     log_progress "Installing modern Go-based tools (ProjectDiscovery suite)..."
@@ -226,9 +227,16 @@ phase4_tools_setup() {
     log_progress "Installing gobuster (directory brute-forcing)..."
     go install github.com/OJ/gobuster/v3@latest || true
     
+    log_progress "Installing kerbrute (Kerberos user enumeration)..."
+    go install github.com/ropnop/kerbrute@latest || true
+    
     # Fallback pivoting tool
     log_progress "Installing sshuttle (VPN over SSH)..."
     DEBIAN_FRONTEND=noninteractive apt install -y sshuttle || true
+    
+    # Install proxychains-ng (modern proxychains alternative)
+    log_progress "Installing proxychains-ng..."
+    DEBIAN_FRONTEND=noninteractive apt install -y proxychains4 || true
     
     # Copy go binaries to path
     cp ~/go/bin/* /usr/local/bin/ 2>/dev/null || true
@@ -418,6 +426,11 @@ GetNPUsers
   Find users with Kerberos pre-authentication disabled (AS-REP roasting)
   Usage: GetNPUsers <domain>/ -dc-ip <dc-ip> -usersfile users.txt
 
+kerbrute
+  Fast Kerberos user enumeration and password spraying
+  Usage: kerbrute userenum -d <domain> --dc <dc-ip> users.txt
+  Usage: kerbrute passwordspray -d <domain> --dc <dc-ip> users.txt Password123
+
 GetUserSPNs
   Find service accounts for Kerberoasting
   Usage: GetUserSPNs <domain>/<user>:<pass> -dc-ip <dc-ip> -request
@@ -471,6 +484,11 @@ responder
 mitm6
   IPv6 man-in-the-middle for credential relay
   Usage: mitm6 -d <domain>
+
+mitmproxy / mitmweb
+  Interactive HTTPS proxy for web app testing
+  Usage: mitmproxy (TUI) or mitmweb (Web UI on :8081)
+  Note: More powerful than Burp for scripting/automation
 
 certipy-ad
   Active Directory certificate abuse tool
@@ -565,6 +583,12 @@ ssh
   Local forward: ssh -L 8080:localhost:80 user@<target>
   SOCKS proxy: ssh -D 1080 user@<target>
   Remote forward: ssh -R 8080:localhost:80 user@<target>
+
+proxychains4
+  Route traffic through SOCKS/HTTP proxies
+  Usage: proxychains4 nmap <target>
+  Config: /etc/proxychains4.conf
+  MSF: set Proxies socks5:127.0.0.1:1080 (native, no proxychains needed)
 
 ═══════════════════════════════════════════════════════════════════════════
 FILE OPERATIONS & UTILITIES
