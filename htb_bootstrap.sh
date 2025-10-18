@@ -1186,11 +1186,11 @@ main() {
 ╔═══════════════════════════════════════════════════╗
 ║   Parrot Security VM Enhancement Script           ║
 ║   Fresh install → Fully loaded pentesting box    ║
-║   Modern 2025 Edition - Unattended Installation   ║
+║   Modern 2025 Edition                             ║
 ╚═══════════════════════════════════════════════════╝
 EOF
     
-    log_info "Starting unattended installation..."
+    log_info "Starting installation..."
     log_info "This will take 10-20 minutes depending on your connection"
     sleep 2
     
