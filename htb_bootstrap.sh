@@ -26,7 +26,7 @@ log_progress() {
 
 show_progress() {
     local phase=$1
-    local total=8
+    local total=9
     local percent=$((phase * 100 / total))
     echo -e "${BLUE}╔══════════════════════════════════════════════════╗${NC}"
     echo -e "${BLUE}║${NC} Overall Progress: ${GREEN}${percent}%${NC} (Phase ${phase}/${total})                ${BLUE}║${NC}"
@@ -906,12 +906,78 @@ EOF
 }
 
 # ============================================
-# PHASE 7: VM Guest Tools (VirtualBox or VMware)
+# PHASE 7: Firefox Extensions for Web Enumeration
 # ============================================
-phase7_vm_guest_tools() {
+phase7_firefox_extensions() {
     show_progress 7
-    log_progress "Phase 7/8: VM Guest Tools (clipboard, display, auto-resize)..."
-    log_info "Phase 7: Detecting virtualization environment"
+    log_progress "Phase 7/9: Firefox Extensions for CTF/Web Enumeration..."
+    log_info "Phase 7: Installing Firefox extensions"
+    
+    # Find Firefox profile directory for jamie
+    FIREFOX_PROFILE=$(find $USER_HOME/.mozilla/firefox -maxdepth 1 -type d -name "*.default*" 2>/dev/null | head -n 1)
+    
+    if [ -z "$FIREFOX_PROFILE" ]; then
+        log_warn "Firefox profile not found. Starting Firefox once to create profile..."
+        # Start Firefox as jamie briefly to create profile
+        sudo -u jamie timeout 5 firefox --headless 2>/dev/null || true
+        sleep 2
+        FIREFOX_PROFILE=$(find $USER_HOME/.mozilla/firefox -maxdepth 1 -type d -name "*.default*" 2>/dev/null | head -n 1)
+    fi
+    
+    if [ -n "$FIREFOX_PROFILE" ]; then
+        log_info "Firefox profile found: $FIREFOX_PROFILE"
+        
+        # Create extensions directory
+        sudo -u jamie mkdir -p "$FIREFOX_PROFILE/extensions"
+        
+        # Download and install extensions
+        log_progress "Installing FoxyProxy Standard (proxy management)..."
+        sudo -u jamie wget -q "https://addons.mozilla.org/firefox/downloads/latest/foxyproxy-standard/latest.xpi" \
+            -O "$FIREFOX_PROFILE/extensions/foxyproxy@eric.h.jung.xpi" 2>/dev/null || log_warn "Failed to download FoxyProxy"
+        
+        log_progress "Installing Dark Reader (dark mode for all sites)..."
+        sudo -u jamie wget -q "https://addons.mozilla.org/firefox/downloads/latest/darkreader/latest.xpi" \
+            -O "$FIREFOX_PROFILE/extensions/addon@darkreader.org.xpi" 2>/dev/null || log_warn "Failed to download Dark Reader"
+        
+        log_progress "Installing Cookie-Editor (cookie management)..."
+        sudo -u jamie wget -q "https://addons.mozilla.org/firefox/downloads/latest/cookie-editor/latest.xpi" \
+            -O "$FIREFOX_PROFILE/extensions/{c5f15d22-8421-4a2f-9bed-e4e2c0b560e0}.xpi" 2>/dev/null || log_warn "Failed to download Cookie-Editor"
+        
+        log_progress "Installing Wappalyzer (technology detection)..."
+        sudo -u jamie wget -q "https://addons.mozilla.org/firefox/downloads/latest/wappalyzer/latest.xpi" \
+            -O "$FIREFOX_PROFILE/extensions/wappalyzer@crunchlabs.com.xpi" 2>/dev/null || log_warn "Failed to download Wappalyzer"
+        
+        log_progress "Installing Hack-Tools (web pentest toolkit)..."
+        sudo -u jamie wget -q "https://addons.mozilla.org/firefox/downloads/latest/hacktools/latest.xpi" \
+            -O "$FIREFOX_PROFILE/extensions/{c5f15d22-8421-4a2f-9bed-hacktools}.xpi" 2>/dev/null || log_warn "Failed to download Hack-Tools"
+        
+        log_progress "Installing User-Agent Switcher (modify user agent)..."
+        sudo -u jamie wget -q "https://addons.mozilla.org/firefox/downloads/latest/user-agent-string-switcher/latest.xpi" \
+            -O "$FIREFOX_PROFILE/extensions/user-agent-switcher@ninetailed.ninja.xpi" 2>/dev/null || log_warn "Failed to download User-Agent Switcher"
+        
+        log_info "Firefox extensions installed. They will be available after Firefox restart."
+        log_info "Installed extensions:"
+        log_info "  - FoxyProxy Standard: Proxy management for Burp"
+        log_info "  - Dark Reader: Dark mode for web enumeration"
+        log_info "  - Cookie-Editor: Easy cookie editing"
+        log_info "  - Wappalyzer: Detect technologies on websites"
+        log_info "  - Hack-Tools: Reverse shells, payloads, etc."
+        log_info "  - User-Agent Switcher: Change browser UA"
+    else
+        log_warn "Could not find or create Firefox profile. Extensions will need to be installed manually."
+    fi
+    
+    log_info "Phase 7 complete"
+    log_progress "Phase 7/9: ✓ Complete"
+}
+
+# ============================================
+# PHASE 8: VM Guest Tools (VirtualBox or VMware)
+# ============================================
+phase8_vm_guest_tools() {
+    show_progress 8
+    log_progress "Phase 8/9: VM Guest Tools (clipboard, display, auto-resize)..."
+    log_info "Phase 8: Detecting virtualization environment"
     
     # Detect VirtualBox
     if lspci | grep -i "virtualbox" > /dev/null 2>&1 || dmidecode -s system-product-name 2>/dev/null | grep -i "virtualbox" > /dev/null 2>&1; then
@@ -1001,17 +1067,17 @@ EOF
         apt install -y xclip xsel
     fi
     
-    log_info "Phase 7 complete"
-    log_progress "Phase 7/8: ✓ Complete"
+    log_info "Phase 8 complete"
+    log_progress "Phase 8/9: ✓ Complete"
 }
 
 # ============================================
-# PHASE 8: Post-Install Cleanup
+# PHASE 9: Post-Install Cleanup
 # ============================================
-phase8_cleanup() {
-    show_progress 8
-    log_progress "Phase 8/8: Post-Install Cleanup..."
-    log_info "Phase 8: Cleaning up and finalizing"
+phase9_cleanup() {
+    show_progress 9
+    log_progress "Phase 9/9: Post-Install Cleanup..."
+    log_info "Phase 9: Cleaning up and finalizing"
     
     # Clean apt cache
     log_progress "Removing unnecessary packages..."
@@ -1020,8 +1086,8 @@ phase8_cleanup() {
     log_progress "Cleaning package cache..."
     apt autoclean -y
     
-    log_info "Phase 8 complete"
-    log_progress "Phase 8/8: ✓ Complete"
+    log_info "Phase 9 complete"
+    log_progress "Phase 9/9: ✓ Complete"
 }
 
 # ============================================
@@ -1045,8 +1111,9 @@ EOF
     phase4_tools_setup
     phase5_dotfiles_setup
     phase6_automation_setup
-    phase7_vm_guest_tools
-    phase8_cleanup
+    phase7_firefox_extensions
+    phase8_vm_guest_tools
+    phase9_cleanup
     
     cat << EOF
 
@@ -1078,4 +1145,3 @@ EOF
 }
 
 # Run it
-main
