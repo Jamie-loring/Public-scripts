@@ -90,8 +90,23 @@ phase3_shell_setup() {
     # Install Powerlevel10k theme
     sudo -u jamie git clone --depth=1 https://github.com/romkatv/powerlevel10k.git ${USER_HOME}/.oh-my-zsh/custom/themes/powerlevel10k 2>/dev/null || true
     
+    # Download pre-configured p10k config from GitHub
+    log_info "Downloading pre-configured Powerlevel10k config"
+    sudo -u jamie wget https://raw.githubusercontent.com/Jamie-loring/Public-scripts/main/p10k-jamie-config.zsh -O ${USER_HOME}/.p10k.zsh 2>/dev/null || log_warn "Failed to download p10k config, will use default"
+    
     # Set Zsh as default shell for jamie
     chsh -s $(which zsh) jamie || true
+    
+    # Configure LightDM to auto-login as jamie instead of user
+    log_info "Configuring auto-login for jamie"
+    if [ -f /etc/lightdm/lightdm.conf ]; then
+        # Backup original config
+        cp /etc/lightdm/lightdm.conf /etc/lightdm/lightdm.conf.backup 2>/dev/null || true
+        
+        # Remove any existing autologin-user lines and add jamie
+        sed -i '/^autologin-user=/d' /etc/lightdm/lightdm.conf
+        sed -i '/^\[Seat:\*\]/a autologin-user=jamie' /etc/lightdm/lightdm.conf
+    fi
     
     log_info "Phase 3 complete"
 }
@@ -980,13 +995,10 @@ User 'jamie' created with full sudo privileges (no password required)
 
 Next steps:
 1. REBOOT the VM: sudo reboot
-2. Log in as 'jamie'
-3. In VirtualBox: Settings → General → Advanced
-   - Set 'Shared Clipboard' to 'Bidirectional'
-   - Set 'Drag'n'Drop' to 'Bidirectional'
-4. Run 'p10k configure' to set up your prompt
-5. Run '~/scripts/update-tools.sh' to update everything
-6. Create an engagement: newengagement <name>
+2. Log in as 'jamie' (auto-login configured)
+3. Powerlevel10k theme is pre-configured (no wizard needed!)
+4. Run '~/scripts/update-tools.sh' to update everything
+5. Create an engagement: newengagement <name>
 
 Useful commands:
   - newengagement <name>  : Create new engagement folder
