@@ -5,9 +5,6 @@
 
 set -e
 
-# Setup logging
-LOGFILE="$HOME/bootstrap-$(date +%Y%m%d_%H%M%S).log"
-
 RED='\033[0;31m'
 GREEN='\033[0;32m'
 YELLOW='\033[1;33m'
@@ -15,25 +12,25 @@ BLUE='\033[0;34m'
 NC='\033[0m'
 
 log_info() { 
-    echo -e "${GREEN}[+]${NC} $1" | tee -a "$LOGFILE"
+    echo -e "${GREEN}[+]${NC} $1"
 }
 log_warn() { 
-    echo -e "${YELLOW}[!]${NC} $1" | tee -a "$LOGFILE"
+    echo -e "${YELLOW}[!]${NC} $1"
 }
 log_error() { 
-    echo -e "${RED}[-]${NC} $1" | tee -a "$LOGFILE"
+    echo -e "${RED}[-]${NC} $1"
 }
 log_progress() {
-    echo -e "${BLUE}[*]${NC} $1" | tee -a "$LOGFILE"
+    echo -e "${BLUE}[*]${NC} $1"
 }
 
 show_progress() {
     local phase=$1
     local total=8
     local percent=$((phase * 100 / total))
-    echo -e "${BLUE}╔══════════════════════════════════════════════════╗${NC}" | tee -a "$LOGFILE"
-    echo -e "${BLUE}║${NC} Overall Progress: ${GREEN}${percent}%${NC} (Phase ${phase}/${total})                ${BLUE}║${NC}" | tee -a "$LOGFILE"
-    echo -e "${BLUE}╚══════════════════════════════════════════════════╝${NC}" | tee -a "$LOGFILE"
+    echo -e "${BLUE}╔══════════════════════════════════════════════════╗${NC}"
+    echo -e "${BLUE}║${NC} Overall Progress: ${GREEN}${percent}%${NC} (Phase ${phase}/${total})                ${BLUE}║${NC}"
+    echo -e "${BLUE}╚══════════════════════════════════════════════════╝${NC}"
 }
 
 # ============================================
@@ -45,10 +42,10 @@ phase1_system_setup() {
     log_info "Phase 1: Updating system and installing base packages"
     
     log_progress "Updating package lists..."
-    apt update 2>&1 | tee -a "$LOGFILE"
+    apt update
     
     log_progress "Upgrading installed packages (this may take a while)..."
-    apt upgrade -y 2>&1 | tee -a "$LOGFILE"
+    apt upgrade -y
     
     log_progress "Installing base packages..."
     apt install -y \
@@ -60,7 +57,7 @@ phase1_system_setup() {
         jq ripgrep fd-find bat \
         htop ncdu tree \
         fonts-powerline \
-        silversearcher-ag 2>&1 | tee -a "$LOGFILE"
+        silversearcher-ag
     
     log_info "Phase 1 complete"
     log_progress "Phase 1/8: ✓ Complete"
@@ -163,7 +160,7 @@ phase4_tools_setup() {
     
     # Impacket - properly installed
     log_progress "Installing Impacket..."
-    pip3 install impacket --break-system-packages 2>&1 | tee -a "$LOGFILE" || pip3 install impacket 2>&1 | tee -a "$LOGFILE"
+    pip3 install impacket --break-system-packages || pip3 install impacket
     
     # Other essential Python tools
     log_progress "Installing Python pentesting tools (this may take several minutes)..."
@@ -181,20 +178,20 @@ phase4_tools_setup() {
         dnsrecon \
         git-dumper \
         penelope-shell \
-        kerbrute 2>&1 | tee -a "$LOGFILE" || true
+        kerbrute || true
     
     # Install Rust tools
-    log_progress "Installing Rust-based tools..."
-    cargo install rustscan feroxbuster 2>&1 | tee -a "$LOGFILE" || true
+    log_progress "Installing Rust-based tools (this takes 5-10 minutes, watch CPU usage)..."
+    cargo install rustscan feroxbuster || true
     
     # Install Go tools
     log_progress "Installing Go-based tools..."
     log_progress "Installing ligolo-ng proxy..."
-    go install github.com/nicocha30/ligolo-ng/cmd/proxy@latest 2>&1 | tee -a "$LOGFILE" || true
+    go install github.com/nicocha30/ligolo-ng/cmd/proxy@latest || true
     log_progress "Installing ligolo-ng agent..."
-    go install github.com/nicocha30/ligolo-ng/cmd/agent@latest 2>&1 | tee -a "$LOGFILE" || true
+    go install github.com/nicocha30/ligolo-ng/cmd/agent@latest || true
     log_progress "Installing chisel..."
-    go install github.com/jpillora/chisel@latest 2>&1 | tee -a "$LOGFILE" || true
+    go install github.com/jpillora/chisel@latest || true
     
     # Copy go binaries to path
     cp ~/go/bin/* /usr/local/bin/ 2>/dev/null || true
@@ -244,8 +241,8 @@ REPOS_EOF
     
     # SecLists if not already present
     if [ ! -d "SecLists" ]; then
-        log_progress "Cloning SecLists (large download, ~1.5GB)..."
-        sudo -u jamie git clone --progress https://github.com/danielmiessler/SecLists.git 2>&1 | tee -a "$LOGFILE"
+        log_progress "Cloning SecLists (large download, ~1.5GB - watch network activity)..."
+        sudo -u jamie git clone --progress https://github.com/danielmiessler/SecLists.git
     fi
     
     # Unzip rockyou.txt if it exists and isn't already unzipped
@@ -924,7 +921,7 @@ phase7_vm_guest_tools() {
         apt install -y \
             virtualbox-guest-x11 \
             virtualbox-guest-utils \
-            virtualbox-guest-dkms 2>&1 | tee -a "$LOGFILE"
+            virtualbox-guest-dkms
         
         # Enable bidirectional clipboard and drag-and-drop
         log_info "Enabling bidirectional clipboard and drag-and-drop"
@@ -981,7 +978,7 @@ EOF
         log_progress "Installing VMware tools from repositories..."
         apt install -y \
             open-vm-tools \
-            open-vm-tools-desktop 2>&1 | tee -a "$LOGFILE"
+            open-vm-tools-desktop
         
         # Enable and start vmtoolsd
         systemctl enable open-vm-tools
@@ -993,7 +990,7 @@ EOF
     else
         log_info "No virtualization environment detected (VirtualBox/VMware)"
         log_info "Installing xclip for clipboard management anyway"
-        apt install -y xclip xsel 2>&1 | tee -a "$LOGFILE"
+        apt install -y xclip xsel
     fi
     
     log_info "Phase 7 complete"
@@ -1010,10 +1007,10 @@ phase8_cleanup() {
     
     # Clean apt cache
     log_progress "Removing unnecessary packages..."
-    apt autoremove -y 2>&1 | tee -a "$LOGFILE"
+    apt autoremove -y
     
     log_progress "Cleaning package cache..."
-    apt autoclean -y 2>&1 | tee -a "$LOGFILE"
+    apt autoclean -y
     
     log_info "Phase 8 complete"
     log_progress "Phase 8/8: ✓ Complete"
