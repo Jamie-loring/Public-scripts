@@ -42,13 +42,13 @@ phase1_system_setup() {
     log_info "Phase 1: Updating system and installing base packages"
     
     log_progress "Updating package lists..."
-    apt update
+    DEBIAN_FRONTEND=noninteractive apt update
     
     log_progress "Upgrading installed packages (this may take a while)..."
-    apt upgrade -y
+    DEBIAN_FRONTEND=noninteractive apt upgrade -y
     
     log_progress "Installing base packages..."
-    apt install -y \
+    DEBIAN_FRONTEND=noninteractive apt install -y \
         build-essential git curl wget \
         vim neovim tmux zsh \
         python3-pip python3-venv \
@@ -110,7 +110,7 @@ phase3_shell_setup() {
     # Install Oh-My-Zsh
     if [ ! -d "$USER_HOME/.oh-my-zsh" ]; then
         log_progress "Installing Oh-My-Zsh..."
-        sudo -u jamie sh -c "$(curl -fsSL https://raw.githubusercontent.com/ohmyzsh/ohmyzsh/master/tools/install.sh)" "" --unattended
+        sudo -u jamie sh -c "RUNZSH=no $(curl -fsSL https://raw.githubusercontent.com/ohmyzsh/ohmyzsh/master/tools/install.sh)" "" --unattended
     fi
     
     # Install zsh-autosuggestions
@@ -164,7 +164,7 @@ phase4_tools_setup() {
     
     # Install pipx for isolated Python tool installations
     log_progress "Installing pipx for isolated Python environments..."
-    apt install -y pipx
+    DEBIAN_FRONTEND=noninteractive apt install -y pipx
     pipx ensurepath
     
     # Modern Python pentesting tools with pipx
@@ -228,7 +228,7 @@ phase4_tools_setup() {
     
     # Fallback pivoting tool
     log_progress "Installing sshuttle (VPN over SSH)..."
-    apt install -y sshuttle || true
+    DEBIAN_FRONTEND=noninteractive apt install -y sshuttle || true
     
     # Copy go binaries to path
     cp ~/go/bin/* /usr/local/bin/ 2>/dev/null || true
@@ -334,7 +334,8 @@ REPOS_EOF
     
     # Create tool reference guide
     log_info "Creating tool reference guide"
-    cat > $USER_HOME/Desktop/CTF_TOOLS_REFERENCE.txt << 'TOOLS_EOF'
+    CREATION_DATE=$(date '+%Y-%m-%d %H:%M:%S %Z')
+    cat > $USER_HOME/Desktop/CTF_TOOLS_REFERENCE.txt << TOOLS_EOF
 ╔═══════════════════════════════════════════════════════════════════════════╗
 ║                   MODERN CTF TOOLS QUICK REFERENCE                        ║
 ║                        Updated: 2025 Edition                              ║
@@ -730,148 +731,7 @@ ENGAGEMENT WORKFLOW
 ═══════════════════════════════════════════════════════════════════════════
 
 Tool Stack Version: 2.0 (Modern 2025 Edition)
-Last updated: $(date)
-
-TOOLS_EOF
-  Server: proxy -selfcert
-  Agent: agent -connect <attacker-ip>:11601 -ignore-cert
-  Then: session, ifconfig, start
-
-chisel
-  Fast TCP/UDP tunnel over HTTP
-  Server: chisel server -p 8080 --reverse
-  Client: chisel client <server-ip>:8080 R:socks
-
-ssh
-  SSH tunneling for port forwarding
-  Usage: ssh -L 8080:localhost:80 user@<target>
-  Usage: ssh -D 1080 user@<target>  # SOCKS proxy
-
-═══════════════════════════════════════════════════════════════════════════
-WEB APPLICATION TESTING
-═══════════════════════════════════════════════════════════════════════════
-
-burpsuite
-  Web application security testing platform
-  Usage: burpsuite
-
-sqlmap
-  Automated SQL injection tool
-  Usage: sqlmap -u "http://target/?id=1" --batch
-
-nikto
-  Web server vulnerability scanner
-  Usage: nikto -h http://target
-
-wpscan
-  WordPress vulnerability scanner
-  Usage: wpscan --url http://target
-
-ffuf
-  Fast web fuzzer
-  Usage: ffuf -u http://target/FUZZ -w wordlist.txt
-
-═══════════════════════════════════════════════════════════════════════════
-FILE OPERATIONS & UTILITIES
-═══════════════════════════════════════════════════════════════════════════
-
-serve / serve80
-  Quick Python HTTP server
-  Usage: serve (port 8000) or serve80 (port 80)
-
-git-dumper
-  Dump exposed .git repositories
-  Usage: git-dumper http://target/.git/ output/
-
-base64
-  Encode/decode base64
-  Aliases: b64e "string" / b64d "encoded"
-
-═══════════════════════════════════════════════════════════════════════════
-CUSTOM FUNCTIONS
-═══════════════════════════════════════════════════════════════════════════
-
-newengagement <name>
-  Creates engagement folder structure in ~/engagements/
-  Includes: recon, exploit, loot, screenshots, notes
-
-quickscan <target>
-  Runs nmap with default scripts and version detection
-  Saves output as scan_<target>
-
-extract <file>
-  Universal archive extractor (zip, tar, gz, bz2, etc.)
-
-revshell <ip> <port>
-  Generates common reverse shell one-liners
-
-update-tools.sh
-  Updates all installed tools and repositories
-
-backup-engagement.sh <name>
-  Creates timestamped backup of engagement folder
-
-═══════════════════════════════════════════════════════════════════════════
-USEFUL WORDLISTS
-═══════════════════════════════════════════════════════════════════════════
-
-Location: ~/tools/wordlists/SecLists/
-
-Common paths:
-  - Discovery/Web-Content/directory-list-2.3-medium.txt
-  - Passwords/Leaked-Databases/rockyou.txt
-  - Usernames/Names/names.txt
-  - Fuzzing/command-injection-commix.txt
-  - Discovery/DNS/subdomains-top1million-5000.txt
-
-═══════════════════════════════════════════════════════════════════════════
-USEFUL REPOSITORIES
-═══════════════════════════════════════════════════════════════════════════
-
-Location: ~/tools/repos/
-
-PayloadsAllTheThings/
-  Comprehensive payload and technique reference
-
-PEASS-ng/
-  LinPEAS and WinPEAS privilege escalation scripts
-  Quick access: ~/peas/ directory with symlinks
-
-PowerSploit/
-  PowerShell post-exploitation framework
-
-Windows-Exploit-Suggester/
-  Finds missing patches on Windows systems
-
-═══════════════════════════════════════════════════════════════════════════
-TIPS & TRICKS
-═══════════════════════════════════════════════════════════════════════════
-
-• All Impacket tools work WITHOUT the 'impacket-' prefix
-• Docker commands don't require sudo (jamie is in docker group)
-• Tmux prefix is Ctrl-a (split with | and -)
-• Alt+arrows to switch tmux panes without prefix
-• Tab completion works for most commands and arguments
-• Up arrow searches command history based on what you've typed
-• Use 'extract' function for any compressed file
-• Ligolo-ng creates a real network interface - no proxychains needed!
-
-═══════════════════════════════════════════════════════════════════════════
-ENGAGEMENT WORKFLOW
-═══════════════════════════════════════════════════════════════════════════
-
-1. newengagement <target-name>
-2. cd ~/engagements/<target-name>
-3. quickscan <target-ip>
-4. Document findings in notes/
-5. Store loot in loot/
-6. Take screenshots in screenshots/
-7. backup-engagement.sh <target-name> when done
-
-═══════════════════════════════════════════════════════════════════════════
-
-Last updated: $(date)
-Script version: 2.0
+Last updated: ${CREATION_DATE}
 
 TOOLS_EOF
     
@@ -1214,7 +1074,7 @@ EOF
 # ============================================
 phase7_firefox_extensions() {
     show_progress 7
-    log_progress "Phase 7/9: Firefox Extensions for CTF/Web Enumeration..."
+    log_progress "Phase 7/8: Firefox Extensions for CTF/Web Enumeration..."
     log_info "Phase 7: Installing Firefox extensions"
     
     # Find Firefox profile directory for jamie
@@ -1285,10 +1145,10 @@ phase8_cleanup() {
     
     # Clean apt cache
     log_progress "Removing unnecessary packages..."
-    apt autoremove -y
+    DEBIAN_FRONTEND=noninteractive apt autoremove -y
     
     log_progress "Cleaning package cache..."
-    apt autoclean -y
+    DEBIAN_FRONTEND=noninteractive apt autoclean -y
     
     log_info "Phase 8 complete"
     log_progress "Phase 8/8: ✓ Complete"
@@ -1302,13 +1162,13 @@ main() {
 ╔═══════════════════════════════════════════════════╗
 ║   Parrot Security VM Enhancement Script           ║
 ║   Fresh install → Fully loaded pentesting box    ║
-║   Modern 2025 Edition                             ║
+║   Modern 2025 Edition - Unattended Installation   ║
 ╚═══════════════════════════════════════════════════╝
 EOF
     
-    log_warn "This script will modify your system configuration"
-    log_warn "Press Ctrl+C to cancel, or Enter to continue..."
-    read
+    log_info "Starting unattended installation..."
+    log_info "This will take 10-20 minutes depending on your connection"
+    sleep 2
     
     phase1_system_setup
     phase2_user_setup
@@ -1341,8 +1201,6 @@ Useful commands:
   - update-tools.sh       : Update all tools
 
 Tool reference guide on Desktop: CTF_TOOLS_REFERENCE.txt
-
-Installation log saved to: $LOGFILE
 
 Happy hacking!
 EOF
