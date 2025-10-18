@@ -45,6 +45,26 @@ show_progress() {
 trap 'exec 1>&3 2>&4' EXIT
 
 # ============================================
+# APT wrapper with progress bars
+# ============================================
+apt_install_with_progress() {
+    # Configure apt to show progress
+    apt-get -o Dpkg::Progress-Fancy="1" install -y "$@" 2>&1 | tee -a /dev/fd/3
+}
+
+apt_update_with_progress() {
+    apt-get update 2>&1 | {
+        while IFS= read -r line; do
+            echo "$line" >&3
+        done
+    }
+}
+
+apt_upgrade_with_progress() {
+    apt-get -o Dpkg::Progress-Fancy="1" upgrade -y 2>&1 | tee -a /dev/fd/3
+}
+
+# ============================================
 # PHASE 1: System Updates & Base Packages
 # ============================================
 phase1_system_setup() {
@@ -52,10 +72,14 @@ phase1_system_setup() {
     log_progress "Phase 1/8: System Updates & Base Packages..."
     log_info "Phase 1: Updating system and installing base packages"
     
-    apt update
-    apt upgrade -y
+    log_progress "Updating package lists..."
+    apt_update_with_progress
     
-    apt install -y \
+    log_progress "Upgrading installed packages (this may take a while)..."
+    apt_upgrade_with_progress
+    
+    log_progress "Installing base packages..."
+    apt_install_with_progress \
         build-essential git curl wget \
         vim neovim tmux zsh \
         python3-pip python3-venv \
@@ -116,16 +140,20 @@ phase3_shell_setup() {
     
     # Install Oh-My-Zsh
     if [ ! -d "$USER_HOME/.oh-my-zsh" ]; then
+        log_progress "Installing Oh-My-Zsh..."
         sudo -u jamie sh -c "$(curl -fsSL https://raw.githubusercontent.com/ohmyzsh/ohmyzsh/master/tools/install.sh)" "" --unattended
     fi
     
     # Install zsh-autosuggestions
+    log_progress "Installing zsh-autosuggestions..."
     sudo -u jamie git clone https://github.com/zsh-users/zsh-autosuggestions ${USER_HOME}/.oh-my-zsh/custom/plugins/zsh-autosuggestions 2>/dev/null || true
     
     # Install zsh-syntax-highlighting
+    log_progress "Installing zsh-syntax-highlighting..."
     sudo -u jamie git clone https://github.com/zsh-users/zsh-syntax-highlighting.git ${USER_HOME}/.oh-my-zsh/custom/plugins/zsh-syntax-highlighting 2>/dev/null || true
     
     # Install Powerlevel10k theme
+    log_progress "Installing Powerlevel10k theme..."
     sudo -u jamie git clone --depth=1 https://github.com/romkatv/powerlevel10k.git ${USER_HOME}/.oh-my-zsh/custom/themes/powerlevel10k 2>/dev/null || true
     
     # Download pre-configured p10k config from GitHub
@@ -162,11 +190,11 @@ phase4_tools_setup() {
     sudo -u jamie mkdir -p $USER_HOME/tools/{wordlists,scripts,exploits,repos}
     
     # Impacket - properly installed
-    log_info "Installing Impacket"
-    pip3 install impacket --break-system-packages || pip3 install impacket
+    log_progress "Installing Impacket..."
+    pip3 install impacket --break-system-packages 2>&1 | tee -a /dev/fd/3 || pip3 install impacket 2>&1 | tee -a /dev/fd/3
     
     # Other essential Python tools
-    log_info "Installing Python pentesting tools"
+    log_progress "Installing Python pentesting tools (this may take several minutes)..."
     pip3 install --break-system-packages \
         bloodhound \
         bloodyAD \
@@ -181,17 +209,34 @@ phase4_tools_setup() {
         dnsrecon \
         git-dumper \
         penelope-shell \
-        kerbrute || true
+        kerbrute 2>&1 | {
+            while IFS= read -r line; do
+                # Show download progress
+                if [[ "$line" =~ "Downloading" ]] || [[ "$line" =~ "Installing" ]] || [[ "$line" =~ "Successfully installed" ]]; then
+                    echo "$line" >&3
+                fi
+            done
+        } || true
     
     # Install Rust tools
-    log_info "Installing Rust-based tools"
-    cargo install rustscan feroxbuster || true
+    log_progress "Installing Rust-based tools..."
+    cargo install rustscan feroxbuster 2>&1 | {
+        while IFS= read -r line; do
+            # Show compilation progress
+            if [[ "$line" =~ "Compiling" ]] || [[ "$line" =~ "Finished" ]] || [[ "$line" =~ "Installing" ]]; then
+                echo "$line" >&3
+            fi
+        done
+    } || true
     
     # Install Go tools
-    log_info "Installing Go-based tools"
-    go install github.com/nicocha30/ligolo-ng/cmd/proxy@latest || true
-    go install github.com/nicocha30/ligolo-ng/cmd/agent@latest || true
-    go install github.com/jpillora/chisel@latest || true
+    log_progress "Installing Go-based tools..."
+    log_progress "Installing ligolo-ng proxy..."
+    go install github.com/nicocha30/ligolo-ng/cmd/proxy@latest 2>&1 | tee -a /dev/fd/3 || true
+    log_progress "Installing ligolo-ng agent..."
+    go install github.com/nicocha30/ligolo-ng/cmd/agent@latest 2>&1 | tee -a /dev/fd/3 || true
+    log_progress "Installing chisel..."
+    go install github.com/jpillora/chisel@latest 2>&1 | tee -a /dev/fd/3 || true
     
     # Copy go binaries to path
     cp ~/go/bin/* /usr/local/bin/ 2>/dev/null || true
@@ -201,10 +246,25 @@ phase4_tools_setup() {
     cd $USER_HOME/tools/repos
     
     sudo -u jamie bash << 'REPOS_EOF'
-[ ! -d "PayloadsAllTheThings" ] && git clone https://github.com/swisskyrepo/PayloadsAllTheThings.git || true
-[ ! -d "PEASS-ng" ] && git clone https://github.com/carlospolop/PEASS-ng.git || true
-[ ! -d "Windows-Exploit-Suggester" ] && git clone https://github.com/AonCyberLabs/Windows-Exploit-Suggester.git || true
-[ ! -d "PowerSploit" ] && git clone https://github.com/PowerShellMafia/PowerSploit.git || true
+if [ ! -d "PayloadsAllTheThings" ]; then
+    echo "Cloning PayloadsAllTheThings..." >&3
+    git clone --progress https://github.com/swisskyrepo/PayloadsAllTheThings.git 2>&1 | grep -E "Cloning|Receiving|Resolving" | tee -a /dev/fd/3
+fi
+
+if [ ! -d "PEASS-ng" ]; then
+    echo "Cloning PEASS-ng..." >&3
+    git clone --progress https://github.com/carlospolop/PEASS-ng.git 2>&1 | grep -E "Cloning|Receiving|Resolving" | tee -a /dev/fd/3
+fi
+
+if [ ! -d "Windows-Exploit-Suggester" ]; then
+    echo "Cloning Windows-Exploit-Suggester..." >&3
+    git clone --progress https://github.com/AonCyberLabs/Windows-Exploit-Suggester.git 2>&1 | grep -E "Cloning|Receiving|Resolving" | tee -a /dev/fd/3
+fi
+
+if [ ! -d "PowerSploit" ]; then
+    echo "Cloning PowerSploit..." >&3
+    git clone --progress https://github.com/PowerShellMafia/PowerSploit.git 2>&1 | grep -E "Cloning|Receiving|Resolving" | tee -a /dev/fd/3
+fi
 REPOS_EOF
     
     # Create quick access directory for PEAS scripts
@@ -226,7 +286,8 @@ REPOS_EOF
     
     # SecLists if not already present
     if [ ! -d "SecLists" ]; then
-        sudo -u jamie git clone https://github.com/danielmiessler/SecLists.git
+        log_progress "Cloning SecLists (large download, ~1.5GB)..."
+        sudo -u jamie git clone --progress https://github.com/danielmiessler/SecLists.git 2>&1 | grep -E "Cloning|Receiving|Resolving|%" | tee -a /dev/fd/3
     fi
     
     # Unzip rockyou.txt if it exists and isn't already unzipped
@@ -551,7 +612,7 @@ ENGAGEMENT WORKFLOW
 ═══════════════════════════════════════════════════════════════════════════
 
 Last updated: $(date)
-Script version: 1.0
+Script version: 2.0
 
 TOOLS_EOF
     
@@ -737,6 +798,9 @@ HISTSIZE=10000
 SAVEHIST=10000
 setopt SHARE_HISTORY
 
+# Load Powerlevel10k config if it exists
+[[ ! -f ~/.p10k.zsh ]] || source ~/.p10k.zsh
+
 EOF
 
     # Create tmux config
@@ -896,44 +960,20 @@ phase7_vm_guest_tools() {
     
     # Detect VirtualBox
     if lspci | grep -i "virtualbox" > /dev/null 2>&1 || dmidecode -s system-product-name 2>/dev/null | grep -i "virtualbox" > /dev/null 2>&1; then
-        log_info "VirtualBox detected! Installing Guest Additions for bidirectional clipboard"
+        log_info "VirtualBox detected! Installing repository-based Guest Additions..."
         
-        # Install required dependencies
-        apt install -y \
-            build-essential \
-            dkms \
-            linux-headers-$(uname -r) \
-            module-assistant \
-            perl
-        
-        # Prepare module-assistant
-        m-a prepare
-        
-        # Download VirtualBox Guest Additions ISO
-        VBOX_VERSION=$(VBoxControl --version 2>/dev/null | cut -d 'r' -f1)
-        if [ -z "$VBOX_VERSION" ]; then
-            # Fallback to latest stable version
-            VBOX_VERSION="7.0.14"
-            log_warn "Could not detect VBox version, using default: $VBOX_VERSION"
-        fi
-        
-        log_info "Downloading VirtualBox Guest Additions $VBOX_VERSION"
-        wget "https://download.virtualbox.org/virtualbox/${VBOX_VERSION}/VBoxGuestAdditions_${VBOX_VERSION}.iso" \
-            -O /tmp/VBoxGuestAdditions.iso
-        
-        # Mount and install
-        mkdir -p /mnt/vbox
-        mount -o loop /tmp/VBoxGuestAdditions.iso /mnt/vbox
-        
-        log_info "Installing VirtualBox Guest Additions"
-        cd /mnt/vbox
-        ./VBoxLinuxAdditions.run --nox11 || true  # May fail on some modules, that's OK
+        log_progress "Installing VirtualBox dependencies from repositories..."
+        apt_install_with_progress \
+            virtualbox-guest-x11 \
+            virtualbox-guest-utils \
+            virtualbox-guest-dkms
         
         # Enable bidirectional clipboard and drag-and-drop
         log_info "Enabling bidirectional clipboard and drag-and-drop"
         VBoxClient --clipboard &
         VBoxClient --draganddrop &
         VBoxClient --seamless &
+        VBoxClient --vmsvga &
         
         # Add to jamie's autostart
         sudo -u jamie mkdir -p $USER_HOME/.config/autostart
@@ -962,13 +1002,6 @@ Exec=VBoxClient --seamless
 X-GNOME-Autostart-enabled=true
 EOF
         
-        chown -R jamie:jamie $USER_HOME/.config
-        
-        # Enable auto-resize and set max resolution
-        log_info "Configuring display auto-resize"
-        VBoxClient --vmsvga &
-        
-        # Add to jamie's autostart for display auto-resize
         cat > $USER_HOME/.config/autostart/vboxclient-vmsvga.desktop << 'EOF'
 [Desktop Entry]
 Type=Application
@@ -977,9 +1010,7 @@ Exec=VBoxClient --vmsvga
 X-GNOME-Autostart-enabled=true
 EOF
         
-        # Cleanup
-        umount /mnt/vbox
-        rm /tmp/VBoxGuestAdditions.iso
+        chown -R jamie:jamie $USER_HOME/.config
         
         log_info "VirtualBox Guest Additions installed successfully"
         log_warn "IMPORTANT: Reboot the VM for full functionality"
@@ -989,7 +1020,8 @@ EOF
     elif lspci | grep -i "vmware" > /dev/null 2>&1 || dmidecode -s system-product-name 2>/dev/null | grep -i "vmware" > /dev/null 2>&1; then
         log_info "VMware detected! Installing open-vm-tools for bidirectional clipboard"
         
-        apt install -y \
+        log_progress "Installing VMware tools from repositories..."
+        apt_install_with_progress \
             open-vm-tools \
             open-vm-tools-desktop
         
@@ -1003,7 +1035,7 @@ EOF
     else
         log_info "No virtualization environment detected (VirtualBox/VMware)"
         log_info "Installing xclip for clipboard management anyway"
-        apt install -y xclip xsel
+        apt_install_with_progress xclip xsel
     fi
     
     log_info "Phase 7 complete"
@@ -1019,8 +1051,11 @@ phase8_cleanup() {
     log_info "Phase 8: Cleaning up and finalizing"
     
     # Clean apt cache
-    apt autoremove -y
-    apt autoclean -y
+    log_progress "Removing unnecessary packages..."
+    apt autoremove -y 2>&1 | tee -a /dev/fd/3
+    
+    log_progress "Cleaning package cache..."
+    apt autoclean -y 2>&1 | tee -a /dev/fd/3
     
     log_info "Phase 8 complete"
     log_progress "Phase 8/8: ✓ Complete"
@@ -1072,6 +1107,8 @@ Useful commands:
   - update-tools.sh       : Update all tools
 
 Tool reference guide on Desktop: CTF_TOOLS_REFERENCE.txt
+
+Installation log saved to: $LOGFILE
 
 Happy hacking!
 EOF
