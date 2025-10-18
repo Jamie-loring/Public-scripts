@@ -42,13 +42,13 @@ phase1_system_setup() {
     log_info "Phase 1: Updating system and installing base packages"
     
     log_progress "Updating package lists..."
-    apt update
+    DEBIAN_FRONTEND=noninteractive apt update
     
     log_progress "Upgrading installed packages (this may take a while)..."
-    apt upgrade -y
+    DEBIAN_FRONTEND=noninteractive apt upgrade -y
     
     log_progress "Installing base packages..."
-    apt install -y \
+    DEBIAN_FRONTEND=noninteractive apt install -y \
         build-essential git curl wget \
         vim neovim tmux zsh \
         python3-pip python3-venv \
@@ -110,7 +110,7 @@ phase3_shell_setup() {
     # Install Oh-My-Zsh
     if [ ! -d "$USER_HOME/.oh-my-zsh" ]; then
         log_progress "Installing Oh-My-Zsh..."
-        sudo -u jamie sh -c "$(curl -fsSL https://raw.githubusercontent.com/ohmyzsh/ohmyzsh/master/tools/install.sh)" "" --unattended
+        sudo -u jamie sh -c "RUNZSH=no $(curl -fsSL https://raw.githubusercontent.com/ohmyzsh/ohmyzsh/master/tools/install.sh)" "" --unattended
     fi
     
     # Install zsh-autosuggestions
@@ -162,12 +162,21 @@ phase4_tools_setup() {
     log_progress "Installing Impacket..."
     pip3 install impacket --break-system-packages || pip3 install impacket
     
-    # Other essential Python tools
-    log_progress "Installing Python pentesting tools (this may take several minutes)..."
+    # Install pipx for isolated Python tool installations
+    log_progress "Installing pipx for isolated Python environments..."
+    DEBIAN_FRONTEND=noninteractive apt install -y pipx
+    pipx ensurepath
+    
+    # Modern Python pentesting tools with pipx
+    log_progress "Installing modern Python pentesting tools (this may take several minutes)..."
+    
+    # NetExec (modern CrackMapExec replacement)
+    sudo -u jamie pipx install git+https://github.com/Pennyw0rth/NetExec || log_warn "NetExec failed to install"
+    
+    # Other essential Python tools with pip
     pip3 install --break-system-packages \
         bloodhound \
         bloodyAD \
-        bloodhound-python \
         mitm6 \
         responder \
         certipy-ad \
@@ -178,23 +187,55 @@ phase4_tools_setup() {
         dnsrecon \
         git-dumper \
         penelope-shell \
-        kerbrute || true
+        roadrecon \
+        manspider || true
     
-    # Install Rust tools
-    log_progress "Installing Rust-based tools (this takes 5-10 minutes, watch CPU usage)..."
-    cargo install rustscan feroxbuster || true
+    # Modern Go-based tools (ProjectDiscovery suite + essentials)
+    log_progress "Installing modern Go-based tools (ProjectDiscovery suite)..."
     
-    # Install Go tools
-    log_progress "Installing Go-based tools..."
-    log_progress "Installing ligolo-ng proxy..."
-    go install github.com/nicocha30/ligolo-ng/cmd/proxy@latest || true
-    log_progress "Installing ligolo-ng agent..."
-    go install github.com/nicocha30/ligolo-ng/cmd/agent@latest || true
-    log_progress "Installing chisel..."
+    log_progress "Installing naabu (fast port scanner)..."
+    go install -v github.com/projectdiscovery/naabu/v2/cmd/naabu@latest || true
+    
+    log_progress "Installing httpx (HTTP toolkit)..."
+    go install -v github.com/projectdiscovery/httpx/cmd/httpx@latest || true
+    
+    log_progress "Installing nuclei (vulnerability scanner)..."
+    go install -v github.com/projectdiscovery/nuclei/v3/cmd/nuclei@latest || true
+    
+    log_progress "Installing subfinder (subdomain enumeration)..."
+    go install -v github.com/projectdiscovery/subfinder/v2/cmd/subfinder@latest || true
+    
+    log_progress "Installing katana (web crawler)..."
+    go install -v github.com/projectdiscovery/katana/cmd/katana@latest || true
+    
+    log_progress "Installing dnsx (DNS toolkit)..."
+    go install -v github.com/projectdiscovery/dnsx/cmd/dnsx@latest || true
+    
+    log_progress "Installing ffuf (fast web fuzzer)..."
+    go install github.com/ffuf/ffuf/v2@latest || true
+    
+    log_progress "Installing chisel (tunneling)..."
     go install github.com/jpillora/chisel@latest || true
+    
+    log_progress "Installing ligolo-ng proxy (advanced tunneling)..."
+    go install github.com/nicocha30/ligolo-ng/cmd/proxy@latest || log_warn "ligolo-ng proxy failed - Go version issue"
+    
+    log_progress "Installing ligolo-ng agent..."
+    go install github.com/nicocha30/ligolo-ng/cmd/agent@latest || log_warn "ligolo-ng agent failed - Go version issue"
+    
+    log_progress "Installing gobuster (directory brute-forcing)..."
+    go install github.com/OJ/gobuster/v3@latest || true
+    
+    # Fallback pivoting tool
+    log_progress "Installing sshuttle (VPN over SSH)..."
+    DEBIAN_FRONTEND=noninteractive apt install -y sshuttle || true
     
     # Copy go binaries to path
     cp ~/go/bin/* /usr/local/bin/ 2>/dev/null || true
+    
+    # Copy pipx binaries to path accessible location
+    ln -sf /home/jamie/.local/bin/netexec /usr/local/bin/netexec 2>/dev/null || true
+    ln -sf /home/jamie/.local/bin/nxc /usr/local/bin/nxc 2>/dev/null || true
     
     # Clone useful repos
     log_info "Cloning useful repositories"
@@ -219,6 +260,36 @@ fi
 if [ ! -d "PowerSploit" ]; then
     echo "Cloning PowerSploit..."
     git clone --progress https://github.com/PowerShellMafia/PowerSploit.git 2>&1
+fi
+
+if [ ! -d "HackTricks" ]; then
+    echo "Cloning HackTricks..."
+    git clone --progress https://github.com/carlospolop/hacktricks.git HackTricks 2>&1
+fi
+
+if [ ! -d "AutoRecon" ]; then
+    echo "Cloning AutoRecon..."
+    git clone --progress https://github.com/Tib3rius/AutoRecon.git 2>&1
+fi
+
+if [ ! -d "Impacket-Examples" ]; then
+    echo "Cloning Impacket (for latest examples)..."
+    git clone --progress https://github.com/fortra/impacket.git Impacket-Examples 2>&1
+fi
+
+if [ ! -d "GTFOBins" ]; then
+    echo "Cloning GTFOBins..."
+    git clone --progress https://github.com/GTFOBins/GTFOBins.github.io.git GTFOBins 2>&1
+fi
+
+if [ ! -d "LOLBAS" ]; then
+    echo "Cloning LOLBAS (Living Off The Land Binaries and Scripts)..."
+    git clone --progress https://github.com/LOLBAS-Project/LOLBAS.git 2>&1
+fi
+
+if [ ! -d "nuclei-templates" ]; then
+    echo "Cloning Nuclei Templates..."
+    git clone --progress https://github.com/projectdiscovery/nuclei-templates.git 2>&1
 fi
 REPOS_EOF
     
@@ -265,59 +336,73 @@ REPOS_EOF
     log_info "Creating tool reference guide"
     cat > $USER_HOME/Desktop/CTF_TOOLS_REFERENCE.txt << 'TOOLS_EOF'
 ╔═══════════════════════════════════════════════════════════════════════════╗
-║                        CTF TOOLS QUICK REFERENCE                          ║
+║                   MODERN CTF TOOLS QUICK REFERENCE                        ║
+║                        Updated: 2025 Edition                              ║
 ╚═══════════════════════════════════════════════════════════════════════════╝
 
 ═══════════════════════════════════════════════════════════════════════════
-RECONNAISSANCE & ENUMERATION
+RECONNAISSANCE & ENUMERATION (ProjectDiscovery Suite)
 ═══════════════════════════════════════════════════════════════════════════
+
+naabu
+  Ultra-fast port scanner with nmap integration
+  Usage: naabu -host target.com -p - -silent | nmap -sV -iL -
+
+httpx
+  Fast HTTP toolkit with feature detection
+  Usage: httpx -l urls.txt -tech-detect -status-code -title
+
+subfinder
+  Fast subdomain enumeration tool
+  Usage: subfinder -d target.com -all -silent
+
+dnsx
+  Fast DNS toolkit for enumeration
+  Usage: dnsx -l subdomains.txt -a -resp
+
+katana
+  Modern web crawler for attack surface mapping
+  Usage: katana -u https://target.com -d 3 -jc -kf all
+
+nuclei
+  Fast vulnerability scanner with templates
+  Usage: nuclei -l targets.txt -t ~/tools/repos/nuclei-templates/
+  Note: Templates auto-update, or manually: nuclei -update-templates
 
 nmap
-  Network scanner for host discovery and port enumeration
+  Traditional network scanner (still essential)
   Usage: nmap -sC -sV -oA output <target>
 
-rustscan
-  Fast port scanner that feeds results to nmap
-  Usage: rustscan -a <target> -- -sC -sV
+═══════════════════════════════════════════════════════════════════════════
+WEB APPLICATION TESTING
+═══════════════════════════════════════════════════════════════════════════
+
+ffuf
+  Fast web fuzzer (modern replacement for gobuster/wfuzz)
+  Usage: ffuf -u http://target/FUZZ -w wordlist.txt -mc 200,301,302
 
 gobuster
-  Directory/file brute-forcing tool for web enumeration
-  Usage: gobuster dir -u http://target -w wordlist.txt
+  Directory/file brute-forcing tool
+  Usage: gobuster dir -u http://target -w wordlist.txt -x php,html,txt
 
-feroxbuster
-  Fast content discovery tool with recursion
-  Usage: feroxbuster -u http://target -w wordlist.txt
+burpsuite
+  Web application security testing platform
+  Usage: burpsuite
 
-enum4linux-ng
-  SMB enumeration tool for Windows/Samba systems
-  Usage: enum4linux-ng -A <target>
+sqlmap
+  Automated SQL injection tool
+  Usage: sqlmap -u "http://target/?id=1" --batch
 
-kerbrute
-  Kerberos username enumeration and password spraying
-  Usage: kerbrute userenum --dc <dc-ip> -d <domain> users.txt
+nikto
+  Web server vulnerability scanner
+  Usage: nikto -h http://target
 
-bloodhound / bloodhound-python
-  Active Directory relationship mapper
-  Usage: bloodhound-python -u user -p pass -d domain -dc dc.domain.com -c all
-
-dnsrecon
-  DNS enumeration and zone transfer testing
-  Usage: dnsrecon -d <domain> -a
+wpscan
+  WordPress vulnerability scanner
+  Usage: wpscan --url http://target
 
 ═══════════════════════════════════════════════════════════════════════════
-EXPLOITATION & LATERAL MOVEMENT
-═══════════════════════════════════════════════════════════════════════════
-
-msfconsole
-  Metasploit Framework - exploitation and post-exploitation
-  Usage: msfconsole -q
-
-searchsploit
-  Offline exploit database search
-  Usage: searchsploit <software name>
-
-═══════════════════════════════════════════════════════════════════════════
-ACTIVE DIRECTORY TOOLS (IMPACKET SUITE)
+ACTIVE DIRECTORY TOOLS (Impacket Suite)
 ═══════════════════════════════════════════════════════════════════════════
 
 psexec / smbexec / wmiexec / dcomexec / atexec
@@ -357,13 +442,14 @@ ticketer
   Usage: ticketer -nthash <hash> -domain-sid <sid> -domain <domain> <user>
 
 ═══════════════════════════════════════════════════════════════════════════
-CREDENTIAL ATTACKS
+CREDENTIAL ATTACKS & LATERAL MOVEMENT
 ═══════════════════════════════════════════════════════════════════════════
 
-crackmapexec / netexec
-  Swiss army knife for pentesting Windows/AD networks
-  Usage: crackmapexec smb <target> -u user -p pass
-  Note: Use 'crackmapexec' (netexec not available on this distro)
+netexec (nxc)
+  Modern replacement for CrackMapExec - Swiss army knife for AD pentesting
+  Usage: netexec smb <target> -u user -p pass
+  Usage: nxc smb <target> -u users.txt -p passwords.txt --continue-on-success
+  Modules: netexec smb <target> -u user -p pass -M lsassy
 
 hydra
   Network login brute-forcer
@@ -401,6 +487,35 @@ lsassy
   Remote LSASS credential dumping
   Usage: lsassy -u user -p pass -d domain <target>
 
+bloodhound
+  Active Directory relationship mapper (run ingestor, then analyze in GUI)
+  Usage: bloodhound-python -u user -p pass -d domain -dc dc.domain.com -c all
+
+bloodyAD
+  Active Directory privilege escalation framework
+  Usage: bloodyAD -u user -p pass -d domain --host dc-ip get writable
+
+═══════════════════════════════════════════════════════════════════════════
+ENUMERATION TOOLS
+═══════════════════════════════════════════════════════════════════════════
+
+enum4linux-ng
+  SMB enumeration tool for Windows/Samba systems
+  Usage: enum4linux-ng -A <target>
+
+dnsrecon
+  DNS enumeration and zone transfer testing
+  Usage: dnsrecon -d <domain> -a
+
+AutoRecon
+  Multi-threaded network reconnaissance tool
+  Location: ~/tools/repos/AutoRecon/
+  Usage: python3 ~/tools/repos/AutoRecon/src/autorecon.py <target>
+
+manspider
+  Crawl SMB shares for juicy files (passwords, configs)
+  Usage: manspider <target> -d domain -u user -p pass
+
 ═══════════════════════════════════════════════════════════════════════════
 SHELLS & POST-EXPLOITATION
 ═══════════════════════════════════════════════════════════════════════════
@@ -420,7 +535,7 @@ evil-winrm
 LinPEAS / WinPEAS
   Privilege escalation enumeration scripts
   Location: ~/peas/ (symlinked for easy access)
-  Usage: linpeas (on target) or winpeas (on target)
+  Usage: ./linpeas.sh (on target) or winpeas.exe (on target)
   Full repo: ~/tools/repos/PEASS-ng/
 
 ═══════════════════════════════════════════════════════════════════════════
@@ -429,6 +544,195 @@ PIVOTING & TUNNELING
 
 ligolo-ng
   Creates TUN interface for pivoting (NO proxychains needed!)
+  Server: proxy -selfcert
+  Agent: agent -connect <attacker-ip>:11601 -ignore-cert
+  Then: session, ifconfig, start
+  Note: May fail due to Go version - use chisel or sshuttle as fallback
+
+chisel
+  Fast TCP/UDP tunnel over HTTP
+  Server: chisel server -p 8080 --reverse
+  Client: chisel client <server-ip>:8080 R:socks
+
+sshuttle
+  VPN over SSH (no root on remote needed)
+  Usage: sshuttle -r user@<target> 10.0.0.0/8
+  Note: Most reliable pivoting tool, works everywhere
+
+ssh
+  SSH tunneling for port forwarding
+  Local forward: ssh -L 8080:localhost:80 user@<target>
+  SOCKS proxy: ssh -D 1080 user@<target>
+  Remote forward: ssh -R 8080:localhost:80 user@<target>
+
+═══════════════════════════════════════════════════════════════════════════
+FILE OPERATIONS & UTILITIES
+═══════════════════════════════════════════════════════════════════════════
+
+serve / serve80
+  Quick Python HTTP server
+  Usage: serve (port 8000) or serve80 (port 80)
+
+git-dumper
+  Dump exposed .git repositories
+  Usage: git-dumper http://target/.git/ output/
+
+base64
+  Encode/decode base64
+  Aliases: b64e "string" / b64d "encoded"
+
+═══════════════════════════════════════════════════════════════════════════
+CUSTOM FUNCTIONS
+═══════════════════════════════════════════════════════════════════════════
+
+newengagement <name>
+  Creates engagement folder structure in ~/engagements/
+  Includes: recon, exploit, loot, screenshots, notes
+
+quickscan <target>
+  Runs nmap with default scripts and version detection
+  Saves output as scan_<target>
+
+extract <file>
+  Universal archive extractor (zip, tar, gz, bz2, etc.)
+
+update-tools.sh
+  Updates all installed tools and repositories
+
+backup-engagement.sh <name>
+  Creates timestamped backup of engagement folder
+
+═══════════════════════════════════════════════════════════════════════════
+USEFUL WORDLISTS
+═══════════════════════════════════════════════════════════════════════════
+
+Location: ~/tools/wordlists/
+
+SecLists/Discovery/Web-Content/
+  - directory-list-2.3-medium.txt (classic dir busting)
+  - raft-large-words.txt (modern alternative)
+  - common.txt (quick wins)
+
+SecLists/Passwords/
+  - rockyou.txt (14M passwords)
+  - Leaked-Databases/ (various breaches)
+
+SecLists/Usernames/
+  - Names/names.txt
+  - top-usernames-shortlist.txt
+
+SecLists/Fuzzing/
+  - command-injection-commix.txt
+  - LFI/LFI-Jhaddix.txt
+  - SQLi/Generic-SQLi.txt
+
+SecLists/Discovery/DNS/
+  - subdomains-top1million-5000.txt
+
+═══════════════════════════════════════════════════════════════════════════
+USEFUL REPOSITORIES
+═══════════════════════════════════════════════════════════════════════════
+
+Location: ~/tools/repos/
+
+PayloadsAllTheThings/
+  Comprehensive payload and technique reference for every attack type
+
+PEASS-ng/
+  LinPEAS and WinPEAS privilege escalation scripts
+  Quick access: ~/peas/ directory with symlinks
+
+PowerSploit/
+  PowerShell post-exploitation framework
+
+Windows-Exploit-Suggester/
+  Finds missing patches on Windows systems
+
+HackTricks/
+  Carlos Polop's methodology and technique documentation
+  Browse locally or at: https://book.hacktricks.xyz
+
+AutoRecon/
+  Automated reconnaissance tool by Tib3rius
+  Usage: python3 src/autorecon.py <target>
+
+Impacket-Examples/
+  Latest Impacket examples and tools from source
+
+GTFOBins/
+  Unix binaries that can be used for privilege escalation
+  Browse: _gtfobins/ directory
+
+LOLBAS/
+  Living Off The Land Binaries and Scripts for Windows
+  Browse: yml/ directory for techniques
+
+nuclei-templates/
+  Official Nuclei vulnerability templates (auto-updated)
+  Used automatically by nuclei command
+
+═══════════════════════════════════════════════════════════════════════════
+MODERN WORKFLOW TIPS
+═══════════════════════════════════════════════════════════════════════════
+
+Initial Recon Chain:
+  subfinder -d target.com | dnsx -a | httpx -tech-detect | nuclei
+
+Port Scanning:
+  naabu -host target.com -p - | nmap -sV -iL -
+
+Web Enumeration:
+  httpx + katana + ffuf + nuclei combo is fastest
+
+AD Enumeration:
+  netexec for everything, then bloodhound for visualization
+
+Pivoting Preference:
+  1. ligolo-ng (if it compiled)
+  2. chisel (reliable, fast)
+  3. sshuttle (works everywhere, no hassle)
+
+Password Attacks:
+  netexec for spraying, then dump with secretsdump/lsassy
+
+═══════════════════════════════════════════════════════════════════════════
+TIPS & TRICKS
+═══════════════════════════════════════════════════════════════════════════
+
+• All Impacket tools work WITHOUT the 'impacket-' prefix
+• Use 'nxc' as shorthand for 'netexec'
+• Docker commands don't require sudo (jamie is in docker group)
+• Tmux prefix is Ctrl-a (split with | and -)
+• Alt+arrows to switch tmux panes without prefix
+• Tab completion works for most commands and arguments
+• Up arrow searches command history based on what you've typed
+• Use 'extract' function for any compressed file
+• Nuclei templates auto-update, or run: nuclei -update-templates
+• ProjectDiscovery tools have built-in JSON output: add -j flag
+
+═══════════════════════════════════════════════════════════════════════════
+ENGAGEMENT WORKFLOW
+═══════════════════════════════════════════════════════════════════════════
+
+1. newengagement <target-name>
+2. cd ~/engagements/<target-name>
+3. Initial recon:
+   - subfinder -d target.com -silent | tee recon/subdomains.txt
+   - naabu -l recon/subdomains.txt | tee recon/ports.txt
+4. Web enumeration:
+   - httpx -l recon/subdomains.txt -tech-detect | tee recon/web.txt
+   - nuclei -l recon/web.txt -severity critical,high
+5. Document findings in notes/
+6. Store loot in loot/
+7. Take screenshots in screenshots/
+8. backup-engagement.sh <target-name> when done
+
+═══════════════════════════════════════════════════════════════════════════
+
+Tool Stack Version: 2.0 (Modern 2025 Edition)
+Last updated: $(date)
+
+TOOLS_EOF
   Server: proxy -selfcert
   Agent: agent -connect <attacker-ip>:11601 -ignore-cert
   Then: session, ifconfig, start
@@ -981,10 +1285,10 @@ phase8_cleanup() {
     
     # Clean apt cache
     log_progress "Removing unnecessary packages..."
-    apt autoremove -y
+    DEBIAN_FRONTEND=noninteractive apt autoremove -y
     
     log_progress "Cleaning package cache..."
-    apt autoclean -y
+    DEBIAN_FRONTEND=noninteractive apt autoclean -y
     
     log_info "Phase 8 complete"
     log_progress "Phase 8/8: ✓ Complete"
@@ -998,12 +1302,13 @@ main() {
 ╔═══════════════════════════════════════════════════╗
 ║   Parrot Security VM Enhancement Script           ║
 ║   Fresh install → Fully loaded pentesting box    ║
+║   Modern 2025 Edition - Unattended Installation   ║
 ╚═══════════════════════════════════════════════════╝
 EOF
     
-    log_warn "This script will modify your system configuration"
-    log_warn "Press Ctrl+C to cancel, or Enter to continue..."
-    read
+    log_info "Starting unattended installation..."
+    log_info "This will take 10-20 minutes depending on your connection"
+    sleep 2
     
     phase1_system_setup
     phase2_user_setup
