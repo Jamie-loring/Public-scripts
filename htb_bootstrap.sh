@@ -1063,7 +1063,7 @@ setopt SHARE_HISTORY
 EOF
 
     # Create tmux config
-    cat > $USER_HOME/.tmux.conf << 'EOF'
+    cat > $USER_HOME/.tmux.conf << 'TMUX_EOF'
 # Tmux configuration for pentesting
 
 # Change prefix to Ctrl-a
@@ -1105,10 +1105,10 @@ set -g status-fg white
 set -g status-left '#[fg=green]#H '
 set -g status-right '#[fg=yellow]#(uptime | cut -d "," -f 3-)'
 
-EOF
+TMUX_EOF
 
     # Create vim config with useful defaults
-    cat > $USER_HOME/.vimrc << 'EOF'
+    cat > $USER_HOME/.vimrc << 'VIM_EOF'
 " Basic vim configuration for pentesting
 set number
 set relativenumber
@@ -1135,7 +1135,7 @@ nnoremap <C-K> <C-W><C-K>
 nnoremap <C-L> <C-W><C-L>
 nnoremap <C-H> <C-W><C-H>
 
-EOF
+VIM_EOF
 
     # Fix ownership of all dotfiles
     chown -R jamie:jamie $USER_HOME
