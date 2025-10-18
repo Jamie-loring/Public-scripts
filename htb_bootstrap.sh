@@ -916,6 +916,19 @@ EOF
         
         chown -R jamie:jamie $USER_HOME/.config
         
+        # Enable auto-resize and set max resolution
+        log_info "Configuring display auto-resize"
+        VBoxClient --vmsvga &
+        
+        # Add to jamie's autostart for display auto-resize
+        cat > $USER_HOME/.config/autostart/vboxclient-vmsvga.desktop << 'EOF'
+[Desktop Entry]
+Type=Application
+Name=VBoxClient Display
+Exec=VBoxClient --vmsvga
+X-GNOME-Autostart-enabled=true
+EOF
+        
         # Cleanup
         umount /mnt/vbox
         rm /tmp/VBoxGuestAdditions.iso
