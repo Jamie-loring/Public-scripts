@@ -26,7 +26,7 @@ log_progress() {
 
 show_progress() {
     local phase=$1
-    local total=9
+    local total=8
     local percent=$((phase * 100 / total))
     echo -e "${BLUE}╔══════════════════════════════════════════════════╗${NC}"
     echo -e "${BLUE}║${NC} Overall Progress: ${GREEN}${percent}%${NC} (Phase ${phase}/${total})                ${BLUE}║${NC}"
@@ -968,116 +968,16 @@ phase7_firefox_extensions() {
     fi
     
     log_info "Phase 7 complete"
-    log_progress "Phase 7/9: ✓ Complete"
+    log_progress "Phase 7/8: ✓ Complete"
 }
 
 # ============================================
-# PHASE 8: VM Guest Tools (VirtualBox or VMware)
+# PHASE 8: Post-Install Cleanup
 # ============================================
-phase8_vm_guest_tools() {
+phase8_cleanup() {
     show_progress 8
-    log_progress "Phase 8/9: VM Guest Tools (clipboard, display, auto-resize)..."
-    log_info "Phase 8: Detecting virtualization environment"
-    
-    # Detect VirtualBox
-    if lspci | grep -i "virtualbox" > /dev/null 2>&1 || dmidecode -s system-product-name 2>/dev/null | grep -i "virtualbox" > /dev/null 2>&1; then
-        log_info "VirtualBox detected! Installing Guest Additions..."
-        
-        log_progress "Installing VirtualBox dependencies from repositories..."
-        # Try to install from repos, but don't fail if not available
-        apt install -y virtualbox-guest-x11 virtualbox-guest-utils 2>/dev/null || log_warn "Repository packages not available"
-        
-        # If repo packages failed or aren't available, install essential packages manually
-        if ! command -v VBoxClient &> /dev/null; then
-            log_warn "VirtualBox guest additions not found in repos, installing build dependencies..."
-            apt install -y build-essential dkms linux-headers-$(uname -r) || true
-            
-            log_info "Guest additions will need to be installed manually via:"
-            log_info "  1. In VirtualBox menu: Devices -> Insert Guest Additions CD Image"
-            log_info "  2. Run: sudo sh /media/cdrom/VBoxLinuxAdditions.run"
-        fi
-        
-        # Enable bidirectional clipboard and drag-and-drop
-        log_info "Enabling bidirectional clipboard and drag-and-drop"
-        VBoxClient --clipboard &
-        VBoxClient --draganddrop &
-        VBoxClient --seamless &
-        VBoxClient --vmsvga &
-        
-        # Add to jamie's autostart
-        sudo -u jamie mkdir -p $USER_HOME/.config/autostart
-        
-        cat > $USER_HOME/.config/autostart/vboxclient-clipboard.desktop << 'EOF'
-[Desktop Entry]
-Type=Application
-Name=VBoxClient Clipboard
-Exec=VBoxClient --clipboard
-X-GNOME-Autostart-enabled=true
-EOF
-
-        cat > $USER_HOME/.config/autostart/vboxclient-draganddrop.desktop << 'EOF'
-[Desktop Entry]
-Type=Application
-Name=VBoxClient Drag and Drop
-Exec=VBoxClient --draganddrop
-X-GNOME-Autostart-enabled=true
-EOF
-
-        cat > $USER_HOME/.config/autostart/vboxclient-seamless.desktop << 'EOF'
-[Desktop Entry]
-Type=Application
-Name=VBoxClient Seamless
-Exec=VBoxClient --seamless
-X-GNOME-Autostart-enabled=true
-EOF
-        
-        cat > $USER_HOME/.config/autostart/vboxclient-vmsvga.desktop << 'EOF'
-[Desktop Entry]
-Type=Application
-Name=VBoxClient Display
-Exec=VBoxClient --vmsvga
-X-GNOME-Autostart-enabled=true
-EOF
-        
-        chown -R jamie:jamie $USER_HOME/.config
-        
-        log_info "VirtualBox Guest Additions installed successfully"
-        log_warn "IMPORTANT: Reboot the VM for full functionality"
-        log_warn "IMPORTANT: In VBox settings, set Shared Clipboard to 'Bidirectional'"
-        
-    # Detect VMware
-    elif lspci | grep -i "vmware" > /dev/null 2>&1 || dmidecode -s system-product-name 2>/dev/null | grep -i "vmware" > /dev/null 2>&1; then
-        log_info "VMware detected! Installing open-vm-tools for bidirectional clipboard"
-        
-        log_progress "Installing VMware tools from repositories..."
-        apt install -y \
-            open-vm-tools \
-            open-vm-tools-desktop
-        
-        # Enable and start vmtoolsd
-        systemctl enable open-vm-tools
-        systemctl start open-vm-tools
-        
-        log_info "VMware Tools installed successfully"
-        log_warn "IMPORTANT: Enable 'Copy and Paste' in VMware VM settings"
-        
-    else
-        log_info "No virtualization environment detected (VirtualBox/VMware)"
-        log_info "Installing xclip for clipboard management anyway"
-        apt install -y xclip xsel
-    fi
-    
-    log_info "Phase 8 complete"
-    log_progress "Phase 8/9: ✓ Complete"
-}
-
-# ============================================
-# PHASE 9: Post-Install Cleanup
-# ============================================
-phase9_cleanup() {
-    show_progress 9
-    log_progress "Phase 9/9: Post-Install Cleanup..."
-    log_info "Phase 9: Cleaning up and finalizing"
+    log_progress "Phase 8/8: Post-Install Cleanup..."
+    log_info "Phase 8: Cleaning up and finalizing"
     
     # Clean apt cache
     log_progress "Removing unnecessary packages..."
@@ -1086,8 +986,8 @@ phase9_cleanup() {
     log_progress "Cleaning package cache..."
     apt autoclean -y
     
-    log_info "Phase 9 complete"
-    log_progress "Phase 9/9: ✓ Complete"
+    log_info "Phase 8 complete"
+    log_progress "Phase 8/8: ✓ Complete"
 }
 
 # ============================================
@@ -1112,8 +1012,7 @@ EOF
     phase5_dotfiles_setup
     phase6_automation_setup
     phase7_firefox_extensions
-    phase8_vm_guest_tools
-    phase9_cleanup
+    phase8_cleanup
     
     cat << EOF
 
@@ -1145,3 +1044,4 @@ EOF
 }
 
 # Run it
+main
