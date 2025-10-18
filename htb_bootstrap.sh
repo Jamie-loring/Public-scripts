@@ -45,23 +45,18 @@ show_progress() {
 trap 'exec 1>&3 2>&4' EXIT
 
 # ============================================
-# APT wrapper with progress bars
+# APT wrapper - show what's happening
 # ============================================
 apt_install_with_progress() {
-    # Configure apt to show progress
-    apt-get -o Dpkg::Progress-Fancy="1" install -y "$@" 2>&1 | tee -a /dev/fd/3
+    apt-get install -y "$@" 
 }
 
 apt_update_with_progress() {
-    apt-get update 2>&1 | {
-        while IFS= read -r line; do
-            echo "$line" >&3
-        done
-    }
+    apt-get update
 }
 
 apt_upgrade_with_progress() {
-    apt-get -o Dpkg::Progress-Fancy="1" upgrade -y 2>&1 | tee -a /dev/fd/3
+    apt-get upgrade -y
 }
 
 # ============================================
