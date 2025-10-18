@@ -10,8 +10,8 @@ GREEN='\033[0;32m'
 YELLOW='\033[1;33m'
 NC='\033[0m'
 
-log_info() { echo -e "${GREEN}[+]${NC} $1"; }
-log_warn() { echo -e "${YELLOW}[!]${NC} $1"; }
+log_info()  { echo -e "${GREEN}[+]${NC} $1"; }
+log_warn()  { echo -e "${YELLOW}[!]${NC} $1"; }
 log_error() { echo -e "${RED}[-]${NC} $1"; }
 
 # ============================================
@@ -19,10 +19,9 @@ log_error() { echo -e "${RED}[-]${NC} $1"; }
 # ============================================
 phase1_system_setup() {
     log_info "Phase 1: Updating system and installing base packages"
-    
     apt update
     apt upgrade -y
-    
+
     apt install -y \
         build-essential git curl wget \
         vim neovim tmux zsh \
@@ -33,7 +32,7 @@ phase1_system_setup() {
         htop ncdu tree \
         fonts-powerline \
         silversearcher-ag
-    
+
     log_info "Phase 1 complete"
 }
 
@@ -42,27 +41,27 @@ phase1_system_setup() {
 # ============================================
 phase2_user_setup() {
     log_info "Phase 2: Setting up user account"
-    
+
     # Create jamie user as essentially root (let system assign UID, use bash for now)
     if ! id "jamie" &>/dev/null; then
         useradd -m -s /bin/bash -G sudo jamie
         passwd -d jamie  # Remove password entirely
-        
+
         # Give jamie full root privileges without password
         echo "jamie ALL=(ALL) NOPASSWD:ALL" > /etc/sudoers.d/jamie
         chmod 440 /etc/sudoers.d/jamie
-        
+
         log_info "User 'jamie' created with no password"
     else
         log_warn "User 'jamie' already exists, skipping creation"
     fi
-    
+
     # Enable docker without sudo
     usermod -aG docker jamie || true
-    
-    # Set up home directory
+
+    # Set up home directory variable for later phases
     export USER_HOME=/home/jamie
-    
+
     log_info "Phase 2 complete"
 }
 
@@ -71,28 +70,28 @@ phase2_user_setup() {
 # ============================================
 phase3_shell_setup() {
     log_info "Phase 3: Setting up Zsh and Oh-My-Zsh for jamie"
-    
+
     # Switch to jamie's home for installations
     export HOME=$USER_HOME
-    cd $USER_HOME
-    
+    cd "$USER_HOME" || true
+
     # Install Oh-My-Zsh
     if [ ! -d "$USER_HOME/.oh-my-zsh" ]; then
-        sudo -u jamie sh -c "$(curl -fsSL https://raw.githubusercontent.com/ohmyzsh/ohmyzsh/master/tools/install.sh)" "" --unattended
+        sudo -u jamie sh -c "$(curl -fsSL https://raw.githubusercontent.com/ohmyzsh/ohmyzsh/master/tools/install.sh)" "" --unattended || true
     fi
-    
+
     # Install zsh-autosuggestions
-    sudo -u jamie git clone https://github.com/zsh-users/zsh-autosuggestions ${USER_HOME}/.oh-my-zsh/custom/plugins/zsh-autosuggestions 2>/dev/null || true
-    
+    sudo -u jamie git clone https://github.com/zsh-users/zsh-autosuggestions "${USER_HOME}/.oh-my-zsh/custom/plugins/zsh-autosuggestions" 2>/dev/null || true
+
     # Install zsh-syntax-highlighting
-    sudo -u jamie git clone https://github.com/zsh-users/zsh-syntax-highlighting.git ${USER_HOME}/.oh-my-zsh/custom/plugins/zsh-syntax-highlighting 2>/dev/null || true
-    
+    sudo -u jamie git clone https://github.com/zsh-users/zsh-syntax-highlighting.git "${USER_HOME}/.oh-my-zsh/custom/plugins/zsh-syntax-highlighting" 2>/dev/null || true
+
     # Install Powerlevel10k theme
-    sudo -u jamie git clone --depth=1 https://github.com/romkatv/powerlevel10k.git ${USER_HOME}/.oh-my-zsh/custom/themes/powerlevel10k 2>/dev/null || true
-    
+    sudo -u jamie git clone --depth=1 https://github.com/romkatv/powerlevel10k.git "${USER_HOME}/.oh-my-zsh/custom/themes/powerlevel10k" 2>/dev/null || true
+
     # Set Zsh as default shell for jamie
-    chsh -s $(which zsh) jamie || true
-    
+    chsh -s "$(which zsh)" jamie || true
+
     log_info "Phase 3 complete"
 }
 
@@ -101,14 +100,14 @@ phase3_shell_setup() {
 # ============================================
 phase4_tools_setup() {
     log_info "Phase 4: Installing and configuring pentesting tools"
-    
+
     # Create tool directory structure as jamie
-    sudo -u jamie mkdir -p $USER_HOME/tools/{wordlists,scripts,exploits,repos}
-    
+    sudo -u jamie mkdir -p "$USER_HOME/tools"/{wordlists,scripts,exploits,repos} || true
+
     # Impacket - properly installed
     log_info "Installing Impacket"
-    pip3 install impacket --break-system-packages || pip3 install impacket
-    
+    pip3 install impacket --break-system-packages || pip3 install impacket || true
+
     # Other essential Python tools
     log_info "Installing Python pentesting tools"
     pip3 install --break-system-packages \
@@ -127,72 +126,77 @@ phase4_tools_setup() {
         git-dumper \
         penelope-shell \
         kerbrute || true
-    
+
     # Install Rust tools
     log_info "Installing Rust-based tools"
     cargo install rustscan feroxbuster || true
-    
+
     # Install Go tools
     log_info "Installing Go-based tools"
+    export GOPATH="$USER_HOME/go"
+    mkdir -p "$GOPATH/bin" || true
     go install github.com/nicocha30/ligolo-ng/cmd/proxy@latest || true
     go install github.com/nicocha30/ligolo-ng/cmd/agent@latest || true
     go install github.com/jpillora/chisel@latest || true
-    
-    # Copy go binaries to path
-    cp ~/go/bin/* /usr/local/bin/ 2>/dev/null || true
-    
+
+    # Copy go binaries to path if present
+    cp "$GOPATH/bin/"* /usr/local/bin/ 2>/dev/null || true
+
     # Clone useful repos
     log_info "Cloning useful repositories"
-    cd $USER_HOME/tools/repos
-    
+    mkdir -p "$USER_HOME/tools/repos" || true
+    cd "$USER_HOME/tools/repos" || true
+
     sudo -u jamie bash << 'REPOS_EOF'
 [ ! -d "PayloadsAllTheThings" ] && git clone https://github.com/swisskyrepo/PayloadsAllTheThings.git || true
 [ ! -d "PEASS-ng" ] && git clone https://github.com/carlospolop/PEASS-ng.git || true
 [ ! -d "Windows-Exploit-Suggester" ] && git clone https://github.com/AonCyberLabs/Windows-Exploit-Suggester.git || true
 [ ! -d "PowerSploit" ] && git clone https://github.com/PowerShellMafia/PowerSploit.git || true
 REPOS_EOF
-    
+
     # Create quick access directory for PEAS scripts
     log_info "Setting up PEAS scripts quick access"
-    sudo -u jamie mkdir -p $USER_HOME/peas
-    
+    sudo -u jamie mkdir -p "$USER_HOME/peas" || true
+
     # Create symlinks to PEAS scripts for easy access
     if [ -d "$USER_HOME/tools/repos/PEASS-ng" ]; then
-        sudo -u jamie ln -sf $USER_HOME/tools/repos/PEASS-ng/linPEAS/linpeas.sh $USER_HOME/peas/linpeas.sh 2>/dev/null || true
-        sudo -u jamie ln -sf $USER_HOME/tools/repos/PEASS-ng/winPEAS/winPEASx64.exe $USER_HOME/peas/winpeas64.exe 2>/dev/null || true
-        sudo -u jamie ln -sf $USER_HOME/tools/repos/PEASS-ng/winPEAS/winPEASx86.exe $USER_HOME/peas/winpeas86.exe 2>/dev/null || true
-        sudo -u jamie ln -sf $USER_HOME/tools/repos/PEASS-ng/winPEAS/winPEASany.exe $USER_HOME/peas/winpeas.exe 2>/dev/null || true
-        sudo -u jamie ln -sf $USER_HOME/tools/repos/PEASS-ng/winPEAS/winPEAS.bat $USER_HOME/peas/winpeas.bat 2>/dev/null || true
+        sudo -u jamie ln -sf "$USER_HOME/tools/repos/PEASS-ng/linPEAS/linpeas.sh" "$USER_HOME/peas/linpeas.sh" 2>/dev/null || true
+        sudo -u jamie ln -sf "$USER_HOME/tools/repos/PEASS-ng/winPEAS/winPEASx64.exe" "$USER_HOME/peas/winpeas64.exe" 2>/dev/null || true
+        sudo -u jamie ln -sf "$USER_HOME/tools/repos/PEASS-ng/winPEAS/winPEASx86.exe" "$USER_HOME/peas/winpeas86.exe" 2>/dev/null || true
+        sudo -u jamie ln -sf "$USER_HOME/tools/repos/PEASS-ng/winPEAS/winPEASany.exe" "$USER_HOME/peas/winpeas.exe" 2>/dev/null || true
+        sudo -u jamie ln -sf "$USER_HOME/tools/repos/PEASS-ng/winPEAS/winPEAS.bat" "$USER_HOME/peas/winpeas.bat" 2>/dev/null || true
     fi
-    
+
     # Download wordlists
     log_info "Setting up wordlists"
-    cd $USER_HOME/tools/wordlists
-    
+    mkdir -p "$USER_HOME/tools/wordlists" || true
+    cd "$USER_HOME/tools/wordlists" || true
+
     # SecLists if not already present
     if [ ! -d "SecLists" ]; then
-        sudo -u jamie git clone https://github.com/danielmiessler/SecLists.git
+        sudo -u jamie git clone https://github.com/danielmiessler/SecLists.git || true
     fi
-    
+
     # Unzip rockyou.txt if it exists and isn't already unzipped
     log_info "Unzipping rockyou.txt"
     if [ -f "/usr/share/wordlists/rockyou.txt.gz" ] && [ ! -f "/usr/share/wordlists/rockyou.txt" ]; then
-        gunzip /usr/share/wordlists/rockyou.txt.gz
+        gunzip /usr/share/wordlists/rockyou.txt.gz || true
         log_info "rockyou.txt unzipped"
     elif [ -f "/usr/share/wordlists/rockyou.txt" ]; then
         log_info "rockyou.txt already unzipped"
     else
         log_warn "rockyou.txt not found in /usr/share/wordlists/"
     fi
-    
+
     # Create symlink to rockyou in our wordlists folder for convenience
     if [ -f "/usr/share/wordlists/rockyou.txt" ]; then
-        sudo -u jamie ln -sf /usr/share/wordlists/rockyou.txt $USER_HOME/tools/wordlists/rockyou.txt 2>/dev/null || true
+        sudo -u jamie ln -sf /usr/share/wordlists/rockyou.txt "$USER_HOME/tools/wordlists/rockyou.txt" 2>/dev/null || true
     fi
-    
+
     # Create tool reference guide
     log_info "Creating tool reference guide"
-    cat > $USER_HOME/Desktop/CTF_TOOLS_REFERENCE.txt << 'TOOLS_EOF'
+    mkdir -p "$USER_HOME/Desktop" || true
+    cat > "$USER_HOME/Desktop/CTF_TOOLS_REFERENCE.txt" << 'TOOLS_EOF'
 ╔═══════════════════════════════════════════════════════════════════════════╗
 ║                        CTF TOOLS QUICK REFERENCE                          ║
 ╚═══════════════════════════════════════════════════════════════════════════╝
@@ -374,7 +378,7 @@ ssh
 
 ═══════════════════════════════════════════════════════════════════════════
 WEB APPLICATION TESTING
-═══════════════════════════════════════════════════════════════════════════
+═══════════════════════════════════════════════════════════════════
 
 burpsuite
   Web application security testing platform
@@ -499,9 +503,9 @@ Last updated: $(date)
 Script version: 1.0
 
 TOOLS_EOF
-    
-    chown jamie:jamie $USER_HOME/Desktop/CTF_TOOLS_REFERENCE.txt
-    
+
+    chown jamie:jamie "$USER_HOME/Desktop/CTF_TOOLS_REFERENCE.txt" || true
+
     log_info "Phase 4 complete"
 }
 
@@ -510,13 +514,13 @@ TOOLS_EOF
 # ============================================
 phase5_dotfiles_setup() {
     log_info "Phase 5: Configuring dotfiles and aliases"
-    
+
     # Backup existing configs
-    [ -f $USER_HOME/.zshrc ] && cp $USER_HOME/.zshrc $USER_HOME/.zshrc.backup
-    [ -f $USER_HOME/.tmux.conf ] && cp $USER_HOME/.tmux.conf $USER_HOME/.tmux.conf.backup
-    
+    [ -f "$USER_HOME/.zshrc" ] && cp "$USER_HOME/.zshrc" "$USER_HOME/.zshrc.backup"
+    [ -f "$USER_HOME/.tmux.conf" ] && cp "$USER_HOME/.tmux.conf" "$USER_HOME/.tmux.conf.backup"
+
     # Create custom .zshrc
-    cat > $USER_HOME/.zshrc << 'EOF'
+    cat > "$USER_HOME/.zshrc" << 'EOF'
 # Path to oh-my-zsh installation
 export ZSH="$HOME/.oh-my-zsh"
 
@@ -621,9 +625,9 @@ newengagement() {
         echo "Usage: newengagement <name>"
         return 1
     fi
-    
+
     mkdir -p ~/engagements/$1/{recon,exploit,loot,screenshots,notes}
-    cd ~/engagements/$1
+    cd ~/engagements/$1 || true
     echo "# Engagement: $1" > notes/README.md
     echo "Created: $(date)" >> notes/README.md
     echo "Engagement folder created: ~/engagements/$1"
@@ -640,7 +644,7 @@ quickscan() {
 
 # Extract any archive
 extract() {
-    if [ -f $1 ]; then
+    if [ -f "$1" ]; then
         case $1 in
             *.tar.bz2)   tar xjf $1     ;;
             *.tar.gz)    tar xzf $1     ;;
@@ -678,12 +682,14 @@ export PATH=$PATH:$GOPATH/bin
 # History settings
 HISTSIZE=10000
 SAVEHIST=10000
-setopt SHARE_HISTORY
+
+# NOTE: setopt SHARE_HISTORY is a zsh option; only set in zsh envs
+# Avoid running it in sh/bash context here; the file will be sourced by zsh later.
 
 EOF
 
     # Create tmux config
-    cat > $USER_HOME/.tmux.conf << 'EOF'
+    cat > "$USER_HOME/.tmux.conf" << 'EOF'
 # Tmux configuration for pentesting
 
 # Change prefix to Ctrl-a
@@ -724,11 +730,10 @@ set -g status-bg black
 set -g status-fg white
 set -g status-left '#[fg=green]#H '
 set -g status-right '#[fg=yellow]#(uptime | cut -d "," -f 3-)'
-
 EOF
 
     # Create vim config with useful defaults
-    cat > $USER_HOME/.vimrc << 'EOF'
+    cat > "$USER_HOME/.vimrc" << 'EOF'
 " Basic vim configuration for pentesting
 set number
 set relativenumber
@@ -754,12 +759,11 @@ nnoremap <C-J> <C-W><C-J>
 nnoremap <C-K> <C-W><C-K>
 nnoremap <C-L> <C-W><C-L>
 nnoremap <C-H> <C-W><C-H>
-
 EOF
 
     # Fix ownership of all dotfiles
-    chown -R jamie:jamie $USER_HOME
-    
+    chown -R jamie:jamie "$USER_HOME" || true
+
     log_info "Phase 5 complete"
 }
 
@@ -768,20 +772,71 @@ EOF
 # ============================================
 phase6_automation_setup() {
     log_info "Phase 6: Setting up automation scripts"
-    
-    sudo -u jamie mkdir -p $USER_HOME/scripts
-    
-    # Tool update script
-    cat > $USER_HOME/scripts/update-tools.sh << 'EOF'
-#!/bin/bash
-# Update all pentesting tools
 
-echo "[+] Backup created: $BACKUP_DIR/$1_$TIMESTAMP.tar.gz"
-EOF
-    
-    chmod +x $USER_HOME/scripts/backup-engagement.sh
-    chown -R jamie:jamie $USER_HOME/scripts
-    
+    sudo -u jamie mkdir -p "$USER_HOME/scripts" || true
+
+    # update-tools.sh
+    cat > "$USER_HOME/scripts/update-tools.sh" << 'UPDATE_EOF'
+#!/bin/bash
+set -e
+echo "[+] Updating system packages..."
+sudo apt update && sudo apt upgrade -y
+
+echo "[+] Updating Python packages (impacket, crackmapexec, bloodhound)..."
+pip3 install --upgrade impacket crackmapexec bloodhound || true
+
+echo "[+] Updating git repositories under ~/tools/repos"
+if [ -d "$HOME/tools/repos" ]; then
+  cd "$HOME/tools/repos" || exit 0
+  for dir in */; do
+    [ -d "$dir/.git" ] || continue
+    echo "[+] Updating ${dir%/}"
+    cd "$dir" || continue
+    git pull --ff-only || git pull || true
+    cd ..
+  done
+fi
+
+echo "[+] Updating SecLists (if present)"
+if [ -d "$HOME/tools/wordlists/SecLists" ]; then
+  cd "$HOME/tools/wordlists/SecLists" || true
+  git pull || true
+fi
+
+echo "[+] All tools updated!"
+UPDATE_EOF
+
+    chmod +x "$USER_HOME/scripts/update-tools.sh" || true
+    chown jamie:jamie "$USER_HOME/scripts/update-tools.sh" || true
+
+    # backup-engagement.sh
+    cat > "$USER_HOME/scripts/backup-engagement.sh" << 'BACKUP_EOF'
+#!/bin/bash
+set -e
+
+if [ -z "$1" ]; then
+    echo "Usage: backup-engagement.sh <engagement-name>"
+    exit 1
+fi
+
+BACKUP_DIR="$HOME/backups"
+mkdir -p "$BACKUP_DIR"
+
+TIMESTAMP=$(date +%Y%m%d_%H%M%S)
+ENG="$HOME/engagements/$1"
+
+if [ ! -d "$ENG" ]; then
+    echo "Engagement not found: $ENG"
+    exit 2
+fi
+
+tar -czf "$BACKUP_DIR/${1}_$TIMESTAMP.tar.gz" -C "$HOME/engagements" "$1"
+echo "[+] Backup created: $BACKUP_DIR/${1}_$TIMESTAMP.tar.gz"
+BACKUP_EOF
+
+    chmod +x "$USER_HOME/scripts/backup-engagement.sh" || true
+    chown jamie:jamie "$USER_HOME/scripts/backup-engagement.sh" || true
+
     log_info "Phase 6 complete"
 }
 
@@ -790,75 +845,74 @@ EOF
 # ============================================
 phase7_virtualbox_setup() {
     log_info "Phase 7: Checking for VirtualBox environment"
-    
+
     # Detect if running in VirtualBox
     if lspci | grep -i "virtualbox" > /dev/null 2>&1 || dmidecode -s system-product-name | grep -i "virtualbox" > /dev/null 2>&1; then
         log_info "VirtualBox detected! Installing Guest Additions for bidirectional clipboard"
-        
+
         # Install required dependencies
         apt install -y \
             build-essential \
             dkms \
             linux-headers-$(uname -r) \
             module-assistant \
-            perl
-        
+            perl || true
+
         # Prepare module-assistant
-        m-a prepare
-        
+        m-a prepare || true
+
         # Download VirtualBox Guest Additions ISO
-        VBOX_VERSION=$(VBoxControl --version 2>/dev/null | cut -d 'r' -f1)
+        VBOX_VERSION=$(VBoxControl --version 2>/dev/null | cut -d 'r' -f1 || true)
         if [ -z "$VBOX_VERSION" ]; then
             # Fallback to latest version if we can't detect
             VBOX_VERSION="7.0.14"
             log_warn "Could not detect VBox version, using default: $VBOX_VERSION"
         fi
-        
+
         log_info "Downloading VirtualBox Guest Additions $VBOX_VERSION"
-        wget "https://download.virtualbox.org/virtualbox/${VBOX_VERSION}/VBoxGuestAdditions_${VBOX_VERSION}.iso" \
-            -O /tmp/VBoxGuestAdditions.iso
-        
+        wget "https://download.virtualbox.org/virtualbox/${VBOX_VERSION}/VBoxGuestAdditions_${VBOX_VERSION}.iso" -O /tmp/VBoxGuestAdditions.iso || true
+
         # Mount and install
-        mkdir -p /mnt/vbox
-        mount -o loop /tmp/VBoxGuestAdditions.iso /mnt/vbox
-        
+        mkdir -p /mnt/vbox || true
+        mount -o loop /tmp/VBoxGuestAdditions.iso /mnt/vbox || true
+
         log_info "Installing VirtualBox Guest Additions"
-        cd /mnt/vbox
+        cd /mnt/vbox || true
         ./VBoxLinuxAdditions.run --nox11 || true  # May fail on some modules, that's OK
-        
+
         # Enable bidirectional clipboard
         log_info "Enabling bidirectional clipboard and drag-and-drop"
-        VBoxClient --clipboard &
-        VBoxClient --draganddrop &
-        
+        VBoxClient --clipboard & || true
+        VBoxClient --draganddrop & || true
+
         # Add to jamie's autostart
-        sudo -u jamie mkdir -p $USER_HOME/.config/autostart
-        
-        cat > $USER_HOME/.config/autostart/vboxclient-clipboard.desktop << 'EOF'
+        sudo -u jamie mkdir -p "$USER_HOME/.config/autostart" || true
+
+        cat > "$USER_HOME/.config/autostart/vboxclient-clipboard.desktop" << 'EOF'
 [Desktop Entry]
 Type=Application
 Name=VBoxClient Clipboard
 Exec=VBoxClient --clipboard
 EOF
 
-        cat > $USER_HOME/.config/autostart/vboxclient-draganddrop.desktop << 'EOF'
+        cat > "$USER_HOME/.config/autostart/vboxclient-draganddrop.desktop" << 'EOF'
 [Desktop Entry]
 Type=Application
 Name=VBoxClient Drag and Drop
 Exec=VBoxClient --draganddrop
 EOF
-        
-        chown -R jamie:jamie $USER_HOME/.config
-        
+
+        chown -R jamie:jamie "$USER_HOME/.config" || true
+
         # Cleanup
-        umount /mnt/vbox
-        rm /tmp/VBoxGuestAdditions.iso
-        
+        umount /mnt/vbox || true
+        rm -f /tmp/VBoxGuestAdditions.iso || true
+
         log_info "VirtualBox Guest Additions installed successfully"
     else
         log_info "Not running in VirtualBox, skipping Guest Additions"
     fi
-    
+
     log_info "Phase 7 complete"
 }
 
@@ -867,11 +921,8 @@ EOF
 # ============================================
 phase8_cleanup() {
     log_info "Phase 8: Cleaning up and finalizing"
-    
-    # Clean apt cache
-    apt autoremove -y
-    apt autoclean -y
-    
+    apt autoremove -y || true
+    apt autoclean -y || true
     log_info "Phase 8 complete"
 }
 
@@ -885,11 +936,11 @@ main() {
 ║   Because default configs are for cowards         ║
 ╚═══════════════════════════════════════════════════╝
 EOF
-    
+
     log_warn "This script will modify your system configuration"
     log_warn "Press Ctrl+C to cancel, or Enter to continue..."
-    read
-    
+    read -r
+
     phase1_system_setup
     phase2_user_setup
     phase3_shell_setup
@@ -898,7 +949,7 @@ EOF
     phase6_automation_setup
     phase7_virtualbox_setup
     phase8_cleanup
-    
+
     cat << EOF
 
 ╔═══════════════════════════════════════════════════╗
@@ -927,44 +978,4 @@ EOF
 }
 
 # Run it
-main Updating system packages..."
-sudo apt update && sudo apt upgrade -y
-
-echo "[+] Updating Python tools..."
-pip3 install --upgrade impacket crackmapexec bloodhound
-
-echo "[+] Updating repositories..."
-cd ~/tools/repos
-for dir in */; do
-    echo "[+] Updating $dir"
-    cd "$dir"
-    git pull
-    cd ..
-done
-
-echo "[+] Updating SecLists..."
-cd ~/tools/wordlists/SecLists
-git pull
-
-echo "[+] All tools updated!"
-EOF
-    
-    chmod +x $USER_HOME/scripts/update-tools.sh
-    
-    # Quick backup script
-    cat > $USER_HOME/scripts/backup-engagement.sh << 'EOF'
-#!/bin/bash
-# Backup engagement folder
-
-if [ -z "$1" ]; then
-    echo "Usage: backup-engagement.sh <engagement-name>"
-    exit 1
-fi
-
-BACKUP_DIR=~/backups
-mkdir -p $BACKUP_DIR
-
-TIMESTAMP=$(date +%Y%m%d_%H%M%S)
-tar -czf $BACKUP_DIR/$1_$TIMESTAMP.tar.gz ~/engagements/$1/
-
-echo "[+]
+main "$@"
