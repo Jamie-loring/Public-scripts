@@ -32,6 +32,15 @@ log_progress() {
     echo -e "${BLUE}[*]${NC} $1" >&3
 }
 
+show_progress() {
+    local phase=$1
+    local total=8
+    local percent=$((phase * 100 / total))
+    echo -e "${BLUE}╔══════════════════════════════════════════════════╗${NC}" >&3
+    echo -e "${BLUE}║${NC} Overall Progress: ${GREEN}${percent}%${NC} (Phase ${phase}/${total})                ${BLUE}║${NC}" >&3
+    echo -e "${BLUE}╚══════════════════════════════════════════════════╝${NC}" >&3
+}
+
 # Restore stdout/stderr at exit
 trap 'exec 1>&3 2>&4' EXIT
 
@@ -39,6 +48,7 @@ trap 'exec 1>&3 2>&4' EXIT
 # PHASE 1: System Updates & Base Packages
 # ============================================
 phase1_system_setup() {
+    show_progress 1
     log_progress "Phase 1/8: System Updates & Base Packages..."
     log_info "Phase 1: Updating system and installing base packages"
     
@@ -64,6 +74,7 @@ phase1_system_setup() {
 # PHASE 2: User Setup
 # ============================================
 phase2_user_setup() {
+    show_progress 2
     log_progress "Phase 2/8: User Account Setup..."
     log_info "Phase 2: Setting up user account"
     
@@ -95,6 +106,7 @@ phase2_user_setup() {
 # PHASE 3: Shell Environment (Zsh + Oh-My-Zsh)
 # ============================================
 phase3_shell_setup() {
+    show_progress 3
     log_progress "Phase 3/8: Shell Environment (Zsh + Oh-My-Zsh + p10k)..."
     log_info "Phase 3: Setting up Zsh and Oh-My-Zsh for jamie"
     
@@ -142,6 +154,7 @@ phase3_shell_setup() {
 # PHASE 4: Tool Installation & Optimization
 # ============================================
 phase4_tools_setup() {
+    show_progress 4
     log_progress "Phase 4/8: Tool Installation (repos, wordlists, scripts)..."
     log_info "Phase 4: Installing and configuring pentesting tools"
     
@@ -552,6 +565,7 @@ TOOLS_EOF
 # PHASE 5: Dotfiles & Aliases Configuration
 # ============================================
 phase5_dotfiles_setup() {
+    show_progress 5
     log_progress "Phase 5/8: Dotfiles & Aliases Configuration..."
     log_info "Phase 5: Configuring dotfiles and aliases"
     
@@ -811,6 +825,7 @@ EOF
 # PHASE 6: Automation & Maintenance Scripts
 # ============================================
 phase6_automation_setup() {
+    show_progress 6
     log_progress "Phase 6/8: Automation & Maintenance Scripts..."
     log_info "Phase 6: Setting up automation scripts"
     
@@ -875,6 +890,7 @@ EOF
 # PHASE 7: VM Guest Tools (VirtualBox or VMware)
 # ============================================
 phase7_vm_guest_tools() {
+    show_progress 7
     log_progress "Phase 7/8: VM Guest Tools (clipboard, display, auto-resize)..."
     log_info "Phase 7: Detecting virtualization environment"
     
@@ -998,6 +1014,7 @@ EOF
 # PHASE 8: Post-Install Cleanup
 # ============================================
 phase8_cleanup() {
+    show_progress 8
     log_progress "Phase 8/8: Post-Install Cleanup..."
     log_info "Phase 8: Cleaning up and finalizing"
     
