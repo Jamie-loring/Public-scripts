@@ -2,7 +2,7 @@
 
 # Parrot Security VM Enhancement Bootstrap Script
 # For fresh Parrot installs running as VM guest on Windows host
-# Version 2.2 10/27/2025
+# Version 2.3 10/27/2025
 
 set -e
 
@@ -180,11 +180,14 @@ phase4_tools_setup() {
         netcat-openbsd socat rlwrap xfreerdp upx \
         aircrack-ng bluez bluelog hcitool \
         wpscan \
-        steghide zsteg binwalk foremost exiftool p7zip-full || true
+        steghide zsteg binwalk foremost exiftool p7zip-full \
+        radare2 || true
     
     # Other essential Python tools with pip
-    log_progress "Installing essential Python pentesting tools..."
+    log_progress "Installing essential Python pentesting tools, including hash identification..."
     pip3 install --break-system-packages \
+        hashid \
+        RsaCtfTool featherduster \
         bloodhound \
         bloodyAD \
         mitm6 \
@@ -238,10 +241,10 @@ YSOSERIAL_EOF
     log_progress "Installing ROPgadget..."
     pip3 install --break-system-packages ROPgadget || true
     
-    # one_gadget for Pwn
-    log_progress "Installing one_gadget (Ruby utility)..."
+    # one_gadget & haiti (Ruby)
+    log_progress "Installing Ruby utility haiti (Hash ID) and one_gadget..."
     DEBIAN_FRONTEND=noninteractive apt install -y ruby ruby-dev || true
-    gem install one_gadget || log_warn "one_gadget installation via gem failed. You may need to run 'gem install one_gadget' as jamie later."
+    gem install one_gadget haiti-hash || log_warn "Ruby gem installation failed. You may need to run 'gem install one_gadget haiti-hash' as jamie later."
     
     # Modern Go-based tools (ProjectDiscovery suite + essentials)
     log_progress "Installing modern Go-based tools (ProjectDiscovery suite, ffuf, etc.)..."
@@ -391,6 +394,7 @@ alias serve80='sudo python3 -m http.server 80'
 alias myip='curl -s ifconfig.me && echo'
 alias ports='netstat -tulanp'
 alias listening='lsof -i -P -n | grep LISTEN'
+alias hash='hashid' # Primary hash identifier
 
 # Aliases - Tool shortcuts
 alias nxc='netexec'  # Short form for NetExec
@@ -682,15 +686,6 @@ netexec (nxc)
   Modern CrackMapExec replacement - Swiss Army knife for AD
   SMB: nxc smb <target> -u <user> -p <pass>
   WinRM: nxc winrm <target> -u <user> -p <pass>
-  Spray: nxc smb <targets> -u users.txt -p passwords.txt --continue-on-success
-  Shares: nxc smb <target> -u <user> -p <pass> --shares
-  SAM: nxc smb <target> -u <user> -p <pass> --sam
-  LSA: nxc smb <target> -u <user> -p <pass> --lsa
-
-kerbrute
-  Kerberos user enumeration and password spraying
-  User enum: kerbrute userenum -d <domain> --dc <dc-ip> users.txt
-  Password spray: kerbrute passwordspray -d <domain> --dc <dc-ip> users.txt <password>
 
 Impacket Suite (Aliases installed: 'secretsdump', 'psexec', 'getnpusers', etc.)
   All tools work WITHOUT the 'impacket-' OR the '.py' suffix!
@@ -699,64 +694,14 @@ Impacket Suite (Aliases installed: 'secretsdump', 'psexec', 'getnpusers', etc.)
     AS-REP roasting - find users without Kerberos pre-auth
     Usage: getnpusers <domain>/ -dc-ip <dc-ip> -usersfile users.txt -format hashcat
    
-  getuserspns
-    Kerberoasting - extract service ticket hashes
-    Usage: getuserspns <domain>/<user>:<pass> -dc-ip <dc-ip> -request
-   
   secretsdump
     Dump credentials from various sources
     Usage: secretsdump <domain>/<user>:<pass>@<target>
-    Local: secretsdump -sam SAM -system SYSTEM -security SECURITY LOCAL
-   
-  psexec / wmiexec / smbexec / dcomexec
-    Remote command execution
-    Usage: psexec <domain>/<user>:<pass>@<target>
-   
-  ticketer
-    Forge Kerberos tickets (Golden/Silver ticket attacks)
-    Usage: ticketer -nthash <hash> -domain-sid <sid> -domain <domain> <user>
 
 ENUMERATION
 bloodhound-python
   Active Directory relationship mapper
   Usage: bloodhound-python -u <user> -p <pass> -ns <dc-ip> -d <domain> -c all
-
-bloodyAD
-  Active Directory privilege escalation framework
-  Usage: bloodyAD -u <user> -p <pass> -d <domain> --host <dc-ip> get object <object>
-
-enum4linux-ng
-  Modern SMB/AD enumeration
-  Usage: enum4linux-ng <target> -A
-
-ADDITIONAL TOOLS
-certipy-ad
-  Active Directory Certificate Services abuse
-  Usage: certipy find -u <user>@<domain> -p <pass> -dc-ip <dc-ip>
-
-coercer
-  Force authentication from remote machines
-  Usage: coercer -u <user> -p <pass> -d <domain> -t <target> -l <listener-ip>
-
-pypykatz
-  Mimikatz in Python - parse LSASS dumps
-  Usage: pypykatz lsa minidump lsass.dmp
-
-lsassy
-  Remote LSASS credential dumper
-  Usage: lsassy -u <user> -p <pass> -d <domain> <target>
-
-responder
-  LLMNR/NBT-NS/mDNS poisoner
-  Usage: responder -I eth0 -wv
-
-mitm6
-  IPv6 man-in-the-middle for credential relay
-  Usage: mitm6 -d <domain>
-
-mitmproxy / mitmweb
-  Interactive HTTPS proxy for web app testing
-  Usage: mitmproxy (TUI) or mitmweb (Web UI on :8081)
 
 ═══════════════════════════════════════════════════════════════════════════
 PIVOTING & TUNNELING
@@ -765,27 +710,10 @@ PIVOTING & TUNNELING
 chisel
   Fast TCP/UDP tunnel over HTTP
   Server: chisel server -p 8000 --reverse
-  Client: chisel client <server>:8000 R:socks
-
-ligolo-ng
-  Advanced pivoting (may not be installed if build failed)
-  Proxy: proxy -selfcert
-  Agent: agent -connect <proxy-ip>:11601 -ignore-cert
-
-sshuttle
-  VPN over SSH - no hassle, works everywhere
-  Usage: sshuttle -r user@<target> 10.0.0.0/8
-
-ssh
-  SSH tunneling for port forwarding
-  Local forward: ssh -L 8080:localhost:80 user@<target>
-  SOCKS proxy: ssh -D 1080 user@<target>
-  Remote forward: ssh -R 8080:localhost:80 user@<target>
 
 proxychains4
   Route traffic through SOCKS/HTTP proxies
   Usage: proxychains4 nmap <target>
-  Config: /etc/proxychains4.conf
 
 xfreerdp
   RDP client for connecting to Windows systems
@@ -802,26 +730,14 @@ git-dumper
 truffleHog
   Find secrets and credentials in git history
   Usage: trufflehog git file:///path/to/repo
-  Remote: trufflehog git https://github.com/user/repo
 
 gitleaks
   Fast secret detector for git repositories
   Usage: gitleaks detect --source /path/to/repo
 
-wpscan
-  WordPress vulnerability scanner
-  Usage: wpscan --url http://target.com/ -e vp,vt,u --api-token <token>
-
-SQL INJECTION
 sqlmap
   Automated SQL injection exploitation
   Usage: sqlmap -u <url> --batch --dump
-
-DESERIALIZATION ATTACKS
-ysoserial
-  Java deserialization payload generator
-  Location: ~/tools/ysoserial.jar
-  Usage: ysoserial <payload> <command>
 
 REVERSE SHELLS
 penelope
@@ -831,39 +747,41 @@ penelope
 rlwrap / socat / nc-openbsd
   Manual shell handling and connection tools
   rlwrap nc -lvnp 4444   # Netcat listener with history
-  socat file:`tty`,raw,echo=0 tcp-listen:4445   # Powerful TTY listener
 
 ═══════════════════════════════════════════════════════════════════════════
-PASSWORD CRACKING
+PASSWORD CRACKING & HASH ID
 ═══════════════════════════════════════════════════════════════════════════
+
+hashid (Alias: hash)
+  The primary tool for identifying hash types.
+  Usage: hash "32ed87bd5fdc5e204e2620a05a069858"
+  Hashcat Mode: hashid -m <hash>
+  From file: hashid hashes.txt
+
+haiti
+  Secondary, modern Ruby-based hash identifier.
+  Usage: haiti "32ed87bd5fdc5e204e2620a05a069858"
 
 hashcat
   GPU-accelerated password cracking
-  Usage: hashcat -m 1000 hashes.txt rockyou.txt
+  NTLM: hashcat -m 1000 hashes.txt rockyou.txt
+  Mode lookup: Use hashid -m to find the correct mode number.
 
 john
   CPU password cracking (John the Ripper)
-  Usage: john --wordlist=rockyou.txt hashes.txt
-
-CeWL
-  Generate custom wordlists from websites
-  Usage: cewl -d 2 -m 5 -w wordlist.txt <url>
+  Basic: john --wordlist=rockyou.txt hashes.txt
 
 ═══════════════════════════════════════════════════════════════════════════
 BINARY EXPLOITATION
 ═══════════════════════════════════════════════════════════════════════════
 
-pwntools
-  Python exploit development library
-  Usage: from pwn import *
+pwndbg / gdb
+  Enhanced debugger. Use 'pwn' alias to start.
+  Usage: pwn ./binary
 
-pwndbg
-  Enhanced GDB with pwntools integration
-  Usage: gdb ./binary
-
-ROPgadget
-  ROP chain builder
-  Usage: ROPgadget --binary ./binary
+radare2
+  Full command-line reverse engineering framework.
+  Usage: radare2 -w -A ./binary
 
 one_gadget
   Find the "one gadget" RCE offsets in libc
@@ -875,7 +793,7 @@ CTF / FORENSICS / STEGANOGRAPHY
 
 binwalk
   Firmware/File analysis and extraction tool
-  Usage: binwalk -e <file>   # Extract embedded files
+  Usage: binwalk -e <file>
 
 exiftool
   Read and write meta information in files
@@ -885,31 +803,12 @@ steghide
   Hide/extract data in JPEG/BMP/WAV/AU files
   Usage: steghide extract -sf <file>
 
-zsteg
-  Detect hidden data in PNG/BMP files
-  Usage: zsteg -E <file>
-
 foremost
   File carving tool (recover files from raw data)
   Usage: foremost -i <disk-image>
 
-7z
-  Universal archiver for less common formats
-  Usage: 7z x archive.7z
-
-═══════════════════════════════════════════════════════════════════════════
-PRIVILEGE ESCALATION
-═══════════════════════════════════════════════════════════════════════════
-
-LINUX
-linpeas.sh
-  Automated Linux privilege escalation scanner
-  Usage: ./linpeas.sh | tee linpeas_output.txt
-
-WINDOWS
-winpeas.exe
-  Automated Windows privilege escalation scanner
-  Transfer to target and run: winpeas.exe
+RsaCtfTool / featherduster
+  Automated cryptography and cipher attack tools.
 
 ═══════════════════════════════════════════════════════════════════════════
 TIPS & TRICKS
@@ -923,7 +822,7 @@ TIPS & TRICKS
 
 ═══════════════════════════════════════════════════════════════════════════
 
-Tool Stack Version: 2.2 (Final - HTB/CTF Focused with Archive & Revert)
+Tool Stack Version: 2.3 (Final - HTB/CTF Focused with HashID/Haiti)
 Last updated: ${CREATION_DATE}
 
 TOOLS_EOF
@@ -1135,12 +1034,12 @@ phase6_automation_setup() {
 echo "[+] Updating system packages..."
 sudo apt update && sudo apt upgrade -y
 
-echo "[+] Updating Python tools..."
-pip3 install --upgrade --break-system-packages impacket bloodhound bloodyAD mitm6 certipy-ad truffleHog pwntools ROPgadget
+echo "[+] Updating Python tools (pip3)..."
+pip3 install --upgrade --break-system-packages impacket bloodhound bloodyAD mitm6 certipy-ad truffleHog pwntools ROPgadget hashid RsaCtfTool featherduster
 
-echo "[+] Updating system packages (sqlmap, hashcat, john, etc.)..."
+echo "[+] Updating system packages (apt)..."
 sudo apt update
-sudo apt upgrade -y sqlmap hashcat john theharvester cewl gdb wpscan steghide zsteg binwalk foremost exiftool p7zip-full
+sudo apt upgrade -y sqlmap hashcat john theharvester cewl gdb wpscan steghide zsteg binwalk foremost exiftool p7zip-full radare2
 
 echo "[+] Updating Go tools..."
 go install -v github.com/projectdiscovery/naabu/v2/cmd/naabu@latest
@@ -1156,8 +1055,8 @@ go install -v github.com/gitleaks/gitleaks/v8@latest
 go install -v github.com/michenriksen/gitrob@latest
 go install -v github.com/ropnop/kerbrute@latest
 
-echo "[+] Updating Ruby tools (one_gadget)..."
-gem update one_gadget || true
+echo "[+] Updating Ruby tools (one_gadget, haiti)..."
+gem update one_gadget haiti-hash || true
 
 echo "[+] Updating Nuclei templates..."
 nuclei -update-templates
@@ -1190,7 +1089,7 @@ EOF
     
     chmod +x $USER_HOME/scripts/update-tools.sh
     
-    # --- NEW REVERT & ARCHIVE SCRIPT ---
+    # --- REVERT & ARCHIVE SCRIPT ---
     log_progress "Creating CTF environment revert and archive script..."
     cat > $USER_HOME/scripts/revert-ctf-changes.sh << 'REVERT_EOF'
 #!/bin/bash
