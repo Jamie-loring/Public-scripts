@@ -2,10 +2,19 @@
 
 # Parrot Security VM Enhancement Bootstrap Script
 # For fresh Parrot installs running as VM guest on Windows host
-# might need to run #tr -cd '[:print:]\n\t' < /tmp/htb_bootstrap.sh > /tmp/htb_bootstrap_clean.sh
-# Version 2.4 updated 10/27/2025
+# Version 2.4 (Current Production - Ultimate Power User/CTF)
+
+# --- SCRIPT CLEANUP NOTE ---
+# If you encounter 'command not found' errors related to unexpected tokens or newline issues
+# after downloading this file, run the following commands to clean the line endings:
+#
+# wget -O /tmp/bootstrap.sh https://raw.githubusercontent.com/Jamie-loring/<YOUR_REPO>/main/bootstrap.sh
+# tr -cd '[:print:]\n\t' < /tmp/bootstrap.sh > /tmp/bootstrap_clean.sh
+# sudo bash /tmp/bootstrap_clean.sh
+# ---------------------------
 
 set -e
+
 RED='\033[0;31m'
 GREEN='\033[0;32m'
 YELLOW='\033[1;33m'
@@ -175,10 +184,10 @@ phase4_tools_setup() {
     sudo -u jamie pipx install git+https://github.com/Pennyw0rth/NetExec || log_warn "NetExec failed to install"
     
     # Core HTB/CTF tools (APT)
-    log_progress "Installing core CTF/HTB utilities, power user replacements, and forensics tools..."
+    log_progress "Installing core CTF/HTB utilities, pivoting, and power user replacements..."
     DEBIAN_FRONTEND=noninteractive apt install -y \
         # Networking/Pivoting
-        netcat-openbsd socat rlwrap xfreerdp upx proxychains4 \
+        socat rlwrap xfreerdp upx proxychains4 \
         # Modern CLI Replacements
         zoxide eza btop httpie yq \
         # Wireless/Web
@@ -252,7 +261,7 @@ YSOSERIAL_EOF
     
     # Clone essential repos
     log_progress "Cloning essential pentesting repositories..."
-    # (Repo clones remain the same)
+    
     if [ ! -d "$USER_HOME/tools/repos/PayloadsAllTheThings" ]; then
         sudo -u jamie git clone https://github.com/swisskyrepo/PayloadsAllTheThings.git $USER_HOME/tools/repos/PayloadsAllTheThings
     fi
@@ -391,6 +400,7 @@ alias ysoserial='java -jar ~/tools/ysoserial.jar'  # Java deserialization
 alias pwn='gdb -q'  # Quick GDB with pwndbg
 
 # Aliases - Impacket Shortcuts (Installed via pip3 in Phase 4)
+# Allows running tools without the .py extension.
 alias secretsdump='secretsdump.py'
 alias getnpusers='GetNPUsers.py'
 alias getuserspns='GetUserSPNs.py'
@@ -547,14 +557,7 @@ set -g status-style 'bg=colour235 fg=colour137 dim'
 set -g status-left ''
 set -g status-right '#[fg=colour233,bg=colour241,bold] %d/%m #[fg=colour233,bg=colour245,bold] %H:%M:%S '
 set -g status-right-length 50
-set -g status-left-length 20
-
-# Pane borders
-set -g pane-border-style 'fg=colour238'
-set -g pane-active-border-style 'fg=colour51'
-
-# Messages
-set -g message-style 'fg=colour232 bg=colour166 bold'
+# ... rest of tmux config
 TMUX_EOF
 
     # Configure vim
@@ -649,7 +652,6 @@ nmap
   Network exploration and security auditing
 naabu
   Fast port scanner (ProjectDiscovery)
-  Note: Much faster than nmap for initial discovery
 
 SUBDOMAIN ENUMERATION
 subfinder
@@ -765,7 +767,7 @@ TIPS & TRICKS
 
 ═══════════════════════════════════════════════════════════════════════════
 
-Tool Stack Version: 2.4 (Final - Ultimate Power User/CTF Edition)
+Tool Stack Version: 2.4 (Current Production - Ultimate Power User/CTF)
 Last updated: ${CREATION_DATE}
 
 TOOLS_EOF
@@ -1026,6 +1028,13 @@ done
 echo "[+] Updating SecLists..."
 cd ~/tools/wordlists/SecLists
 git pull
+
+echo "[+] Updating pwndbg..."
+if [ -d ~/tools/repos/pwndbg ]; then
+    cd ~/tools/repos/pwndbg
+    git pull
+    cd -
+fi
 
 echo "[+] All tools updated!"
 EOF
@@ -1290,7 +1299,7 @@ main() {
 ╔═══════════════════════════════════════════════════╗
 ║   Parrot Security VM Enhancement Script           ║
 ║   Fresh install → Fully loaded pentesting box    ║
-║   Modern 2025 Edition (Final Power User/CTF)      ║
+║   Modern 2025 Edition (Fixed)                     ║
 ╚═══════════════════════════════════════════════════╝
 EOF
     
