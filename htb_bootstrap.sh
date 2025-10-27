@@ -2,7 +2,7 @@
 
 # Parrot Security VM Enhancement Bootstrap Script
 # For fresh Parrot installs running as VM guest on Windows host
-# Version 2.2 (Final - HTB/CTF Focused with Archive & Revert)
+# Version 2.2 10/27/2025
 
 set -e
 
