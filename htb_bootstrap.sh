@@ -2,7 +2,7 @@
 
 # Parrot Security VM Enhancement Bootstrap Script
 # For fresh Parrot installs running as VM guest on Windows host
-# Version 2.3 10/27/2025
+# Version 2.4 updated 10/27/2025
 
 set -e
 
@@ -175,40 +175,28 @@ phase4_tools_setup() {
     sudo -u jamie pipx install git+https://github.com/Pennyw0rth/NetExec || log_warn "NetExec failed to install"
     
     # Core HTB/CTF tools (APT)
-    log_progress "Installing core CTF/HTB utilities (nc, socat, forensics, stego)..."
+    log_progress "Installing core CTF/HTB utilities, power user replacements, and forensics tools..."
     DEBIAN_FRONTEND=noninteractive apt install -y \
-        netcat-openbsd socat rlwrap xfreerdp upx \
-        aircrack-ng bluez bluelog hcitool \
-        wpscan \
-        steghide zsteg binwalk foremost exiftool p7zip-full \
-        radare2 || true
+        # Networking/Pivoting
+        netcat-openbsd socat rlwrap xfreerdp upx proxychains4 \
+        # Modern CLI Replacements
+        zoxide eza btop httpie yq \
+        # Wireless/Web
+        aircrack-ng bluez bluelog hcitool wpscan \
+        # Forensics/Stego/RE
+        steghide zsteg binwalk foremost exiftool p7zip-full radare2 \
+        # Cracking/Exploitation
+        sqlmap hashcat john theharvester cewl gdb || true
     
     # Other essential Python tools with pip
     log_progress "Installing essential Python pentesting tools, including hash identification..."
     pip3 install --break-system-packages \
         hashid \
         RsaCtfTool featherduster \
-        bloodhound \
-        bloodyAD \
-        mitm6 \
-        responder \
-        certipy-ad \
-        coercer \
-        pypykatz \
-        lsassy \
-        enum4linux-ng \
-        dnsrecon \
-        git-dumper \
-        penelope-shell \
-        roadrecon \
-        manspider \
-        mitmproxy \
-        pwntools || true
-    
-    # High-priority gap tools (APT)
-    log_progress "Installing high-priority APT tools..."
-    DEBIAN_FRONTEND=noninteractive apt install -y \
-        sqlmap hashcat john theharvester cewl proxychains4 gdb || true
+        bloodhound bloodyAD mitm6 responder certipy-ad coercer \
+        pypykatz lsassy enum4linux-ng dnsrecon git-dumper \
+        penelope-shell roadrecon manspider mitmproxy pwntools \
+        ROPgadget truffleHog || true
     
     # Java deserialization (ysoserial)
     log_progress "Installing ysoserial (Java deserialization)..."
@@ -237,10 +225,6 @@ YSOSERIAL_EOF
         fi
     fi
     
-    # ROPgadget for binary exploitation
-    log_progress "Installing ROPgadget..."
-    pip3 install --break-system-packages ROPgadget || true
-    
     # one_gadget & haiti (Ruby)
     log_progress "Installing Ruby utility haiti (Hash ID) and one_gadget..."
     DEBIAN_FRONTEND=noninteractive apt install -y ruby ruby-dev || true
@@ -259,14 +243,8 @@ YSOSERIAL_EOF
     go install -v github.com/OJ/gobuster/v3@latest || true
     go install -v github.com/ropnop/kerbrute@latest || true
     go install -v github.com/jpillora/chisel@latest || true
-    
-    # Ligolo/Git tools
-    log_progress "Installing advanced tools (ligolo-ng, gitleaks, gitrob)..."
-    go install -v github.com/nicocha30/ligolo-ng/cmd/proxy@latest 2>/dev/null || log_warn "ligolo-ng proxy failed (continuing...)"
-    go install -v github.com/nicocha30/ligolo-ng/cmd/agent@latest 2>/dev/null || log_warn "ligolo-ng agent failed (continuing...)"
     go install -v github.com/gitleaks/gitleaks/v8@latest || true
     go install -v github.com/michenriksen/gitrob@latest || true
-    pip3 install --break-system-packages truffleHog || true
     
     # Fallback pivoting tool
     log_progress "Installing sshuttle (VPN over SSH)..."
@@ -274,7 +252,7 @@ YSOSERIAL_EOF
     
     # Clone essential repos
     log_progress "Cloning essential pentesting repositories..."
-    
+    # (Repo clones remain the same)
     if [ ! -d "$USER_HOME/tools/repos/PayloadsAllTheThings" ]; then
         sudo -u jamie git clone https://github.com/swisskyrepo/PayloadsAllTheThings.git $USER_HOME/tools/repos/PayloadsAllTheThings
     fi
@@ -368,15 +346,19 @@ source $ZSH/oh-my-zsh.sh
 # Custom PATH - Includes Go and Ruby gem binaries
 export PATH=$PATH:$HOME/go/bin:$HOME/.local/bin:$HOME/.gem/ruby/$(ls $HOME/.gem/ruby/)/bin
 
+# Initialize zoxide (smart directory navigation)
+eval "$(zoxide init zsh)"
+
 # Environment variables
 export EDITOR=vim
 export VISUAL=vim
 export GOPATH=$HOME/go
 
 # Aliases - System
-alias ll='ls -lah'
-alias la='ls -A'
-alias l='ls -CF'
+alias ls='eza -h --icons' # Modern ls
+alias ll='eza -lag --icons' # Modern ls -lah
+alias la='eza -a --icons'
+alias l='eza -F --icons'
 alias ..='cd ..'
 alias ...='cd ../..'
 alias grep='grep --color=auto'
@@ -384,6 +366,7 @@ alias c='clear'
 alias h='history'
 alias please='sudo'
 alias rl='rlwrap nc'  # netcat with history/line-editing
+alias top='btop' # Modern resource monitor
 
 # Aliases - Pentesting
 alias nmap-quick='nmap -sV -sC -O'
@@ -395,6 +378,7 @@ alias myip='curl -s ifconfig.me && echo'
 alias ports='netstat -tulanp'
 alias listening='lsof -i -P -n | grep LISTEN'
 alias hash='hashid' # Primary hash identifier
+alias http='httpie' # Modern cURL replacement
 
 # Aliases - Tool shortcuts
 alias nxc='netexec'  # Short form for NetExec
@@ -407,7 +391,6 @@ alias ysoserial='java -jar ~/tools/ysoserial.jar'  # Java deserialization
 alias pwn='gdb -q'  # Quick GDB with pwndbg
 
 # Aliases - Impacket Shortcuts (Installed via pip3 in Phase 4)
-# Allows running tools without the .py extension.
 alias secretsdump='secretsdump.py'
 alias getnpusers='GetNPUsers.py'
 alias getuserspns='GetUserSPNs.py'
@@ -425,6 +408,7 @@ alias repos='cd ~/tools/repos'
 alias wordlists='cd ~/tools/wordlists'
 alias scripts='cd ~/tools/scripts'
 alias engagements='cd ~/engagements'
+alias z='zoxide' # Shorthand for zoxide (smart cd)
 
 # Functions
 newengagement() {
@@ -628,54 +612,60 @@ VIM_EOF
                           Modern 2025 Edition
 ═══════════════════════════════════════════════════════════════════════════
 
+POWER USER COMMAND LINE REPLACEMENTS
+═══════════════════════════════════════════════════════════════════════════
+
+eza (Alias: ls, ll)
+  Modern, Rust-based replacement for 'ls'.
+  Features: Git status integration, colorized output, tree view.
+  Usage: ll (for detailed view), eza -T (for tree view)
+
+zoxide (Alias: z)
+  Smarter 'cd' command. Learns your habits to jump quickly to frequently accessed folders.
+  Usage: z <keyword> (e.g., 'z engage' to jump to engagements directory)
+
+btop (Alias: top)
+  Modern, graphical, and feature-rich replacement for 'htop'/'top'.
+  Usage: btop (monitor CPU, memory, processes, network in a TUI)
+
+bat
+  'cat' clone with syntax highlighting, Git integration, and auto-pagination (via less).
+  Usage: bat <file> (automatically highlights code/config files)
+
+httpie (Alias: http)
+  User-friendly cURL replacement for web/API testing.
+  Usage: http POST http://target/api/user name=jamie
+
+yq
+  Command-line processor for YAML, TOML, and XML. Acts like 'jq' for non-JSON config files.
+  Usage: yq '.config.user' config.yml
+
+═══════════════════════════════════════════════════════════════════════════
 RECONNAISSANCE & ENUMERATION
 ═══════════════════════════════════════════════════════════════════════════
 
 PORT SCANNING
 nmap
   Network exploration and security auditing
-  Quick: nmap -sV -sC <target>
-  Full: nmap -sV -sC -O -p- <target>
-  UDP: nmap -sU -sV <target>
-
 naabu
   Fast port scanner (ProjectDiscovery)
-  Usage: naabu -host <target> -p - -silent | nmap -sV -iL -
   Note: Much faster than nmap for initial discovery
 
 SUBDOMAIN ENUMERATION
 subfinder
   Fast passive subdomain discovery (ProjectDiscovery)
-  Usage: subfinder -d <domain> -silent | tee subdomains.txt
-
 dnsx
   DNS toolkit with bruteforcing (ProjectDiscovery)
-  Usage: dnsx -l subdomains.txt -a -resp -silent
 
 WEB ENUMERATION
 httpx
   HTTP toolkit with tech detection (ProjectDiscovery)
-  Usage: httpx -l targets.txt -tech-detect -status-code -title
-
 katana
   Next-generation web crawler (ProjectDiscovery)
-  Usage: katana -u <url> -d 3 -jc -kf all
-
 nuclei
   Vulnerability scanner with templates (ProjectDiscovery)
-  Usage: nuclei -l targets.txt -severity critical,high
-  Update templates: nuclei -update-templates
-
 ffuf
   Fast web fuzzer
-  Usage: ffuf -u http://target/FUZZ -w wordlist.txt
-  Dir: ffuf -u http://target/FUZZ -w /opt/SecLists/Discovery/Web-Content/raft-large-directories.txt
-
-gobuster
-  Directory/DNS/vhost brute-forcer
-  Dir: gobuster dir -u <url> -w <wordlist>
-  DNS: gobuster dns -d <domain> -w <wordlist>
-  Vhost: gobuster vhost -u <url> -w <wordlist>
 
 ═══════════════════════════════════════════════════════════════════════════
 WINDOWS / ACTIVE DIRECTORY
@@ -684,24 +674,19 @@ WINDOWS / ACTIVE DIRECTORY
 CREDENTIAL ATTACKS
 netexec (nxc)
   Modern CrackMapExec replacement - Swiss Army knife for AD
-  SMB: nxc smb <target> -u <user> -p <pass>
-  WinRM: nxc winrm <target> -u <user> -p <pass>
 
 Impacket Suite (Aliases installed: 'secretsdump', 'psexec', 'getnpusers', etc.)
   All tools work WITHOUT the 'impacket-' OR the '.py' suffix!
    
   getnpusers
-    AS-REP roasting - find users without Kerberos pre-auth
-    Usage: getnpusers <domain>/ -dc-ip <dc-ip> -usersfile users.txt -format hashcat
+    AS-REP roasting
    
   secretsdump
     Dump credentials from various sources
-    Usage: secretsdump <domain>/<user>:<pass>@<target>
 
 ENUMERATION
 bloodhound-python
   Active Directory relationship mapper
-  Usage: bloodhound-python -u <user> -p <pass> -ns <dc-ip> -d <domain> -c all
 
 ═══════════════════════════════════════════════════════════════════════════
 PIVOTING & TUNNELING
@@ -709,54 +694,20 @@ PIVOTING & TUNNELING
 
 chisel
   Fast TCP/UDP tunnel over HTTP
-  Server: chisel server -p 8000 --reverse
 
 proxychains4
   Route traffic through SOCKS/HTTP proxies
-  Usage: proxychains4 nmap <target>
 
 xfreerdp
   RDP client for connecting to Windows systems
-  Usage: xfreerdp /v:<target-ip> /u:<user> /p:<pass>
-
-═══════════════════════════════════════════════════════════════════════════
-WEB APPLICATION TESTING
-═══════════════════════════════════════════════════════════════════════════
-
-git-dumper
-  Dump exposed .git repositories
-  Usage: git-dumper http://target/.git/ output_dir/
-
-truffleHog
-  Find secrets and credentials in git history
-  Usage: trufflehog git file:///path/to/repo
-
-gitleaks
-  Fast secret detector for git repositories
-  Usage: gitleaks detect --source /path/to/repo
-
-sqlmap
-  Automated SQL injection exploitation
-  Usage: sqlmap -u <url> --batch --dump
-
-REVERSE SHELLS
-penelope
-  Feature-rich reverse shell handler
-  Usage: penelope 4444
-
-rlwrap / socat / nc-openbsd
-  Manual shell handling and connection tools
-  rlwrap nc -lvnp 4444   # Netcat listener with history
 
 ═══════════════════════════════════════════════════════════════════════════
 PASSWORD CRACKING & HASH ID
 ═══════════════════════════════════════════════════════════════════════════
 
 hashid (Alias: hash)
-  The primary tool for identifying hash types.
+  The primary Python tool for identifying hash types (with Hashcat/JtR modes).
   Usage: hash "32ed87bd5fdc5e204e2620a05a069858"
-  Hashcat Mode: hashid -m <hash>
-  From file: hashid hashes.txt
 
 haiti
   Secondary, modern Ruby-based hash identifier.
@@ -764,12 +715,10 @@ haiti
 
 hashcat
   GPU-accelerated password cracking
-  NTLM: hashcat -m 1000 hashes.txt rockyou.txt
   Mode lookup: Use hashid -m to find the correct mode number.
 
 john
   CPU password cracking (John the Ripper)
-  Basic: john --wordlist=rockyou.txt hashes.txt
 
 ═══════════════════════════════════════════════════════════════════════════
 BINARY EXPLOITATION
@@ -777,7 +726,6 @@ BINARY EXPLOITATION
 
 pwndbg / gdb
   Enhanced debugger. Use 'pwn' alias to start.
-  Usage: pwn ./binary
 
 radare2
   Full command-line reverse engineering framework.
@@ -785,7 +733,6 @@ radare2
 
 one_gadget
   Find the "one gadget" RCE offsets in libc
-  Usage: one_gadget /lib/x86_64-linux-gnu/libc.so.6
 
 ═══════════════════════════════════════════════════════════════════════════
 CTF / FORENSICS / STEGANOGRAPHY
@@ -793,19 +740,15 @@ CTF / FORENSICS / STEGANOGRAPHY
 
 binwalk
   Firmware/File analysis and extraction tool
-  Usage: binwalk -e <file>
 
 exiftool
   Read and write meta information in files
-  Usage: exiftool <file>
 
 steghide
   Hide/extract data in JPEG/BMP/WAV/AU files
-  Usage: steghide extract -sf <file>
 
 foremost
   File carving tool (recover files from raw data)
-  Usage: foremost -i <disk-image>
 
 RsaCtfTool / featherduster
   Automated cryptography and cipher attack tools.
@@ -814,15 +757,15 @@ RsaCtfTool / featherduster
 TIPS & TRICKS
 ═══════════════════════════════════════════════════════════════════════════
 
-• All Impacket tools now work WITHOUT the '.py' suffix! (e.g., 'secretsdump')
-• Use 'nxc' as shorthand for 'netexec'
-• Use **'extract'** function for any compressed file (including 7z)
-• Use **'rl'** for a reliable netcat listener with history (rlwrap nc)
-• **REVERT_CTF_CHANGES.sh** on the Desktop archives engagements and resets the environment.
+• Use **zoxide (z)** to jump directories: `z <keyword>`
+• Use **eza (ls)** for colored/git-integrated file listings.
+• Use **btop (top)** to monitor system performance.
+• Use **httpie (http)** instead of curl for quick API testing.
+• **REVERT_CTF_CHANGES.sh** on the Desktop archives engagement data and resets host files.
 
 ═══════════════════════════════════════════════════════════════════════════
 
-Tool Stack Version: 2.3 (Final - HTB/CTF Focused with HashID/Haiti)
+Tool Stack Version: 2.4 (Final - Ultimate Power User/CTF Edition)
 Last updated: ${CREATION_DATE}
 
 TOOLS_EOF
@@ -1035,13 +978,20 @@ echo "[+] Updating system packages..."
 sudo apt update && sudo apt upgrade -y
 
 echo "[+] Updating Python tools (pip3)..."
-pip3 install --upgrade --break-system-packages impacket bloodhound bloodyAD mitm6 certipy-ad truffleHog pwntools ROPgadget hashid RsaCtfTool featherduster
+# All pip tools are included here
+pip3 install --upgrade --break-system-packages \
+    impacket bloodhound bloodyAD mitm6 certipy-ad truffleHog pwntools ROPgadget \
+    hashid RsaCtfTool featherduster || true
 
 echo "[+] Updating system packages (apt)..."
+# All APT tools are included here
 sudo apt update
-sudo apt upgrade -y sqlmap hashcat john theharvester cewl gdb wpscan steghide zsteg binwalk foremost exiftool p7zip-full radare2
+sudo apt upgrade -y \
+    sqlmap hashcat john theharvester cewl gdb wpscan steghide zsteg binwalk foremost exiftool p7zip-full radare2 \
+    zoxide eza btop httpie yq || true
 
 echo "[+] Updating Go tools..."
+# All Go tools are included here
 go install -v github.com/projectdiscovery/naabu/v2/cmd/naabu@latest
 go install -v github.com/projectdiscovery/httpx/cmd/httpx@latest
 go install -v github.com/projectdiscovery/nuclei/v3/cmd/nuclei@latest
@@ -1053,7 +1003,7 @@ go install -v github.com/OJ/gobuster/v3@latest
 go install -v github.com/jpillora/chisel@latest
 go install -v github.com/gitleaks/gitleaks/v8@latest
 go install -v github.com/michenriksen/gitrob@latest
-go install -v github.com/ropnop/kerbrute@latest
+go install -v github.com/ropnop/kerbrute@latest || true
 
 echo "[+] Updating Ruby tools (one_gadget, haiti)..."
 gem update one_gadget haiti-hash || true
@@ -1076,13 +1026,6 @@ done
 echo "[+] Updating SecLists..."
 cd ~/tools/wordlists/SecLists
 git pull
-
-echo "[+] Updating pwndbg..."
-if [ -d ~/tools/repos/pwndbg ]; then
-    cd ~/tools/repos/pwndbg
-    git pull
-    cd -
-fi
 
 echo "[+] All tools updated!"
 EOF
@@ -1347,7 +1290,7 @@ main() {
 ╔═══════════════════════════════════════════════════╗
 ║   Parrot Security VM Enhancement Script           ║
 ║   Fresh install → Fully loaded pentesting box    ║
-║   Modern 2025 Edition (Fixed)                     ║
+║   Modern 2025 Edition (Final Power User/CTF)      ║
 ╚═══════════════════════════════════════════════════╝
 EOF
     
@@ -1382,11 +1325,10 @@ Next steps:
 Useful commands:
   - newengagement <name>     : Create new engagement folder
   - quickscan <target>       : Quick nmap scan
-  - serve                   : Start HTTP server on port 8000
-  - update-tools.sh         : Update all tools
-  - reconchain <domain>     : Quick recon with ProjectDiscovery tools
-  - gitanalyze <url>        : Complete Git repository analysis
-  - extract <file>          : Universal archive extraction (Fixed!)
+  - z <keyword>             : Jump to any directory instantly (zoxide)
+  - ll                      : Modern file listing (eza)
+  - top                     : System monitor (btop)
+  - http                    : Modern cURL replacement (httpie)
   - **REVERT_CTF_CHANGES.sh**: Archives engagement data and resets host files.
 
 Tool reference guide on Desktop: CTF_TOOLS_REFERENCE.txt
