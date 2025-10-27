@@ -5,7 +5,6 @@
 # Version 2.4 updated 10/27/2025
 
 set -e
-
 RED='\033[0;31m'
 GREEN='\033[0;32m'
 YELLOW='\033[1;33m'
