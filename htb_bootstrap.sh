@@ -212,274 +212,470 @@ phase4_tools_setup() {
     log_progress "Installing dnsx (DNS toolkit)..."
     go install -v github.com/projectdiscovery/dnsx/cmd/dnsx@latest || true
     
+    # Other essential Go tools
     log_progress "Installing ffuf (fast web fuzzer)..."
-    go install github.com/ffuf/ffuf/v2@latest || true
+    go install -v github.com/ffuf/ffuf@latest || true
     
-    log_progress "Installing chisel (tunneling)..."
-    go install github.com/jpillora/chisel@latest || true
+    log_progress "Installing gobuster (directory/DNS brute-forcer)..."
+    go install -v github.com/OJ/gobuster/v3@latest || true
     
-    log_progress "Installing ligolo-ng proxy (advanced tunneling)..."
-    go install github.com/nicocha30/ligolo-ng/cmd/proxy@latest || log_warn "ligolo-ng proxy failed - Go version issue"
-    
-    log_progress "Installing ligolo-ng agent..."
-    go install github.com/nicocha30/ligolo-ng/cmd/agent@latest || log_warn "ligolo-ng agent failed - Go version issue"
-    
-    log_progress "Installing gobuster (directory brute-forcing)..."
-    go install github.com/OJ/gobuster/v3@latest || true
-    
+    # Kerbrute for Kerberos user enumeration (ADDED)
     log_progress "Installing kerbrute (Kerberos user enumeration)..."
-    go install github.com/ropnop/kerbrute@latest || true
+    go install -v github.com/ropnop/kerbrute@latest || true
+    
+    # Add Go binaries to PATH
+    echo 'export PATH=$PATH:/root/go/bin:$HOME/go/bin' >> /root/.bashrc
+    echo 'export PATH=$PATH:$HOME/go/bin' >> $USER_HOME/.zshrc
+    
+    # Pivoting tools
+    log_progress "Installing chisel (fast TCP/UDP tunnel)..."
+    go install -v github.com/jpillora/chisel@latest || true
+    
+    # Try to install ligolo-ng (may fail, that's okay)
+    log_progress "Attempting to install ligolo-ng (advanced pivoting)..."
+    go install -v github.com/nicocha30/ligolo-ng/cmd/proxy@latest 2>/dev/null || log_warn "ligolo-ng failed (this is normal, continuing...)"
+    go install -v github.com/nicocha30/ligolo-ng/cmd/agent@latest 2>/dev/null || log_warn "ligolo-ng agent failed (this is normal, continuing...)"
     
     # Fallback pivoting tool
     log_progress "Installing sshuttle (VPN over SSH)..."
     DEBIAN_FRONTEND=noninteractive apt install -y sshuttle || true
     
-    # Install proxychains-ng (modern proxychains alternative)
+    # Install proxychains-ng (modern proxychains alternative) - ADDED
     log_progress "Installing proxychains-ng..."
     DEBIAN_FRONTEND=noninteractive apt install -y proxychains4 || true
     
-    # Copy go binaries to path
-    cp ~/go/bin/* /usr/local/bin/ 2>/dev/null || true
+    # Clone essential repos
+    log_progress "Cloning essential pentesting repositories..."
     
-    # Copy pipx binaries to path accessible location
-    ln -sf /home/jamie/.local/bin/netexec /usr/local/bin/netexec 2>/dev/null || true
-    ln -sf /home/jamie/.local/bin/nxc /usr/local/bin/nxc 2>/dev/null || true
-    
-    # Clone useful repos
-    log_info "Cloning useful repositories"
-    cd $USER_HOME/tools/repos
-    
-    sudo -u jamie bash << 'REPOS_EOF'
-if [ ! -d "PayloadsAllTheThings" ]; then
-    echo "Cloning PayloadsAllTheThings..."
-    git clone --progress https://github.com/swisskyrepo/PayloadsAllTheThings.git 2>&1
-fi
-
-if [ ! -d "PEASS-ng" ]; then
-    echo "Cloning PEASS-ng..."
-    git clone --progress https://github.com/carlospolop/PEASS-ng.git 2>&1
-fi
-
-if [ ! -d "Windows-Exploit-Suggester" ]; then
-    echo "Cloning Windows-Exploit-Suggester..."
-    git clone --progress https://github.com/AonCyberLabs/Windows-Exploit-Suggester.git 2>&1
-fi
-
-if [ ! -d "PowerSploit" ]; then
-    echo "Cloning PowerSploit..."
-    git clone --progress https://github.com/PowerShellMafia/PowerSploit.git 2>&1
-fi
-
-if [ ! -d "HackTricks" ]; then
-    echo "Cloning HackTricks..."
-    git clone --progress https://github.com/carlospolop/hacktricks.git HackTricks 2>&1
-fi
-
-if [ ! -d "AutoRecon" ]; then
-    echo "Cloning AutoRecon..."
-    git clone --progress https://github.com/Tib3rius/AutoRecon.git 2>&1
-fi
-
-if [ ! -d "Impacket-Examples" ]; then
-    echo "Cloning Impacket (for latest examples)..."
-    git clone --progress https://github.com/fortra/impacket.git Impacket-Examples 2>&1
-fi
-
-if [ ! -d "GTFOBins" ]; then
-    echo "Cloning GTFOBins..."
-    git clone --progress https://github.com/GTFOBins/GTFOBins.github.io.git GTFOBins 2>&1
-fi
-
-if [ ! -d "LOLBAS" ]; then
-    echo "Cloning LOLBAS (Living Off The Land Binaries and Scripts)..."
-    git clone --progress https://github.com/LOLBAS-Project/LOLBAS.git 2>&1
-fi
-
-if [ ! -d "nuclei-templates" ]; then
-    echo "Cloning Nuclei Templates..."
-    git clone --progress https://github.com/projectdiscovery/nuclei-templates.git 2>&1
-fi
-REPOS_EOF
-    
-    # Create quick access directory for PEAS scripts
-    log_info "Setting up PEAS scripts quick access"
-    sudo -u jamie mkdir -p $USER_HOME/peas
-    
-    # Create symlinks to PEAS scripts for easy access
-    if [ -d "$USER_HOME/tools/repos/PEASS-ng" ]; then
-        sudo -u jamie ln -sf $USER_HOME/tools/repos/PEASS-ng/linPEAS/linpeas.sh $USER_HOME/peas/linpeas.sh 2>/dev/null || true
-        sudo -u jamie ln -sf $USER_HOME/tools/repos/PEASS-ng/winPEAS/winPEASx64.exe $USER_HOME/peas/winpeas64.exe 2>/dev/null || true
-        sudo -u jamie ln -sf $USER_HOME/tools/repos/PEASS-ng/winPEAS/winPEASx86.exe $USER_HOME/peas/winpeas86.exe 2>/dev/null || true
-        sudo -u jamie ln -sf $USER_HOME/tools/repos/PEASS-ng/winPEAS/winPEASany.exe $USER_HOME/peas/winpeas.exe 2>/dev/null || true
-        sudo -u jamie ln -sf $USER_HOME/tools/repos/PEASS-ng/winPEAS/winPEAS.bat $USER_HOME/peas/winpeas.bat 2>/dev/null || true
+    # PayloadsAllTheThings
+    if [ ! -d "$USER_HOME/tools/repos/PayloadsAllTheThings" ]; then
+        sudo -u jamie git clone https://github.com/swisskyrepo/PayloadsAllTheThings.git $USER_HOME/tools/repos/PayloadsAllTheThings
     fi
     
-    # Download wordlists
-    log_info "Setting up wordlists"
-    cd $USER_HOME/tools/wordlists
-    
-    # SecLists if not already present
-    if [ ! -d "SecLists" ]; then
-        log_progress "Cloning SecLists (large download, ~1.5GB - watch network activity)..."
-        sudo -u jamie git clone --progress https://github.com/danielmiessler/SecLists.git
+    # PEASS-ng (Linux/Windows privilege escalation)
+    if [ ! -d "$USER_HOME/tools/repos/PEASS-ng" ]; then
+        sudo -u jamie git clone https://github.com/peass-ng/PEASS-ng.git $USER_HOME/tools/repos/PEASS-ng
     fi
     
-    # Unzip rockyou.txt if it exists and isn't already unzipped
-    log_info "Unzipping rockyou.txt"
+    # Windows-Exploit-Suggester
+    if [ ! -d "$USER_HOME/tools/repos/Windows-Exploit-Suggester" ]; then
+        sudo -u jamie git clone https://github.com/AonCyberLabs/Windows-Exploit-Suggester.git $USER_HOME/tools/repos/Windows-Exploit-Suggester
+    fi
+    
+    # PowerSploit
+    if [ ! -d "$USER_HOME/tools/repos/PowerSploit" ]; then
+        sudo -u jamie git clone https://github.com/PowerShellMafia/PowerSploit.git $USER_HOME/tools/repos/PowerSploit
+    fi
+    
+    # HackTricks (Carlos Polop's methodology)
+    if [ ! -d "$USER_HOME/tools/repos/HackTricks" ]; then
+        sudo -u jamie git clone https://github.com/HackTricks-wiki/HackTricks.git $USER_HOME/tools/repos/HackTricks
+    fi
+    
+    # AutoRecon
+    if [ ! -d "$USER_HOME/tools/repos/AutoRecon" ]; then
+        sudo -u jamie git clone https://github.com/Tib3rius/AutoRecon.git $USER_HOME/tools/repos/AutoRecon
+    fi
+    
+    # Impacket from source (for latest examples)
+    if [ ! -d "$USER_HOME/tools/repos/impacket" ]; then
+        sudo -u jamie git clone https://github.com/fortra/impacket.git $USER_HOME/tools/repos/impacket
+    fi
+    
+    # GTFOBins (Unix privilege escalation)
+    if [ ! -d "$USER_HOME/tools/repos/GTFOBins" ]; then
+        sudo -u jamie git clone https://github.com/GTFOBins/GTFOBins.github.io.git $USER_HOME/tools/repos/GTFOBins
+    fi
+    
+    # LOLBAS (Windows Living Off The Land)
+    if [ ! -d "$USER_HOME/tools/repos/LOLBAS" ]; then
+        sudo -u jamie git clone https://github.com/LOLBAS-Project/LOLBAS.git $USER_HOME/tools/repos/LOLBAS
+    fi
+    
+    # Nuclei templates
+    if [ ! -d "$USER_HOME/tools/repos/nuclei-templates" ]; then
+        sudo -u jamie git clone https://github.com/projectdiscovery/nuclei-templates.git $USER_HOME/tools/repos/nuclei-templates
+    fi
+    
+    # SecLists wordlists
+    log_progress "Downloading SecLists (this is large, ~700MB)..."
+    if [ ! -d "$USER_HOME/tools/wordlists/SecLists" ]; then
+        sudo -u jamie git clone --depth 1 https://github.com/danielmiessler/SecLists.git $USER_HOME/tools/wordlists/SecLists
+    fi
+    
+    # Extract rockyou.txt if compressed
     if [ -f "/usr/share/wordlists/rockyou.txt.gz" ] && [ ! -f "/usr/share/wordlists/rockyou.txt" ]; then
+        log_progress "Extracting rockyou.txt..."
         gunzip /usr/share/wordlists/rockyou.txt.gz
-        log_info "rockyou.txt unzipped"
-    elif [ -f "/usr/share/wordlists/rockyou.txt" ]; then
-        log_info "rockyou.txt already unzipped"
-    else
-        log_warn "rockyou.txt not found in /usr/share/wordlists/"
     fi
     
-    # Create symlink to rockyou in our wordlists folder for convenience
-    if [ -f "/usr/share/wordlists/rockyou.txt" ]; then
-        sudo -u jamie ln -sf /usr/share/wordlists/rockyou.txt $USER_HOME/tools/wordlists/rockyou.txt 2>/dev/null || true
-    fi
+    # Create symlinks for easy access
+    log_progress "Creating convenient symlinks..."
+    sudo -u jamie ln -sf $USER_HOME/tools/wordlists/SecLists $USER_HOME/SecLists 2>/dev/null || true
+    sudo -u jamie ln -sf /usr/share/wordlists/rockyou.txt $USER_HOME/tools/wordlists/rockyou.txt 2>/dev/null || true
+    sudo -u jamie ln -sf $USER_HOME/tools/repos/PEASS-ng/linPEAS/linpeas.sh $USER_HOME/linpeas.sh 2>/dev/null || true
+    sudo -u jamie ln -sf $USER_HOME/tools/repos/PEASS-ng/winPEAS/winPEASx64.exe $USER_HOME/winpeas.exe 2>/dev/null || true
     
-    # Create tool reference guide
-    log_info "Creating tool reference guide"
-    CREATION_DATE=$(date '+%Y-%m-%d %H:%M:%S %Z')
-    cat > $USER_HOME/Desktop/CTF_TOOLS_REFERENCE.txt << TOOLS_EOF
-╔═══════════════════════════════════════════════════════════════════════════╗
-║                   MODERN CTF TOOLS QUICK REFERENCE                        ║
-║                        Updated: 2025 Edition                              ║
-╚═══════════════════════════════════════════════════════════════════════════╝
+    log_info "Phase 4 complete"
+    log_progress "Phase 4/8: ✓ Complete"
+}
 
+# ============================================
+# PHASE 5: Dotfiles & Shell Configuration
+# ============================================
+phase5_dotfiles_setup() {
+    show_progress 5
+    log_progress "Phase 5/8: Dotfiles & Shell Configuration..."
+    log_info "Phase 5: Configuring shell environment and dotfiles"
+    
+    # Configure .zshrc
+    log_progress "Configuring .zshrc with custom aliases and functions..."
+    cat > $USER_HOME/.zshrc << 'ZSH_EOF'
+# Path to oh-my-zsh
+export ZSH="$HOME/.oh-my-zsh"
+
+# Powerlevel10k theme
+ZSH_THEME="powerlevel10k/powerlevel10k"
+
+# Plugins
+plugins=(
+    git
+    zsh-autosuggestions
+    zsh-syntax-highlighting
+    docker
+    sudo
+    history
+    command-not-found
+)
+
+source $ZSH/oh-my-zsh.sh
+
+# Load p10k configuration
+[[ -f ~/.p10k.zsh ]] && source ~/.p10k.zsh
+
+# Custom PATH
+export PATH=$PATH:$HOME/go/bin:$HOME/.local/bin:/root/go/bin
+
+# Environment variables
+export EDITOR=vim
+export VISUAL=vim
+export GOPATH=$HOME/go
+
+# Aliases - System
+alias ll='ls -lah'
+alias la='ls -A'
+alias l='ls -CF'
+alias ..='cd ..'
+alias ...='cd ../..'
+alias grep='grep --color=auto'
+alias c='clear'
+alias h='history'
+alias please='sudo'
+
+# Aliases - Pentesting
+alias nmap-quick='nmap -sV -sC -O'
+alias nmap-full='nmap -sV -sC -O -p-'
+alias nmap-udp='nmap -sU -sV'
+alias serve='python3 -m http.server'
+alias serve80='sudo python3 -m http.server 80'
+alias myip='curl -s ifconfig.me && echo'
+alias ports='netstat -tulanp'
+alias listening='lsof -i -P -n | grep LISTEN'
+
+# Aliases - Tool shortcuts
+alias nxc='netexec'  # Short form for NetExec
+alias smb='netexec smb'
+alias winrm='netexec winrm'
+alias bloodhound='bloodhound-python'
+alias peas='linpeas.sh'
+
+# Aliases - Navigation
+alias tools='cd ~/tools'
+alias repos='cd ~/tools/repos'
+alias wordlists='cd ~/tools/wordlists'
+alias scripts='cd ~/tools/scripts'
+alias engagements='cd ~/engagements'
+
+# Functions
+newengagement() {
+    if [ -z "$1" ]; then
+        echo "Usage: newengagement <name>"
+        return 1
+    fi
+    mkdir -p ~/engagements/$1/{recon,scans,exploits,loot,notes,screenshots}
+    cd ~/engagements/$1
+    echo "# $1 Engagement" > notes/README.md
+    echo "Created engagement: $1"
+    ls -la
+}
+
+quickscan() {
+    if [ -z "$1" ]; then
+        echo "Usage: quickscan <target>"
+        return 1
+    fi
+    nmap -sV -sC -oA quickscan_$(date +%Y%m%d_%H%M%S) $1
+}
+
+extract() {
+    if [ -f $1 ]; then
+        case $1 in
+            *.tar.bz2)   tar xjf $1     ;;
+            *.tar.gz)    tar xzf $1     ;;
+            *.bz2)       bunzip2 $1     ;;
+            *.rar)       unrar e $1     ;;
+            *.gz)        gunzip $1      ;;
+            *.tar)       tar xf $1      ;;
+            *.tbz2)      tar xjf $1     ;;
+            *.tgz)       tar xzf $1     ;;
+            *.zip)       unzip $1       ;;
+            *.Z)         uncompress $1  ;;
+            *.7z)        7z x $1        ;;
+            *)           echo "'$1' cannot be extracted via extract()" ;;
+        esac
+    else
+        echo "'$1' is not a valid file"
+    fi
+}
+
+# reconchain: Quick recon workflow with ProjectDiscovery tools
+reconchain() {
+    if [ -z "$1" ]; then
+        echo "Usage: reconchain <domain>"
+        return 1
+    fi
+    echo "[+] Starting reconnaissance chain for: $1"
+    echo "[*] Subfinder → DNSx → HTTPx → Nuclei"
+    subfinder -d $1 -silent | dnsx -a -silent | httpx -tech-detect -silent | nuclei -severity critical,high
+}
+ZSH_EOF
+
+    # Configure tmux
+    log_progress "Configuring tmux..."
+    cat > $USER_HOME/.tmux.conf << 'TMUX_EOF'
+# Set prefix to Ctrl-a
+unbind C-b
+set-option -g prefix C-a
+bind-key C-a send-prefix
+
+# Split panes using | and -
+bind | split-window -h
+bind - split-window -v
+unbind '"'
+unbind %
+
+# Switch panes using Alt-arrow without prefix
+bind -n M-Left select-pane -L
+bind -n M-Right select-pane -R
+bind -n M-Up select-pane -U
+bind -n M-Down select-pane -D
+
+# Enable mouse mode
+set -g mouse on
+
+# Start windows and panes at 1, not 0
+set -g base-index 1
+setw -g pane-base-index 1
+
+# Status bar
+set -g status-style 'bg=colour235 fg=colour137 dim'
+set -g status-left ''
+set -g status-right '#[fg=colour233,bg=colour241,bold] %d/%m #[fg=colour233,bg=colour245,bold] %H:%M:%S '
+set -g status-right-length 50
+set -g status-left-length 20
+
+# Pane borders
+set -g pane-border-style 'fg=colour238'
+set -g pane-active-border-style 'fg=colour51'
+
+# Messages
+set -g message-style 'fg=colour232 bg=colour166 bold'
+TMUX_EOF
+
+    # Configure vim
+    log_progress "Configuring vim..."
+    cat > $USER_HOME/.vimrc << 'VIM_EOF'
+" Basic settings
+set number
+set relativenumber
+set tabstop=4
+set shiftwidth=4
+set expandtab
+set autoindent
+set smartindent
+set hlsearch
+set incsearch
+set ignorecase
+set smartcase
+set showmatch
+set wildmenu
+set wildmode=longest:full,full
+set clipboard=unnamedplus
+
+" Syntax highlighting
+syntax on
+filetype plugin indent on
+
+" Color scheme
+colorscheme desert
+set background=dark
+
+" Status line
+set laststatus=2
+set statusline=%F%m%r%h%w\ [%l,%c]\ [%L\ lines]
+
+" Enable mouse
+set mouse=a
+
+" Leader key
+let mapleader = ","
+
+" Quick save
+nnoremap <leader>w :w<CR>
+
+" Quick quit
+nnoremap <leader>q :q<CR>
+VIM_EOF
+
+    # Create CTF Tools Reference on Desktop
+    log_info "Creating comprehensive tool reference guide"
+    CREATION_DATE=$(date '+%Y-%m-%d %H:%M:%S %Z')
+    
+    cat > $USER_HOME/Desktop/CTF_TOOLS_REFERENCE.txt << TOOLS_EOF
 ═══════════════════════════════════════════════════════════════════════════
-RECONNAISSANCE & ENUMERATION (ProjectDiscovery Suite)
+                    PARROT PENTESTING TOOLKIT REFERENCE
+                          Modern 2025 Edition
 ═══════════════════════════════════════════════════════════════════════════
+
+RECONNAISSANCE & ENUMERATION
+═══════════════════════════════════════════════════════════════════════════
+
+PORT SCANNING
+nmap
+  Network exploration and security auditing
+  Quick: nmap -sV -sC <target>
+  Full: nmap -sV -sC -O -p- <target>
+  UDP: nmap -sU -sV <target>
 
 naabu
-  Ultra-fast port scanner with nmap integration
-  Usage: naabu -host target.com -p - -silent | nmap -sV -iL -
+  Fast port scanner (ProjectDiscovery)
+  Usage: naabu -host <target> -p - -silent | nmap -sV -iL -
+  Note: Much faster than nmap for initial discovery
 
-httpx
-  Fast HTTP toolkit with feature detection
-  Usage: httpx -l urls.txt -tech-detect -status-code -title
-
+SUBDOMAIN ENUMERATION
 subfinder
-  Fast subdomain enumeration tool
-  Usage: subfinder -d target.com -all -silent
+  Fast passive subdomain discovery (ProjectDiscovery)
+  Usage: subfinder -d <domain> -silent | tee subdomains.txt
 
 dnsx
-  Fast DNS toolkit for enumeration
-  Usage: dnsx -l subdomains.txt -a -resp
+  DNS toolkit with bruteforcing (ProjectDiscovery)
+  Usage: dnsx -l subdomains.txt -a -resp -silent
+
+WEB ENUMERATION
+httpx
+  HTTP toolkit with tech detection (ProjectDiscovery)
+  Usage: httpx -l targets.txt -tech-detect -status-code -title
 
 katana
-  Modern web crawler for attack surface mapping
-  Usage: katana -u https://target.com -d 3 -jc -kf all
+  Next-generation web crawler (ProjectDiscovery)
+  Usage: katana -u <url> -d 3 -jc -kf all
 
 nuclei
-  Fast vulnerability scanner with templates
-  Usage: nuclei -l targets.txt -t ~/tools/repos/nuclei-templates/
-  Note: Templates auto-update, or manually: nuclei -update-templates
-
-nmap
-  Traditional network scanner (still essential)
-  Usage: nmap -sC -sV -oA output <target>
-
-═══════════════════════════════════════════════════════════════════════════
-WEB APPLICATION TESTING
-═══════════════════════════════════════════════════════════════════════════
+  Vulnerability scanner with templates (ProjectDiscovery)
+  Usage: nuclei -l targets.txt -severity critical,high
+  Update templates: nuclei -update-templates
 
 ffuf
-  Fast web fuzzer (modern replacement for gobuster/wfuzz)
-  Usage: ffuf -u http://target/FUZZ -w wordlist.txt -mc 200,301,302
+  Fast web fuzzer
+  Usage: ffuf -u http://target/FUZZ -w wordlist.txt
+  Dir: ffuf -u http://target/FUZZ -w /opt/SecLists/Discovery/Web-Content/raft-large-directories.txt
 
 gobuster
-  Directory/file brute-forcing tool
-  Usage: gobuster dir -u http://target -w wordlist.txt -x php,html,txt
-
-burpsuite
-  Web application security testing platform
-  Usage: burpsuite
-
-sqlmap
-  Automated SQL injection tool
-  Usage: sqlmap -u "http://target/?id=1" --batch
-
-nikto
-  Web server vulnerability scanner
-  Usage: nikto -h http://target
-
-wpscan
-  WordPress vulnerability scanner
-  Usage: wpscan --url http://target
+  Directory/DNS/vhost brute-forcer
+  Dir: gobuster dir -u <url> -w <wordlist>
+  DNS: gobuster dns -d <domain> -w <wordlist>
+  Vhost: gobuster vhost -u <url> -w <wordlist>
 
 ═══════════════════════════════════════════════════════════════════════════
-ACTIVE DIRECTORY TOOLS (Impacket Suite)
+WINDOWS / ACTIVE DIRECTORY
 ═══════════════════════════════════════════════════════════════════════════
 
-psexec / smbexec / wmiexec / dcomexec / atexec
-  Remote command execution on Windows systems
-  Usage: psexec <domain>/<user>:<pass>@<target>
-
-secretsdump
-  Extract credentials from Windows systems (SAM, LSA, NTDS.dit)
-  Usage: secretsdump <domain>/<user>:<pass>@<target>
-
-GetNPUsers
-  Find users with Kerberos pre-authentication disabled (AS-REP roasting)
-  Usage: GetNPUsers <domain>/ -dc-ip <dc-ip> -usersfile users.txt
+CREDENTIAL ATTACKS
+netexec (nxc)
+  Modern CrackMapExec replacement - Swiss Army knife for AD
+  SMB: nxc smb <target> -u <user> -p <pass>
+  WinRM: nxc winrm <target> -u <user> -p <pass>
+  Spray: nxc smb <targets> -u users.txt -p passwords.txt --continue-on-success
+  Shares: nxc smb <target> -u <user> -p <pass> --shares
+  SAM: nxc smb <target> -u <user> -p <pass> --sam
+  LSA: nxc smb <target> -u <user> -p <pass> --lsa
 
 kerbrute
-  Fast Kerberos user enumeration and password spraying
-  Usage: kerbrute userenum -d <domain> --dc <dc-ip> users.txt
-  Usage: kerbrute passwordspray -d <domain> --dc <dc-ip> users.txt Password123
+  Kerberos user enumeration and password spraying
+  User enum: kerbrute userenum -d <domain> --dc <dc-ip> users.txt
+  Password spray: kerbrute passwordspray -d <domain> --dc <dc-ip> users.txt <password>
 
-GetUserSPNs
-  Find service accounts for Kerberoasting
-  Usage: GetUserSPNs <domain>/<user>:<pass> -dc-ip <dc-ip> -request
+Impacket Suite
+  All tools work WITHOUT 'impacket-' prefix!
+  
+  GetNPUsers.py
+    AS-REP roasting - find users without Kerberos pre-auth
+    Usage: GetNPUsers.py <domain>/ -dc-ip <dc-ip> -usersfile users.txt -format hashcat
+  
+  GetUserSPNs.py
+    Kerberoasting - extract service ticket hashes
+    Usage: GetUserSPNs.py <domain>/<user>:<pass> -dc-ip <dc-ip> -request
+  
+  secretsdump.py
+    Dump credentials from various sources
+    Usage: secretsdump.py <domain>/<user>:<pass>@<target>
+    Local: secretsdump.py -sam SAM -system SYSTEM -security SECURITY LOCAL
+  
+  psexec.py / wmiexec.py / smbexec.py / dcomexec.py
+    Remote command execution
+    Usage: psexec.py <domain>/<user>:<pass>@<target>
+  
+  getTGT.py / getST.py
+    Kerberos ticket manipulation
+    Usage: getTGT.py <domain>/<user>:<pass>
+  
+  ticketer.py
+    Forge Kerberos tickets (Golden/Silver ticket attacks)
+    Usage: ticketer.py -nthash <hash> -domain-sid <sid> -domain <domain> <user>
 
-getTGT / getST
-  Request Kerberos tickets for pass-the-ticket attacks
-  Usage: getTGT <domain>/<user>:<pass>
+ENUMERATION
+bloodhound-python
+  Active Directory relationship mapper
+  Usage: bloodhound-python -u <user> -p <pass> -ns <dc-ip> -d <domain> -c all
 
-ntlmrelayx
-  NTLM relay attacks against SMB, HTTP, LDAP
-  Usage: ntlmrelayx -tf targets.txt -smb2support
+bloodyAD
+  Active Directory privilege escalation framework
+  Usage: bloodyAD -u <user> -p <pass> -d <domain> --host <dc-ip> get object <object>
 
-smbserver
-  Quick SMB server for file transfers
-  Usage: smbserver share . -smb2support
+enum4linux-ng
+  Modern SMB/AD enumeration
+  Usage: enum4linux-ng <target> -A
 
-smbclient
-  SMB client for file operations
-  Usage: smbclient //<target>/share -U <user>
+ADDITIONAL TOOLS
+certipy-ad
+  Active Directory Certificate Services abuse
+  Usage: certipy find -u <user>@<domain> -p <pass> -dc-ip <dc-ip>
 
-ticketer
-  Create silver/golden Kerberos tickets
-  Usage: ticketer -nthash <hash> -domain-sid <sid> -domain <domain> <user>
+coercer
+  Force authentication from remote machines
+  Usage: coercer -u <user> -p <pass> -d <domain> -t <target> -l <listener-ip>
 
-═══════════════════════════════════════════════════════════════════════════
-CREDENTIAL ATTACKS & LATERAL MOVEMENT
-═══════════════════════════════════════════════════════════════════════════
+pypykatz
+  Mimikatz in Python - parse LSASS dumps
+  Usage: pypykatz lsa minidump lsass.dmp
 
-netexec (nxc)
-  Modern replacement for CrackMapExec - Swiss army knife for AD pentesting
-  Usage: netexec smb <target> -u user -p pass
-  Usage: nxc smb <target> -u users.txt -p passwords.txt --continue-on-success
-  Modules: netexec smb <target> -u user -p pass -M lsassy
-
-hydra
-  Network login brute-forcer
-  Usage: hydra -l user -P wordlist.txt <target> ssh
-
-john
-  Password hash cracking tool
-  Usage: john --wordlist=rockyou.txt hashes.txt
-
-hashcat
-  GPU-accelerated password cracking
-  Usage: hashcat -m 1000 -a 0 hashes.txt rockyou.txt
+lsassy
+  Remote LSASS credential dumper
+  Usage: lsassy -u <user> -p <pass> -d <domain> <target>
 
 responder
-  LLMNR/NBT-NS/mDNS poisoner for credential capture
-  Usage: responder -I eth0 -wf
+  LLMNR/NBT-NS/mDNS poisoner
+  Usage: responder -I eth0 -wv
 
 mitm6
   IPv6 man-in-the-middle for credential relay
@@ -490,93 +686,23 @@ mitmproxy / mitmweb
   Usage: mitmproxy (TUI) or mitmweb (Web UI on :8081)
   Note: More powerful than Burp for scripting/automation
 
-certipy-ad
-  Active Directory certificate abuse tool
-  Usage: certipy find -u user@domain -p pass -dc-ip <dc-ip>
-
-coercer
-  Force Windows authentication for relay attacks
-  Usage: coercer -u user -p pass -d domain -t <target> -l <listener>
-
-pypykatz
-  Mimikatz implementation in Python
-  Usage: pypykatz lsa minidump lsass.dmp
-
-lsassy
-  Remote LSASS credential dumping
-  Usage: lsassy -u user -p pass -d domain <target>
-
-bloodhound
-  Active Directory relationship mapper (run ingestor, then analyze in GUI)
-  Usage: bloodhound-python -u user -p pass -d domain -dc dc.domain.com -c all
-
-bloodyAD
-  Active Directory privilege escalation framework
-  Usage: bloodyAD -u user -p pass -d domain --host dc-ip get writable
-
-═══════════════════════════════════════════════════════════════════════════
-ENUMERATION TOOLS
-═══════════════════════════════════════════════════════════════════════════
-
-enum4linux-ng
-  SMB enumeration tool for Windows/Samba systems
-  Usage: enum4linux-ng -A <target>
-
-dnsrecon
-  DNS enumeration and zone transfer testing
-  Usage: dnsrecon -d <domain> -a
-
-AutoRecon
-  Multi-threaded network reconnaissance tool
-  Location: ~/tools/repos/AutoRecon/
-  Usage: python3 ~/tools/repos/AutoRecon/src/autorecon.py <target>
-
-manspider
-  Crawl SMB shares for juicy files (passwords, configs)
-  Usage: manspider <target> -d domain -u user -p pass
-
-═══════════════════════════════════════════════════════════════════════════
-SHELLS & POST-EXPLOITATION
-═══════════════════════════════════════════════════════════════════════════
-
-penelope
-  Advanced shell handler with auto-upgrade and file transfer
-  Usage: penelope 4444
-
-nc (netcat)
-  Basic network connections and listeners
-  Usage: nc -lvnp 4444
-
-evil-winrm
-  WinRM shell with PowerShell capabilities
-  Usage: evil-winrm -i <target> -u user -p pass
-
-LinPEAS / WinPEAS
-  Privilege escalation enumeration scripts
-  Location: ~/peas/ (symlinked for easy access)
-  Usage: ./linpeas.sh (on target) or winpeas.exe (on target)
-  Full repo: ~/tools/repos/PEASS-ng/
-
 ═══════════════════════════════════════════════════════════════════════════
 PIVOTING & TUNNELING
 ═══════════════════════════════════════════════════════════════════════════
 
-ligolo-ng
-  Creates TUN interface for pivoting (NO proxychains needed!)
-  Server: proxy -selfcert
-  Agent: agent -connect <attacker-ip>:11601 -ignore-cert
-  Then: session, ifconfig, start
-  Note: May fail due to Go version - use chisel or sshuttle as fallback
-
 chisel
   Fast TCP/UDP tunnel over HTTP
-  Server: chisel server -p 8080 --reverse
-  Client: chisel client <server-ip>:8080 R:socks
+  Server: chisel server -p 8000 --reverse
+  Client: chisel client <server>:8000 R:socks
+
+ligolo-ng
+  Advanced pivoting (may not be installed if build failed)
+  Proxy: proxy -selfcert
+  Agent: agent -connect <proxy-ip>:11601 -ignore-cert
 
 sshuttle
-  VPN over SSH (no root on remote needed)
+  VPN over SSH - no hassle, works everywhere
   Usage: sshuttle -r user@<target> 10.0.0.0/8
-  Note: Most reliable pivoting tool, works everywhere
 
 ssh
   SSH tunneling for port forwarding
@@ -591,87 +717,58 @@ proxychains4
   MSF: set Proxies socks5:127.0.0.1:1080 (native, no proxychains needed)
 
 ═══════════════════════════════════════════════════════════════════════════
-FILE OPERATIONS & UTILITIES
+WEB APPLICATION TESTING
 ═══════════════════════════════════════════════════════════════════════════
-
-serve / serve80
-  Quick Python HTTP server
-  Usage: serve (port 8000) or serve80 (port 80)
 
 git-dumper
   Dump exposed .git repositories
-  Usage: git-dumper http://target/.git/ output/
+  Usage: git-dumper http://target/.git/ output_dir/
 
-base64
-  Encode/decode base64
-  Aliases: b64e "string" / b64d "encoded"
+SQL INJECTION
+sqlmap
+  Automated SQL injection exploitation
+  Usage: sqlmap -u <url> --batch --dump
 
-═══════════════════════════════════════════════════════════════════════════
-CUSTOM FUNCTIONS
-═══════════════════════════════════════════════════════════════════════════
-
-newengagement <name>
-  Creates engagement folder structure in ~/engagements/
-  Includes: recon, exploit, loot, screenshots, notes
-
-quickscan <target>
-  Runs nmap with default scripts and version detection
-  Saves output as scan_<target>
-
-extract <file>
-  Universal archive extractor (zip, tar, gz, bz2, etc.)
-
-update-tools.sh
-  Updates all installed tools and repositories
-
-backup-engagement.sh <name>
-  Creates timestamped backup of engagement folder
+REVERSE SHELLS
+penelope
+  Feature-rich reverse shell handler
+  Usage: penelope 4444
+  Note: Auto-upgrades shells, handles PTY, session management
 
 ═══════════════════════════════════════════════════════════════════════════
-USEFUL WORDLISTS
+PRIVILEGE ESCALATION
 ═══════════════════════════════════════════════════════════════════════════
 
-Location: ~/tools/wordlists/
+LINUX
+linpeas.sh
+  Automated Linux privilege escalation scanner
+  Location: ~/linpeas.sh (symlink to ~/tools/repos/PEASS-ng/linPEAS/linpeas.sh)
+  Usage: ./linpeas.sh | tee linpeas_output.txt
+  With colors: ./linpeas.sh -a | tee linpeas_output.txt
 
-SecLists/Discovery/Web-Content/
-  - directory-list-2.3-medium.txt (classic dir busting)
-  - raft-large-words.txt (modern alternative)
-  - common.txt (quick wins)
+WINDOWS
+winpeas.exe
+  Automated Windows privilege escalation scanner
+  Location: ~/winpeas.exe (symlink to ~/tools/repos/PEASS-ng/winPEAS/winPEASx64.exe)
+  Transfer to target and run: winpeas.exe
 
-SecLists/Passwords/
-  - rockyou.txt (14M passwords)
-  - Leaked-Databases/ (various breaches)
-
-SecLists/Usernames/
-  - Names/names.txt
-  - top-usernames-shortlist.txt
-
-SecLists/Fuzzing/
-  - command-injection-commix.txt
-  - LFI/LFI-Jhaddix.txt
-  - SQLi/Generic-SQLi.txt
-
-SecLists/Discovery/DNS/
-  - subdomains-top1million-5000.txt
+Windows-Exploit-Suggester
+  Finds missing patches on Windows systems
+  Location: ~/tools/repos/Windows-Exploit-Suggester/
+  Usage: python windows-exploit-suggester.py --update
+         python windows-exploit-suggester.py --database <db> --systeminfo <file>
 
 ═══════════════════════════════════════════════════════════════════════════
-USEFUL REPOSITORIES
+REPOSITORIES & RESOURCES
 ═══════════════════════════════════════════════════════════════════════════
-
-Location: ~/tools/repos/
 
 PayloadsAllTheThings/
-  Comprehensive payload and technique reference for every attack type
-
-PEASS-ng/
-  LinPEAS and WinPEAS privilege escalation scripts
-  Quick access: ~/peas/ directory with symlinks
+  Swiss Army knife for pentesting
+  Browse locally: ~/tools/repos/PayloadsAllTheThings/
 
 PowerSploit/
   PowerShell post-exploitation framework
-
-Windows-Exploit-Suggester/
-  Finds missing patches on Windows systems
+  Location: ~/tools/repos/PowerSploit/
 
 HackTricks/
   Carlos Polop's methodology and technique documentation
@@ -679,32 +776,50 @@ HackTricks/
 
 AutoRecon/
   Automated reconnaissance tool by Tib3rius
-  Usage: python3 src/autorecon.py <target>
+  Usage: python3 ~/tools/repos/AutoRecon/src/autorecon.py <target>
 
 Impacket-Examples/
   Latest Impacket examples and tools from source
+  Location: ~/tools/repos/impacket/examples/
 
 GTFOBins/
   Unix binaries that can be used for privilege escalation
-  Browse: _gtfobins/ directory
+  Browse: ~/tools/repos/GTFOBins/_gtfobins/ directory
 
 LOLBAS/
   Living Off The Land Binaries and Scripts for Windows
-  Browse: yml/ directory for techniques
+  Browse: ~/tools/repos/LOLBAS/yml/ directory for techniques
 
 nuclei-templates/
   Official Nuclei vulnerability templates (auto-updated)
   Used automatically by nuclei command
 
 ═══════════════════════════════════════════════════════════════════════════
+WORDLISTS
+═══════════════════════════════════════════════════════════════════════════
+
+SecLists/
+  Comprehensive collection of security wordlists
+  Location: ~/SecLists (symlink to ~/tools/wordlists/SecLists/)
+  Popular lists:
+    - Passwords: SecLists/Passwords/
+    - Web Content: SecLists/Discovery/Web-Content/
+    - Usernames: SecLists/Usernames/
+    - Fuzzing: SecLists/Fuzzing/
+
+rockyou.txt
+  Classic password list (14M+ passwords)
+  Location: ~/tools/wordlists/rockyou.txt (symlink to /usr/share/wordlists/rockyou.txt)
+
+═══════════════════════════════════════════════════════════════════════════
 MODERN WORKFLOW TIPS
 ═══════════════════════════════════════════════════════════════════════════
 
 Initial Recon Chain:
-  subfinder -d target.com | dnsx -a | httpx -tech-detect | nuclei
+  subfinder -d target.com -silent | dnsx -a -silent | httpx -tech-detect -silent | nuclei -severity critical,high
 
 Port Scanning:
-  naabu -host target.com -p - | nmap -sV -iL -
+  naabu -host target.com -p - -silent | nmap -sV -iL -
 
 Web Enumeration:
   httpx + katana + ffuf + nuclei combo is fastest
@@ -743,14 +858,13 @@ ENGAGEMENT WORKFLOW
 2. cd ~/engagements/<target-name>
 3. Initial recon:
    - subfinder -d target.com -silent | tee recon/subdomains.txt
-   - naabu -l recon/subdomains.txt | tee recon/ports.txt
+   - naabu -l recon/subdomains.txt -silent | tee recon/ports.txt
 4. Web enumeration:
    - httpx -l recon/subdomains.txt -tech-detect | tee recon/web.txt
    - nuclei -l recon/web.txt -severity critical,high
 5. Document findings in notes/
 6. Store loot in loot/
-7. Take screenshots in screenshots/
-8. backup-engagement.sh <target-name> when done
+7. Keep all output files in recon/scans/ for reference
 
 ═══════════════════════════════════════════════════════════════════════════
 
@@ -758,437 +872,6 @@ Tool Stack Version: 2.0 (Modern 2025 Edition)
 Last updated: ${CREATION_DATE}
 
 TOOLS_EOF
-    
-    chown jamie:jamie $USER_HOME/Desktop/CTF_TOOLS_REFERENCE.txt
-    
-    # Create VirtualBox Guest Additions installation guide
-    log_info "Creating VirtualBox Guest Additions installation guide"
-    cat > $USER_HOME/Desktop/VIRTUALBOX_GUEST_ADDITIONS_INSTALL.txt << 'VBOX_EOF'
-╔═══════════════════════════════════════════════════════════════════════════╗
-║          Installing VirtualBox Guest Additions on Parrot OS               ║
-║                    (Debian 12 "Bookworm"-based)                           ║
-╚═══════════════════════════════════════════════════════════════════════════╝
-
-This guide will help you install VirtualBox Guest Additions to enable:
-  • Shared clipboard (copy/paste between host and VM)
-  • Drag and drop files
-  • Shared folders
-  • Better screen resolution and scaling
-  • Improved mouse integration
-
-═══════════════════════════════════════════════════════════════════════════
-STEP 1: Insert the Guest Additions ISO
-═══════════════════════════════════════════════════════════════════════════
-
-On your Windows host:
-  1. Open VirtualBox Manager
-  2. Select your Parrot VM → Settings → Storage
-  3. Under the CD drive (IDE or SATA), click the disc icon
-  4. Choose "Insert Guest Additions CD image..."
-     OR manually select:
-     C:\Program Files\Oracle\VirtualBox\VBoxGuestAdditions.iso
-
-═══════════════════════════════════════════════════════════════════════════
-STEP 2: Mount the ISO in the Parrot guest
-═══════════════════════════════════════════════════════════════════════════
-
-Run these commands in your Parrot VM terminal:
-
-sudo mkdir -p /mnt/cdrom
-sudo mount /dev/cdrom /mnt/cdrom
-
-Expected output:
-  mount: /mnt/cdrom: WARNING: source write-protected, mounted read-only.
-
-⚠️  This warning is NORMAL and OK to ignore — CD-ROMs are read-only by nature.
-
-═══════════════════════════════════════════════════════════════════════════
-STEP 3: Verify the ISO contents
-═══════════════════════════════════════════════════════════════════════════
-
-ls /mnt/cdrom
-
-You should see files like:
-  • VBoxLinuxAdditions.run
-  • VBoxWindowsAdditions.exe
-  • autorun.sh
-  • AUTORUN.INF
-
-═══════════════════════════════════════════════════════════════════════════
-STEP 4: Install required build tools
-═══════════════════════════════════════════════════════════════════════════
-
-sudo apt update
-sudo apt install -y build-essential dkms linux-headers-$(uname -r)
-
-This installs:
-  • build-essential: Compilers and build tools
-  • dkms: Dynamic Kernel Module Support
-  • linux-headers: Kernel headers for your current kernel
-
-═══════════════════════════════════════════════════════════════════════════
-STEP 5: Run the Guest Additions installer
-═══════════════════════════════════════════════════════════════════════════
-
-cd /mnt/cdrom
-sudo sh ./VBoxLinuxAdditions.run
-
-Expected output:
-  Verifying archive integrity...  100%   MD5 checksums are OK. All good.
-  Uncompressing VirtualBox X.X.X Guest Additions for Linux...
-  VirtualBox Guest Additions: Starting.
-  VirtualBox Guest Additions: Building the VirtualBox Guest Additions kernel
-  modules.  This may take a while.
-  VirtualBox Guest Additions: To build modules for other installed kernels, run
-  VirtualBox Guest Additions:   /sbin/rcvboxadd quicksetup <version>
-  VirtualBox Guest Additions: or
-  VirtualBox Guest Additions:   /sbin/rcvboxadd quicksetup all
-  VirtualBox Guest Additions: Building the modules for kernel X.X.X-X-amd64.
-  VirtualBox Guest Additions: Running kernel modules will not be replaced until
-  the system is restarted
-  VirtualBox Guest Additions: kernel modules and services X.X.X loaded
-
-⚠️  You may see repeated errors like:
-  libkmod: ERROR ../libkmod/libkmod-config.c:772 conf_files_filter_out: 
-  Directories inside directories are not supported: /etc/modprobe.d/virtualbox-dkms.conf
-
-These errors are OK to ignore unless they interfere with system behavior.
-They occur when there's a directory where a config file is expected.
-
-═══════════════════════════════════════════════════════════════════════════
-STEP 6: Reboot the VM
-═══════════════════════════════════════════════════════════════════════════
-
-sudo reboot
-
-After reboot, Guest Additions should be active and you'll have:
-  ✓ Shared clipboard
-  ✓ Drag and drop
-  ✓ Better resolution scaling
-  ✓ Seamless mouse integration
-
-═══════════════════════════════════════════════════════════════════════════
-TROUBLESHOOTING
-═══════════════════════════════════════════════════════════════════════════
-
-If clipboard sharing doesn't work after reboot:
-  1. Verify Guest Additions are running:
-     lsmod | grep vbox
-
-     You should see modules like:
-       vboxguest
-       vboxsf
-       vboxvideo
-
-  2. Check VirtualBox settings:
-     VM Settings → General → Advanced
-     - Shared Clipboard: Bidirectional
-     - Drag'n'Drop: Bidirectional
-
-  3. Restart the VBoxClient services:
-     killall VBoxClient
-     VBoxClient --clipboard &
-     VBoxClient --draganddrop &
-     VBoxClient --seamless &
-
-If kernel modules fail to build:
-  • Ensure you have the correct kernel headers:
-    sudo apt install linux-headers-$(uname -r)
-  
-  • Try rebuilding:
-    sudo /sbin/rcvboxadd setup
-
-If screen resolution is wrong:
-  • Right-click desktop → Display Settings
-  • Or use VirtualBox: View → Auto-resize Guest Display
-
-═══════════════════════════════════════════════════════════════════════════
-SETTING UP SHARED FOLDERS (Optional)
-═══════════════════════════════════════════════════════════════════════════
-
-1. On Windows host:
-   VM Settings → Shared Folders → Add new shared folder
-   Folder Path: C:\Users\YourName\Desktop (or wherever)
-   Folder Name: shared (or any name you want)
-   ☑ Auto-mount
-   ☑ Make Permanent
-
-2. In Parrot VM, add your user to vboxsf group:
-   sudo usermod -aG vboxsf jamie
-   
-3. Reboot or log out/in
-
-4. Access shared folder at:
-   /media/sf_shared
-   (where 'shared' matches the Folder Name from step 1)
-
-═══════════════════════════════════════════════════════════════════════════
-
-Installation guide created: $(date '+%Y-%m-%d %H:%M:%S %Z')
-
-VBOX_EOF
-    
-    chown jamie:jamie $USER_HOME/Desktop/VIRTUALBOX_GUEST_ADDITIONS_INSTALL.txt
-    
-    log_info "Phase 4 complete"
-    log_progress "Phase 4/8: ✓ Complete"
-}
-
-# ============================================
-# PHASE 5: Dotfiles & Aliases Configuration
-# ============================================
-phase5_dotfiles_setup() {
-    show_progress 5
-    log_progress "Phase 5/8: Dotfiles & Aliases Configuration..."
-    log_info "Phase 5: Configuring dotfiles and aliases"
-    
-    # Backup existing configs
-    [ -f $USER_HOME/.zshrc ] && cp $USER_HOME/.zshrc $USER_HOME/.zshrc.backup
-    [ -f $USER_HOME/.tmux.conf ] && cp $USER_HOME/.tmux.conf $USER_HOME/.tmux.conf.backup
-    
-    # Create custom .zshrc
-    cat > $USER_HOME/.zshrc << 'EOF'
-# Path to oh-my-zsh installation
-export ZSH="$HOME/.oh-my-zsh"
-
-# Theme
-ZSH_THEME="powerlevel10k/powerlevel10k"
-
-# Plugins
-plugins=(
-    git
-    docker
-    sudo
-    zsh-autosuggestions
-    zsh-syntax-highlighting
-    command-not-found
-    colored-man-pages
-)
-
-source $ZSH/oh-my-zsh.sh
-
-# ============================================
-# Custom Aliases - Impacket
-# ============================================
-alias psexec='impacket-psexec'
-alias smbexec='impacket-smbexec'
-alias wmiexec='impacket-wmiexec'
-alias dcomexec='impacket-dcomexec'
-alias atexec='impacket-atexec'
-alias secretsdump='impacket-secretsdump'
-alias GetNPUsers='impacket-GetNPUsers'
-alias GetUserSPNs='impacket-GetUserSPNs'
-alias GetADUsers='impacket-GetADUsers'
-alias getTGT='impacket-getTGT'
-alias getST='impacket-getST'
-alias smbclient='impacket-smbclient'
-alias smbserver='impacket-smbserver'
-alias ntlmrelayx='impacket-ntlmrelayx'
-alias ticketer='impacket-ticketer'
-alias raiseChild='impacket-raiseChild'
-
-# ============================================
-# Custom Aliases - General
-# ============================================
-alias ll='ls -alFh'
-alias la='ls -A'
-alias l='ls -CF'
-alias ..='cd ..'
-alias ...='cd ../..'
-alias grep='grep --color=auto'
-alias cat='batcat --style=plain' 2>/dev/null || alias cat='cat'
-alias fd='fdfind' 2>/dev/null || alias fd='fd'
-
-# Docker shortcuts
-alias dps='docker ps'
-alias dpsa='docker ps -a'
-alias di='docker images'
-alias dex='docker exec -it'
-alias dlog='docker logs -f'
-alias dstop='docker stop $(docker ps -aq)'
-alias drm='docker rm $(docker ps -aq)'
-
-# Metasploit
-alias msfconsole='msfconsole -q'
-alias msf='msfconsole -q'
-
-# Reverse shells
-alias penelope='penelope'
-alias pen='penelope'
-
-# AD Tools shortcuts
-alias bh='bloodhound'
-alias bhp='bloodhound-python'
-alias bloody='bloodyAD'
-
-# Network enumeration
-alias nse='ls /usr/share/nmap/scripts | grep'
-alias portscan='nmap -p- -T4 --min-rate=1000'
-alias vulnscan='nmap -sV --script=vuln'
-
-# Web enumeration
-alias gobust='gobuster dir -w ~/tools/wordlists/SecLists/Discovery/Web-Content/directory-list-2.3-medium.txt -u'
-alias ferox='feroxbuster -w ~/tools/wordlists/SecLists/Discovery/Web-Content/directory-list-2.3-medium.txt -u'
-
-# Quick SMB enumeration
-alias smbenum='enum4linux-ng -A'
-
-# PEAS scripts quick access
-alias linpeas='~/peas/linpeas.sh'
-alias winpeas='~/peas/winpeas.exe'
-
-# Python HTTP servers
-alias serve='python3 -m http.server 8000'
-alias serve80='sudo python3 -m http.server 80'
-
-# ============================================
-# Custom Functions
-# ============================================
-
-# Create new engagement folder with standard structure
-newengagement() {
-    if [ -z "$1" ]; then
-        echo "Usage: newengagement <name>"
-        return 1
-    fi
-    
-    mkdir -p ~/engagements/$1/{recon,exploit,loot,screenshots,notes}
-    cd ~/engagements/$1
-    echo "# Engagement: $1" > notes/README.md
-    echo "Created: $(date)" >> notes/README.md
-    echo "Engagement folder created: ~/engagements/$1"
-}
-
-# Quick nmap scan wrapper
-quickscan() {
-    if [ -z "$1" ]; then
-        echo "Usage: quickscan <target>"
-        return 1
-    fi
-    nmap -sC -sV -oA scan_$1 $1
-}
-
-# Extract any archive
-extract() {
-    if [ -f $1 ]; then
-        case $1 in
-            *.tar.bz2)   tar xjf $1     ;;
-            *.tar.gz)    tar xzf $1     ;;
-            *.bz2)       bunzip2 $1     ;;
-            *.rar)       unrar e $1     ;;
-            *.gz)        gunzip $1      ;;
-            *.tar)       tar xf $1      ;;
-            *.tbz2)      tar xjf $1     ;;
-            *.tgz)       tar xzf $1     ;;
-            *.zip)       unzip $1       ;;
-            *.Z)         uncompress $1  ;;
-            *.7z)        7z x $1        ;;
-            *)           echo "'$1' cannot be extracted via extract()" ;;
-        esac
-    else
-        echo "'$1' is not a valid file"
-    fi
-}
-
-# Quick base64 encode/decode
-b64e() { echo -n "$1" | base64; }
-b64d() { echo -n "$1" | base64 -d; }
-
-# ============================================
-# Environment Variables
-# ============================================
-export PATH="$HOME/.cargo/bin:$HOME/.local/bin:$PATH"
-export EDITOR=vim
-export VISUAL=vim
-
-# Golang
-export GOPATH=$HOME/go
-export PATH=$PATH:$GOPATH/bin
-
-# History settings
-HISTSIZE=10000
-SAVEHIST=10000
-setopt SHARE_HISTORY
-
-# Load Powerlevel10k config if it exists
-[[ ! -f ~/.p10k.zsh ]] || source ~/.p10k.zsh
-
-EOF
-
-    # Create tmux config
-    cat > $USER_HOME/.tmux.conf << 'TMUX_EOF'
-# Tmux configuration for pentesting
-
-# Change prefix to Ctrl-a
-unbind C-b
-set-option -g prefix C-a
-bind-key C-a send-prefix
-
-# Split panes using | and -
-bind | split-window -h
-bind - split-window -v
-unbind '"'
-unbind %
-
-# Reload config
-bind r source-file ~/.tmux.conf \; display "Config reloaded!"
-
-# Switch panes using Alt-arrow without prefix
-bind -n M-Left select-pane -L
-bind -n M-Right select-pane -R
-bind -n M-Up select-pane -U
-bind -n M-Down select-pane -D
-
-# Enable mouse mode
-set -g mouse on
-
-# Don't rename windows automatically
-set-option -g allow-rename off
-
-# Start window numbering at 1
-set -g base-index 1
-setw -g pane-base-index 1
-
-# Increase scrollback buffer
-set-option -g history-limit 10000
-
-# Status bar
-set -g status-bg black
-set -g status-fg white
-set -g status-left '#[fg=green]#H '
-set -g status-right '#[fg=yellow]#(uptime | cut -d "," -f 3-)'
-
-TMUX_EOF
-
-    # Create vim config with useful defaults
-    cat > $USER_HOME/.vimrc << 'VIM_EOF'
-" Basic vim configuration for pentesting
-set number
-set relativenumber
-set autoindent
-set tabstop=4
-set shiftwidth=4
-set expandtab
-set smarttab
-set mouse=a
-syntax on
-set hlsearch
-set incsearch
-set ignorecase
-set smartcase
-set clipboard=unnamedplus
-
-" Show whitespace
-set list
-set listchars=tab:→\ ,trail:·
-
-" Better split navigation
-nnoremap <C-J> <C-W><C-J>
-nnoremap <C-K> <C-W><C-K>
-nnoremap <C-L> <C-W><C-L>
-nnoremap <C-H> <C-W><C-H>
-
-VIM_EOF
 
     # Fix ownership of all dotfiles
     chown -R jamie:jamie $USER_HOME
@@ -1216,14 +899,28 @@ echo "[+] Updating system packages..."
 sudo apt update && sudo apt upgrade -y
 
 echo "[+] Updating Python tools..."
-pip3 install --upgrade impacket crackmapexec bloodhound
+pip3 install --upgrade --break-system-packages impacket bloodhound bloodyAD mitm6 certipy-ad
+
+echo "[+] Updating Go tools..."
+go install -v github.com/projectdiscovery/naabu/v2/cmd/naabu@latest
+go install -v github.com/projectdiscovery/httpx/cmd/httpx@latest
+go install -v github.com/projectdiscovery/nuclei/v3/cmd/nuclei@latest
+go install -v github.com/projectdiscovery/subfinder/v2/cmd/subfinder@latest
+go install -v github.com/projectdiscovery/katana/cmd/katana@latest
+go install -v github.com/projectdiscovery/dnsx/cmd/dnsx@latest
+go install -v github.com/ffuf/ffuf@latest
+go install -v github.com/OJ/gobuster/v3@latest
+go install -v github.com/jpillora/chisel@latest
+
+echo "[+] Updating Nuclei templates..."
+nuclei -update-templates
 
 echo "[+] Updating repositories..."
 cd ~/tools/repos
 for dir in */; do
     echo "[+] Updating $dir"
     cd "$dir"
-    git pull
+    git pull || true
     cd ..
 done
 
@@ -1392,11 +1089,16 @@ Useful commands:
   - quickscan <target>    : Quick nmap scan
   - serve                 : Start HTTP server on port 8000
   - update-tools.sh       : Update all tools
+  - reconchain <domain>   : Quick recon with ProjectDiscovery tools
 
 Tool reference guide on Desktop: CTF_TOOLS_REFERENCE.txt
 
 Happy hacking!
 EOF
+    
+    log_warn "System will reboot in 10 seconds..."
+    sleep 10
+    reboot
 }
 
 # Run it
