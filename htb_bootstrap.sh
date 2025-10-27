@@ -2,7 +2,7 @@
 
 # Parrot Security VM Enhancement Bootstrap Script
 # For fresh Parrot installs running as VM guest on Windows host
-# might need to run #tr -cd '11\12\15\40-\176' </tmp/htb_bootstrap.sh > /tmp/htb_bootstrap_clean.sh if the script keeps failing
+# might need to run #tr -cd '[:print:]\n\t' < /tmp/htb_bootstrap.sh > /tmp/htb_bootstrap_clean.sh
 # Version 2.4 updated 10/27/2025
 
 set -e
