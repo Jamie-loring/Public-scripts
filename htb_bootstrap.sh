@@ -1145,6 +1145,188 @@ Last updated: ${CREATION_DATE}
 
 TOOLS_EOF
 
+    # Create VirtualBox Guest Additions installation guide
+    log_info "Creating VirtualBox Guest Additions installation guide"
+    cat > $USER_HOME/Desktop/VIRTUALBOX_GUEST_ADDITIONS_INSTALL.txt << 'VBOX_EOF'
+╔═══════════════════════════════════════════════════════════════════════════╗
+║          Installing VirtualBox Guest Additions on Parrot OS               ║
+║                    (Debian 12 "Bookworm"-based)                           ║
+╚═══════════════════════════════════════════════════════════════════════════╝
+
+This guide will help you install VirtualBox Guest Additions to enable:
+  • Shared clipboard (copy/paste between host and VM)
+  • Drag and drop files
+  • Shared folders
+  • Better screen resolution and scaling
+  • Improved mouse integration
+
+═══════════════════════════════════════════════════════════════════════════
+STEP 1: Insert the Guest Additions ISO
+═══════════════════════════════════════════════════════════════════════════
+
+On your Windows host:
+  1. Open VirtualBox Manager
+  2. Select your Parrot VM → Settings → Storage
+  3. Under the CD drive (IDE or SATA), click the disc icon
+  4. Choose "Insert Guest Additions CD image..."
+     OR manually select:
+     C:\Program Files\Oracle\VirtualBox\VBoxGuestAdditions.iso
+
+═══════════════════════════════════════════════════════════════════════════
+STEP 2: Mount the ISO in the Parrot guest
+═══════════════════════════════════════════════════════════════════════════
+
+Run these commands in your Parrot VM terminal:
+
+sudo mkdir -p /mnt/cdrom
+sudo mount /dev/cdrom /mnt/cdrom
+
+Expected output:
+  mount: /mnt/cdrom: WARNING: source write-protected, mounted read-only.
+
+⚠️  This warning is NORMAL and OK to ignore — CD-ROMs are read-only by nature.
+
+═══════════════════════════════════════════════════════════════════════════
+STEP 3: Verify the ISO contents
+═══════════════════════════════════════════════════════════════════════════
+
+ls /mnt/cdrom
+
+You should see files like:
+  • VBoxLinuxAdditions.run
+  • VBoxWindowsAdditions.exe
+  • autorun.sh
+  • AUTORUN.INF
+
+═══════════════════════════════════════════════════════════════════════════
+STEP 4: Install required build tools
+═══════════════════════════════════════════════════════════════════════════
+
+sudo apt update
+sudo apt install -y build-essential dkms linux-headers-$(uname -r)
+
+This installs:
+  • build-essential: Compilers and build tools
+  • dkms: Dynamic Kernel Module Support
+  • linux-headers: Kernel headers for your current kernel
+
+═══════════════════════════════════════════════════════════════════════════
+STEP 5: Run the Guest Additions installer
+═══════════════════════════════════════════════════════════════════════════
+
+cd /mnt/cdrom
+sudo sh ./VBoxLinuxAdditions.run
+
+Expected output:
+  Verifying archive integrity...  100%   MD5 checksums are OK. All good.
+  Uncompressing VirtualBox X.X.X Guest Additions for Linux...
+  VirtualBox Guest Additions: Starting.
+  VirtualBox Guest Additions: Building the VirtualBox Guest Additions kernel
+  modules.  This may take a while.
+  VirtualBox Guest Additions: To build modules for other installed kernels, run
+  VirtualBox Guest Additions:   /sbin/rcvboxadd quicksetup <version>
+  VirtualBox Guest Additions: or
+  VirtualBox Guest Additions:   /sbin/rcvboxadd quicksetup all
+  VirtualBox Guest Additions: Building the modules for kernel X.X.X-X-amd64.
+  VirtualBox Guest Additions: Running kernel modules will not be replaced until
+  the system is restarted
+  VirtualBox Guest Additions: kernel modules and services X.X.X loaded
+
+⚠️  You may see repeated errors like:
+  libkmod: ERROR ../libkmod/libkmod-config.c:772 conf_files_filter_out: 
+  Directories inside directories are not supported: /etc/modprobe.d/virtualbox-dkms.conf
+
+These errors are OK to ignore unless they interfere with system behavior.
+They occur when there's a directory where a config file is expected.
+
+═══════════════════════════════════════════════════════════════════════════
+STEP 6: Reboot the VM
+═══════════════════════════════════════════════════════════════════════════
+
+sudo reboot
+
+After reboot, Guest Additions should be active and you'll have:
+  ✓ Shared clipboard
+  ✓ Drag and drop
+  ✓ Better resolution scaling
+  ✓ Seamless mouse integration
+
+═══════════════════════════════════════════════════════════════════════════
+TROUBLESHOOTING
+═══════════════════════════════════════════════════════════════════════════
+
+If clipboard sharing doesn't work after reboot:
+  1. Verify Guest Additions are running:
+     lsmod | grep vbox
+
+     You should see modules like:
+       vboxguest
+       vboxsf
+       vboxvideo
+
+  2. Check VirtualBox settings:
+     VM Settings → General → Advanced
+     - Shared Clipboard: Bidirectional
+     - Drag'n'Drop: Bidirectional
+
+  3. Restart the VBoxClient services:
+     killall VBoxClient
+     VBoxClient --clipboard &
+     VBoxClient --draganddrop &
+     VBoxClient --seamless &
+
+If kernel modules fail to build:
+  • Ensure you have the correct kernel headers:
+    sudo apt install linux-headers-$(uname -r)
+  
+  • Try rebuilding:
+    sudo /sbin/rcvboxadd setup
+
+If screen resolution is wrong:
+  • Right-click desktop → Display Settings
+  • Or use VirtualBox: View → Auto-resize Guest Display
+
+═══════════════════════════════════════════════════════════════════════════
+SETTING UP SHARED FOLDERS (Optional)
+═══════════════════════════════════════════════════════════════════════════
+
+1. On Windows host:
+   VM Settings → Shared Folders → Add new shared folder
+   Folder Path: C:\Users\YourName\Desktop (or wherever)
+   Folder Name: shared (or any name you want)
+   ☑ Auto-mount
+   ☑ Make Permanent
+
+2. In Parrot VM, add your user to vboxsf group:
+   sudo usermod -aG vboxsf jamie
+   
+3. Reboot or log out/in
+
+4. Access shared folder at:
+   /media/sf_shared (or whatever name you chose)
+
+═══════════════════════════════════════════════════════════════════════════
+QUICK REFERENCE COMMANDS
+═══════════════════════════════════════════════════════════════════════════
+
+Mount CD:
+  sudo mount /dev/cdrom /mnt/cdrom
+
+Install:
+  cd /mnt/cdrom && sudo sh ./VBoxLinuxAdditions.run
+
+Check if running:
+  lsmod | grep vbox
+
+Restart services:
+  killall VBoxClient && VBoxClient --clipboard &
+
+Rebuild modules:
+  sudo /sbin/rcvboxadd setup
+
+═══════════════════════════════════════════════════════════════════════════
+VBOX_EOF
+
     # Fix ownership of all dotfiles
     chown -R jamie:jamie $USER_HOME
     
@@ -1378,8 +1560,10 @@ Useful commands:
   - serve                 : Start HTTP server on port 8000
   - update-tools.sh       : Update all tools
   - reconchain <domain>   : Quick recon with ProjectDiscovery tools
+  - gitanalyze <url>      : Complete Git repository analysis
 
 Tool reference guide on Desktop: CTF_TOOLS_REFERENCE.txt
+VirtualBox setup guide on Desktop: VIRTUALBOX_GUEST_ADDITIONS_INSTALL.txt
 
 Happy hacking!
 EOF
