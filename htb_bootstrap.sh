@@ -1,12 +1,10 @@
 # Parrot Security VM Enhancement Bootstrap Script
 # For fresh Parrot installs running as VM guest on Windows host
-# Version 2.4 (Current Production - Ultimate Power User/CTF)
-
 # --- SCRIPT CLEANUP NOTE ---
-# If you encounter 'command not found' errors related to unexpected tokens or newline issues
-# after downloading this file, run the following commands to clean the line endings:
+# If you encounter 'command not found' errors related to unexpected tokens or newline issues, try running the
+# following commands to clean the line endings:
 # tr -cd '[:print:]\n\t' < /your/file/ >/your/file/
-# ---------------------------
+# Modular installation system with component selection
 
 #!/bin/bash
 
@@ -226,28 +224,30 @@ EOF
     echo ""
     echo -e "${GREEN}Current User:${NC} $USERNAME"
     echo ""
-    echo "1) 🚀 Full Installation (All Components)"
-    echo "2) ⚙️  Custom Installation (Choose Components)"
-    echo "3) 📦 Quick Presets (Web/Windows/CTF/Minimal)"
-    echo "4) 👤 Change Username (Current: $USERNAME)"
-    echo "5) 🔧 Update Existing Installation"
+    echo "1) ⚡ Install All (Everything - No Questions Asked)"
+    echo "2) 🚀 Full Installation (All Components - With Confirmation)"
+    echo "3) ⚙️  Custom Installation (Choose Components)"
+    echo "4) 📦 Quick Presets (Web/Windows/CTF/Minimal)"
+    echo "5) 👤 Change Username (Current: $USERNAME)"
+    echo "6) 🔧 Update Existing Installation"
     echo "0) ❌ Exit"
     echo ""
-    read -p "Select option [0-5]: " choice
+    read -p "Select option [0-6]: " choice
     
     case $choice in
-      1) install_full ;;
-      2) show_component_menu ;;
-      3) show_presets_menu ;;
-      4) configure_username ;;
-      5) update_installation ;;
+      1) install_all_immediate ;;
+      2) install_full ;;
+      3) show_component_menu ;;
+      4) show_presets_menu ;;
+      5) configure_username ;;
+      6) update_installation ;;
       0) 
         echo ""
         log_info "Exiting installer. Stay safe out there! 🏴‍☠️"
         exit 0
         ;;
       *)
-        log_error "Invalid option. Please select 0-5."
+        log_error "Invalid option. Please select 0-6."
         sleep 2
         ;;
     esac
@@ -532,6 +532,45 @@ EOF
 # ============================================
 # FULL INSTALLATION
 # ============================================
+install_all_immediate() {
+  # Enable all components
+  SYSTEM_UPDATES=true
+  USER_SETUP=true
+  SHELL_ENVIRONMENT=true
+  CORE_TOOLS=true
+  WEB_ENUMERATION=true
+  WINDOWS_AD=true
+  WIRELESS=true
+  POSTEXPLOIT=true
+  FORENSICS_STEGO=true
+  BINARY_EXPLOITATION=true
+  WORDLISTS=true
+  REPOS_ESSENTIAL=true
+  REPOS_PRIVILEGE=true
+  FIREFOX_EXTENSIONS=true
+  AUTOMATION_SCRIPTS=true
+  
+  save_config
+  
+  # Skip confirmation and go straight to install
+  clear
+  echo -e "${CYAN}"
+  cat << "EOF"
+╔═══════════════════════════════════════════════════════════════╗
+║                  ⚡ INSTALL ALL MODE ⚡                        ║
+╚═══════════════════════════════════════════════════════════════╝
+EOF
+  echo -e "${NC}"
+  echo ""
+  log_info "Installing EVERYTHING - No questions asked!"
+  log_info "This will take 10-30 minutes depending on your connection"
+  echo ""
+  echo -e "${YELLOW}Starting in 5 seconds... (Ctrl+C to cancel)${NC}"
+  sleep 5
+  
+  run_installation
+}
+
 install_full() {
   # Enable all components
   SYSTEM_UPDATES=true
@@ -1267,6 +1306,568 @@ UPDATE_EOF
   chmod +x $USER_HOME/scripts/update-tools.sh
   chown -R "$USERNAME":"$USERNAME" $USER_HOME/scripts
   
+  # Create reset/cleanup script
+  log_progress "Creating system reset script for Desktop..."
+  cat > $USER_HOME/Desktop/RESET_CTF_BOX.sh << 'RESET_EOF'
+#!/bin/bash
+
+# CTF Box Reset Script
+# Restores the system to post-installation state
+# Archives engagement data and clears pentesting artifacts
+
+set -e
+
+# Colors
+RED='\033[0;31m'
+GREEN='\033[0;32m'
+YELLOW='\033[1;33m'
+CYAN='\033[0;36m'
+NC='\033[0m'
+
+echo -e "${CYAN}"
+cat << "EOF"
+╔═══════════════════════════════════════════════════════════════╗
+║                                                               ║
+║                    CTF BOX RESET SCRIPT                       ║
+║              Restore System to Clean State                   ║
+║                                                               ║
+╚═══════════════════════════════════════════════════════════════╝
+EOF
+echo -e "${NC}"
+
+echo ""
+echo -e "${YELLOW}⚠️  WARNING: This script will:${NC}"
+echo ""
+echo "  • Archive all engagement folders"
+echo "  • Reset /etc/hosts to defaults"
+echo "  • Clear Kerberos tickets and config"
+echo "  • Clear bash/zsh history"
+echo "  • Clear browser data (optional)"
+echo "  • Clear cached credentials"
+echo "  • Clear temporary files"
+echo "  • Reset proxychains configuration"
+echo "  • Clear SSH known hosts"
+echo ""
+echo -e "${RED}Archived data will be saved to: ~/archives/<timestamp>${NC}"
+echo ""
+read -p "Are you sure you want to continue? (yes/no): " confirm
+
+if [[ "$confirm" != "yes" ]]; then
+  echo -e "${GREEN}Reset cancelled.${NC}"
+  exit 0
+fi
+
+# Check for active terminal sessions
+ACTIVE_BASH=$(pgrep -u $USER bash 2>/dev/null | wc -l)
+ACTIVE_ZSH=$(pgrep -u $USER zsh 2>/dev/null | wc -l)
+TOTAL_TERMINALS=$((ACTIVE_BASH + ACTIVE_ZSH))
+
+if [ $TOTAL_TERMINALS -gt 1 ]; then
+  echo ""
+  echo -e "${YELLOW}⚠️  WARNING: Detected $TOTAL_TERMINALS active terminal sessions!${NC}"
+  echo ""
+  echo "For best results:"
+  echo "  1. Close all other terminal windows/tabs"
+  echo "  2. Run this script from a single terminal"
+  echo "  3. This ensures all command history is properly captured"
+  echo ""
+  read -p "Continue anyway? (y/n): " continue_multi
+  if [[ "$continue_multi" != "y" && "$continue_multi" != "Y" ]]; then
+    echo -e "${GREEN}Reset cancelled. Please close other terminals and try again.${NC}"
+    exit 0
+  fi
+fi
+
+echo ""
+echo -e "${CYAN}[*] Starting system reset...${NC}"
+echo ""
+
+# Create archive directory
+ARCHIVE_DIR="$HOME/archives/$(date +%Y%m%d_%H%M%S)"
+mkdir -p "$ARCHIVE_DIR"
+echo -e "${GREEN}[+]${NC} Created archive directory: $ARCHIVE_DIR"
+
+# ============================================
+# 1. ARCHIVE ENGAGEMENTS
+# ============================================
+echo ""
+echo -e "${CYAN}[1/10] Archiving engagement data...${NC}"
+
+if [ -d "$HOME/engagements" ] && [ "$(ls -A $HOME/engagements 2>/dev/null)" ]; then
+  echo -e "${YELLOW}[*]${NC} Found engagement data, creating archive..."
+  tar -czf "$ARCHIVE_DIR/engagements_backup.tar.gz" -C "$HOME" engagements 2>/dev/null
+  
+  if [ -f "$ARCHIVE_DIR/engagements_backup.tar.gz" ]; then
+    echo -e "${GREEN}[+]${NC} Engagements archived to: $ARCHIVE_DIR/engagements_backup.tar.gz"
+    
+    # Create index of what was archived
+    echo "# Engagement Backup - $(date)" > "$ARCHIVE_DIR/ARCHIVE_INDEX.txt"
+    echo "" >> "$ARCHIVE_DIR/ARCHIVE_INDEX.txt"
+    echo "Archived Engagements:" >> "$ARCHIVE_DIR/ARCHIVE_INDEX.txt"
+    ls -1 "$HOME/engagements" >> "$ARCHIVE_DIR/ARCHIVE_INDEX.txt" 2>/dev/null
+    
+    # Remove engagement folders
+    rm -rf "$HOME/engagements"/*
+    echo -e "${GREEN}[+]${NC} Engagement folders cleared"
+  else
+    echo -e "${RED}[-]${NC} Failed to create engagement archive"
+  fi
+else
+  echo -e "${YELLOW}[*]${NC} No engagement data found, skipping..."
+fi
+
+# ============================================
+# 2. RESET /etc/hosts
+# ============================================
+echo ""
+echo -e "${CYAN}[2/10] Resetting /etc/hosts...${NC}"
+
+# Backup current hosts file
+sudo cp /etc/hosts "$ARCHIVE_DIR/hosts.backup" 2>/dev/null
+echo -e "${GREEN}[+]${NC} Current /etc/hosts backed up"
+
+# Create clean hosts file
+sudo bash -c "cat > /etc/hosts << 'HOSTS_EOF'
+127.0.0.1       localhost
+127.0.1.1       $(hostname)
+
+# The following lines are desirable for IPv6 capable hosts
+::1     localhost ip6-localhost ip6-loopback
+ff02::1 ip6-allnodes
+ff02::2 ip6-allrouters
+HOSTS_EOF"
+
+echo -e "${GREEN}[+]${NC} /etc/hosts reset to defaults"
+
+# ============================================
+# 3. CLEAR KERBEROS
+# ============================================
+echo ""
+echo -e "${CYAN}[3/10] Clearing Kerberos tickets and config...${NC}"
+
+# Backup krb5.conf if exists
+if [ -f /etc/krb5.conf ]; then
+  sudo cp /etc/krb5.conf "$ARCHIVE_DIR/krb5.conf.backup" 2>/dev/null
+  echo -e "${GREEN}[+]${NC} Kerberos config backed up"
+fi
+
+# Destroy Kerberos tickets
+kdestroy -A 2>/dev/null || true
+sudo kdestroy -A 2>/dev/null || true
+echo -e "${GREEN}[+]${NC} Kerberos tickets destroyed"
+
+# Reset krb5.conf to minimal default
+sudo bash -c 'cat > /etc/krb5.conf << "KRB_EOF"
+[libdefaults]
+    default_realm = EXAMPLE.COM
+    dns_lookup_realm = false
+    dns_lookup_kdc = false
+
+[realms]
+    EXAMPLE.COM = {
+        kdc = kerberos.example.com
+        admin_server = kerberos.example.com
+    }
+
+[domain_realm]
+    .example.com = EXAMPLE.COM
+    example.com = EXAMPLE.COM
+KRB_EOF'
+
+echo -e "${GREEN}[+]${NC} Kerberos config reset to defaults"
+
+# Clear cached Kerberos tickets
+rm -f /tmp/krb5cc_* 2>/dev/null || true
+rm -f /var/tmp/krb5cc_* 2>/dev/null || true
+rm -f "$HOME/.krb5/krb5cc_*" 2>/dev/null || true
+echo -e "${GREEN}[+]${NC} Cached Kerberos tickets cleared"
+
+# ============================================
+# 4. CLEAR HISTORY
+# ============================================
+echo ""
+echo -e "${CYAN}[4/10] Clearing command history (all sessions)...${NC}"
+
+# First, force all running shells to write their history to disk
+echo -e "${YELLOW}[*]${NC} Flushing history from active terminal sessions..."
+
+# Get all bash PIDs and force them to write history
+BASH_PIDS=$(pgrep -u $USER bash 2>/dev/null || true)
+if [ -n "$BASH_PIDS" ]; then
+  for pid in $BASH_PIDS; do
+    # Send signal to flush history (doesn't close terminal)
+    kill -SIGUSR1 $pid 2>/dev/null || true
+  done
+  echo -e "${GREEN}[+]${NC} Flushed history from $(echo $BASH_PIDS | wc -w) bash sessions"
+fi
+
+# Get all zsh PIDs and force them to write history
+ZSH_PIDS=$(pgrep -u $USER zsh 2>/dev/null || true)
+if [ -n "$ZSH_PIDS" ]; then
+  for pid in $ZSH_PIDS; do
+    kill -SIGUSR1 $pid 2>/dev/null || true
+  done
+  echo -e "${GREEN}[+]${NC} Flushed history from $(echo $ZSH_PIDS | wc -w) zsh sessions"
+fi
+
+# Give shells time to write history
+sleep 1
+
+# Backup all history files (including numbered backups)
+echo -e "${YELLOW}[*]${NC} Backing up all history files to readable .txt format..."
+
+# Create history archive subdirectory
+mkdir -p "$ARCHIVE_DIR/command_history"
+
+# Bash histories - combine into single txt file
+if [ -f "$HOME/.bash_history" ]; then
+  echo "# Bash Command History - Archived $(date)" > "$ARCHIVE_DIR/command_history/bash_history.txt"
+  echo "# Main history file" >> "$ARCHIVE_DIR/command_history/bash_history.txt"
+  echo "============================================" >> "$ARCHIVE_DIR/command_history/bash_history.txt"
+  cat "$HOME/.bash_history" >> "$ARCHIVE_DIR/command_history/bash_history.txt" 2>/dev/null
+  
+  # Add numbered bash history backups
+  for hist in "$HOME"/.bash_history.*; do
+    if [ -f "$hist" ]; then
+      echo "" >> "$ARCHIVE_DIR/command_history/bash_history.txt"
+      echo "============================================" >> "$ARCHIVE_DIR/command_history/bash_history.txt"
+      echo "# From: $(basename $hist)" >> "$ARCHIVE_DIR/command_history/bash_history.txt"
+      echo "============================================" >> "$ARCHIVE_DIR/command_history/bash_history.txt"
+      cat "$hist" >> "$ARCHIVE_DIR/command_history/bash_history.txt" 2>/dev/null
+    fi
+  done
+  echo -e "${GREEN}[+]${NC} Bash history archived to bash_history.txt"
+fi
+
+# Zsh histories - combine into single txt file
+if [ -f "$HOME/.zsh_history" ]; then
+  echo "# Zsh Command History - Archived $(date)" > "$ARCHIVE_DIR/command_history/zsh_history.txt"
+  echo "# Main history file" >> "$ARCHIVE_DIR/command_history/zsh_history.txt"
+  echo "============================================" >> "$ARCHIVE_DIR/command_history/zsh_history.txt"
+  cat "$HOME/.zsh_history" >> "$ARCHIVE_DIR/command_history/zsh_history.txt" 2>/dev/null
+  
+  # Add numbered zsh history backups
+  for hist in "$HOME"/.zsh_history.*; do
+    if [ -f "$hist" ]; then
+      echo "" >> "$ARCHIVE_DIR/command_history/zsh_history.txt"
+      echo "============================================" >> "$ARCHIVE_DIR/command_history/zsh_history.txt"
+      echo "# From: $(basename $hist)" >> "$ARCHIVE_DIR/command_history/zsh_history.txt"
+      echo "============================================" >> "$ARCHIVE_DIR/command_history/zsh_history.txt"
+      cat "$hist" >> "$ARCHIVE_DIR/command_history/zsh_history.txt" 2>/dev/null
+    fi
+  done
+  echo -e "${GREEN}[+]${NC} Zsh history archived to zsh_history.txt"
+fi
+
+# PowerShell history
+if [ -f "$HOME/.local/share/powershell/PSReadLine/ConsoleHost_history.txt" ]; then
+  echo "# PowerShell Command History - Archived $(date)" > "$ARCHIVE_DIR/command_history/powershell_history.txt"
+  echo "============================================" >> "$ARCHIVE_DIR/command_history/powershell_history.txt"
+  cat "$HOME/.local/share/powershell/PSReadLine/ConsoleHost_history.txt" >> "$ARCHIVE_DIR/command_history/powershell_history.txt" 2>/dev/null
+  echo -e "${GREEN}[+]${NC} PowerShell history archived to powershell_history.txt"
+fi
+
+# Python REPL history
+if [ -f "$HOME/.python_history" ]; then
+  echo "# Python REPL History - Archived $(date)" > "$ARCHIVE_DIR/command_history/python_history.txt"
+  echo "============================================" >> "$ARCHIVE_DIR/command_history/python_history.txt"
+  cat "$HOME/.python_history" >> "$ARCHIVE_DIR/command_history/python_history.txt" 2>/dev/null
+  echo -e "${GREEN}[+]${NC} Python history archived to python_history.txt"
+fi
+
+# MySQL history
+if [ -f "$HOME/.mysql_history" ]; then
+  echo "# MySQL CLI History - Archived $(date)" > "$ARCHIVE_DIR/command_history/mysql_history.txt"
+  echo "============================================" >> "$ARCHIVE_DIR/command_history/mysql_history.txt"
+  cat "$HOME/.mysql_history" >> "$ARCHIVE_DIR/command_history/mysql_history.txt" 2>/dev/null
+  echo -e "${GREEN}[+]${NC} MySQL history archived to mysql_history.txt"
+fi
+
+# PostgreSQL history
+if [ -f "$HOME/.psql_history" ]; then
+  echo "# PostgreSQL History - Archived $(date)" > "$ARCHIVE_DIR/command_history/psql_history.txt"
+  echo "============================================" >> "$ARCHIVE_DIR/command_history/psql_history.txt"
+  cat "$HOME/.psql_history" >> "$ARCHIVE_DIR/command_history/psql_history.txt" 2>/dev/null
+  echo -e "${GREEN}[+]${NC} PostgreSQL history archived to psql_history.txt"
+fi
+
+# Redis CLI history
+if [ -f "$HOME/.rediscli_history" ]; then
+  echo "# Redis CLI History - Archived $(date)" > "$ARCHIVE_DIR/command_history/redis_history.txt"
+  echo "============================================" >> "$ARCHIVE_DIR/command_history/redis_history.txt"
+  cat "$HOME/.rediscli_history" >> "$ARCHIVE_DIR/command_history/redis_history.txt" 2>/dev/null
+  echo -e "${GREEN}[+]${NC} Redis history archived to redis_history.txt"
+fi
+
+# Less history (contains search patterns)
+if [ -f "$HOME/.lesshst" ]; then
+  echo "# Less Search History - Archived $(date)" > "$ARCHIVE_DIR/command_history/less_history.txt"
+  echo "============================================" >> "$ARCHIVE_DIR/command_history/less_history.txt"
+  cat "$HOME/.lesshst" >> "$ARCHIVE_DIR/command_history/less_history.txt" 2>/dev/null
+  echo -e "${GREEN}[+]${NC} Less history archived to less_history.txt"
+fi
+
+# Create combined "all commands" file
+echo "# ALL COMMAND HISTORY - Complete Archive" > "$ARCHIVE_DIR/command_history/ALL_COMMANDS.txt"
+echo "# Archived: $(date)" >> "$ARCHIVE_DIR/command_history/ALL_COMMANDS.txt"
+echo "# User: $USER" >> "$ARCHIVE_DIR/command_history/ALL_COMMANDS.txt"
+echo "# Host: $(hostname)" >> "$ARCHIVE_DIR/command_history/ALL_COMMANDS.txt"
+echo "========================================" >> "$ARCHIVE_DIR/command_history/ALL_COMMANDS.txt"
+echo "" >> "$ARCHIVE_DIR/command_history/ALL_COMMANDS.txt"
+
+# Append all history files to combined file
+for histfile in "$ARCHIVE_DIR"/command_history/*_history.txt; do
+  if [ -f "$histfile" ] && [ "$(basename $histfile)" != "ALL_COMMANDS.txt" ]; then
+    echo "" >> "$ARCHIVE_DIR/command_history/ALL_COMMANDS.txt"
+    echo "###############################################" >> "$ARCHIVE_DIR/command_history/ALL_COMMANDS.txt"
+    echo "# Source: $(basename $histfile)" >> "$ARCHIVE_DIR/command_history/ALL_COMMANDS.txt"
+    echo "###############################################" >> "$ARCHIVE_DIR/command_history/ALL_COMMANDS.txt"
+    cat "$histfile" >> "$ARCHIVE_DIR/command_history/ALL_COMMANDS.txt"
+  fi
+done
+
+echo -e "${GREEN}[+]${NC} Combined history created: ALL_COMMANDS.txt"
+echo -e "${GREEN}[+]${NC} All command histories backed up to: $ARCHIVE_DIR/command_history/"
+
+# Clear all history files
+echo -e "${YELLOW}[*]${NC} Clearing all history files..."
+
+# Bash
+cat /dev/null > "$HOME/.bash_history" 2>/dev/null || true
+for hist in "$HOME"/.bash_history.*; do
+  [ -f "$hist" ] && cat /dev/null > "$hist" 2>/dev/null || true
+done
+
+# Zsh
+cat /dev/null > "$HOME/.zsh_history" 2>/dev/null || true
+for hist in "$HOME"/.zsh_history.*; do
+  [ -f "$hist" ] && cat /dev/null > "$hist" 2>/dev/null || true
+done
+
+# PowerShell
+if [ -f "$HOME/.local/share/powershell/PSReadLine/ConsoleHost_history.txt" ]; then
+  cat /dev/null > "$HOME/.local/share/powershell/PSReadLine/ConsoleHost_history.txt" 2>/dev/null || true
+fi
+
+# Other tool histories
+cat /dev/null > "$HOME/.python_history" 2>/dev/null || true
+cat /dev/null > "$HOME/.mysql_history" 2>/dev/null || true
+cat /dev/null > "$HOME/.psql_history" 2>/dev/null || true
+cat /dev/null > "$HOME/.rediscli_history" 2>/dev/null || true
+cat /dev/null > "$HOME/.lesshst" 2>/dev/null || true
+
+# Clear in-memory history for current shell
+history -c 2>/dev/null || true
+export HISTSIZE=0
+export HISTFILE=/dev/null
+
+echo -e "${GREEN}[+]${NC} All command histories cleared"
+
+# Clear systemd journal logs (contains command execution)
+echo -e "${YELLOW}[*]${NC} Clearing systemd journal (user session logs)..."
+journalctl --user --vacuum-time=1s 2>/dev/null || true
+
+echo -e "${GREEN}[+]${NC} Command history clearing complete"
+
+# ============================================
+# 5. CLEAR CACHED CREDENTIALS
+# ============================================
+echo ""
+echo -e "${CYAN}[5/10] Clearing cached credentials...${NC}"
+
+# Clear responder logs and hashes
+if [ -d "$HOME/.responder" ]; then
+  tar -czf "$ARCHIVE_DIR/responder_logs.tar.gz" -C "$HOME" .responder 2>/dev/null
+  rm -rf "$HOME/.responder"/*
+  echo -e "${GREEN}[+]${NC} Responder logs cleared"
+fi
+
+# Clear NetExec/CrackMapExec databases
+if [ -d "$HOME/.nxc" ]; then
+  tar -czf "$ARCHIVE_DIR/nxc_databases.tar.gz" -C "$HOME" .nxc 2>/dev/null
+  rm -rf "$HOME/.nxc"/*
+  echo -e "${GREEN}[+]${NC} NetExec databases cleared"
+fi
+
+if [ -d "$HOME/.cme" ]; then
+  tar -czf "$ARCHIVE_DIR/cme_databases.tar.gz" -C "$HOME" .cme 2>/dev/null
+  rm -rf "$HOME/.cme"/*
+  echo -e "${GREEN}[+]${NC} CrackMapExec databases cleared"
+fi
+
+# Clear bloodhound data
+if [ -d "$HOME/.config/bloodhound" ]; then
+  tar -czf "$ARCHIVE_DIR/bloodhound_data.tar.gz" -C "$HOME/.config" bloodhound 2>/dev/null
+  rm -rf "$HOME/.config/bloodhound"/*
+  echo -e "${GREEN}[+]${NC} BloodHound data cleared"
+fi
+
+# ============================================
+# 6. CLEAR SSH KNOWN HOSTS
+# ============================================
+echo ""
+echo -e "${CYAN}[6/10] Clearing SSH known hosts...${NC}"
+
+if [ -f "$HOME/.ssh/known_hosts" ]; then
+  cp "$HOME/.ssh/known_hosts" "$ARCHIVE_DIR/ssh_known_hosts.backup" 2>/dev/null
+  cat /dev/null > "$HOME/.ssh/known_hosts"
+  echo -e "${GREEN}[+]${NC} SSH known hosts cleared"
+else
+  echo -e "${YELLOW}[*]${NC} No SSH known hosts file found"
+fi
+
+# ============================================
+# 7. RESET PROXYCHAINS
+# ============================================
+echo ""
+echo -e "${CYAN}[7/10] Resetting proxychains configuration...${NC}"
+
+if [ -f /etc/proxychains4.conf ]; then
+  sudo cp /etc/proxychains4.conf "$ARCHIVE_DIR/proxychains4.conf.backup" 2>/dev/null
+  
+  sudo bash -c 'cat > /etc/proxychains4.conf << "PROXY_EOF"
+# proxychains.conf - Default configuration
+
+strict_chain
+proxy_dns
+remote_dns_subnet 224
+tcp_read_time_out 15000
+tcp_connect_time_out 8000
+
+[ProxyList]
+# Add proxy here
+# Examples:
+# socks5  127.0.0.1 1080
+# socks4  127.0.0.1 1080
+# http    127.0.0.1 8080
+PROXY_EOF'
+  
+  echo -e "${GREEN}[+]${NC} Proxychains config reset to defaults"
+fi
+
+# ============================================
+# 8. CLEAR TEMPORARY FILES
+# ============================================
+echo ""
+echo -e "${CYAN}[8/10] Clearing temporary files...${NC}"
+
+# Clear downloads
+if [ -d "$HOME/Downloads" ] && [ "$(ls -A $HOME/Downloads 2>/dev/null)" ]; then
+  mkdir -p "$ARCHIVE_DIR/downloads"
+  mv "$HOME/Downloads"/* "$ARCHIVE_DIR/downloads/" 2>/dev/null || true
+  echo -e "${GREEN}[+]${NC} Downloads archived and cleared"
+fi
+
+# Clear desktop files (except reset script and reference guides)
+if [ -d "$HOME/Desktop" ]; then
+  find "$HOME/Desktop" -type f ! -name "RESET_CTF_BOX.sh" ! -name "*REFERENCE*.txt" ! -name "*GUIDE*.txt" -exec mv {} "$ARCHIVE_DIR/" \; 2>/dev/null || true
+  echo -e "${GREEN}[+]${NC} Desktop files archived"
+fi
+
+# Clear temporary directories
+rm -rf /tmp/nmap* 2>/dev/null || true
+rm -rf /tmp/*.log 2>/dev/null || true
+rm -rf "$HOME/.cache/nuclei" 2>/dev/null || true
+rm -rf "$HOME/.local/share/Trash"/* 2>/dev/null || true
+echo -e "${GREEN}[+]${NC} Temporary files cleared"
+
+# ============================================
+# 9. CLEAR BROWSER DATA (OPTIONAL)
+# ============================================
+echo ""
+echo -e "${CYAN}[9/10] Browser data cleanup...${NC}"
+read -p "Clear Firefox browsing history and cookies? (y/n): " clear_browser
+
+if [[ "$clear_browser" == "y" || "$clear_browser" == "Y" ]]; then
+  # Find Firefox profile
+  FIREFOX_PROFILE=$(find "$HOME/.mozilla/firefox" -maxdepth 1 -type d -name "*.default*" 2>/dev/null | head -n 1)
+  
+  if [ -n "$FIREFOX_PROFILE" ]; then
+    # Backup Firefox profile
+    tar -czf "$ARCHIVE_DIR/firefox_profile.tar.gz" -C "$HOME/.mozilla" firefox 2>/dev/null
+    
+    # Clear history and cookies
+    rm -f "$FIREFOX_PROFILE/places.sqlite" 2>/dev/null || true
+    rm -f "$FIREFOX_PROFILE/cookies.sqlite" 2>/dev/null || true
+    rm -f "$FIREFOX_PROFILE/formhistory.sqlite" 2>/dev/null || true
+    rm -rf "$FIREFOX_PROFILE/cache2"/* 2>/dev/null || true
+    
+    echo -e "${GREEN}[+]${NC} Firefox browsing data cleared"
+  else
+    echo -e "${YELLOW}[*]${NC} Firefox profile not found"
+  fi
+else
+  echo -e "${YELLOW}[*]${NC} Skipping browser data cleanup"
+fi
+
+# ============================================
+# 10. FINAL CLEANUP
+# ============================================
+echo ""
+echo -e "${CYAN}[10/10] Final cleanup...${NC}"
+
+# Clear logs that might contain sensitive info
+sudo truncate -s 0 /var/log/auth.log 2>/dev/null || true
+sudo truncate -s 0 /var/log/syslog 2>/dev/null || true
+
+# Clear user-specific logs
+rm -rf "$HOME/.local/share/recently-used.xbel" 2>/dev/null || true
+
+# Sync filesystem
+sync
+
+echo -e "${GREEN}[+]${NC} Final cleanup complete"
+
+# ============================================
+# SUMMARY
+# ============================================
+echo ""
+echo -e "${GREEN}"
+cat << "EOF"
+╔═══════════════════════════════════════════════════════════════╗
+║                                                               ║
+║                  ✓ SYSTEM RESET COMPLETE!                    ║
+║                                                               ║
+╚═══════════════════════════════════════════════════════════════╝
+EOF
+echo -e "${NC}"
+
+echo ""
+echo -e "${CYAN}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
+echo -e "${GREEN}SUMMARY:${NC}"
+echo -e "${CYAN}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
+echo ""
+echo -e "  ${GREEN}✓${NC} Engagement data archived"
+echo -e "  ${GREEN}✓${NC} /etc/hosts reset"
+echo -e "  ${GREEN}✓${NC} Kerberos tickets cleared"
+echo -e "  ${GREEN}✓${NC} Command history cleared"
+echo -e "  ${GREEN}✓${NC} Cached credentials cleared"
+echo -e "  ${GREEN}✓${NC} SSH known hosts cleared"
+echo -e "  ${GREEN}✓${NC} Proxychains reset"
+echo -e "  ${GREEN}✓${NC} Temporary files cleared"
+echo ""
+echo -e "${YELLOW}Archive Location:${NC} $ARCHIVE_DIR"
+echo ""
+echo -e "${CYAN}Your system is now reset to a clean state!${NC}"
+echo -e "${CYAN}Ready for the next engagement! 🎯${NC}"
+echo ""
+
+# Offer to reboot
+read -p "Reboot system now for a completely fresh start? (y/n): " reboot_choice
+if [[ "$reboot_choice" == "y" || "$reboot_choice" == "Y" ]]; then
+  echo ""
+  echo -e "${YELLOW}Rebooting in 5 seconds... (Ctrl+C to cancel)${NC}"
+  sleep 5
+  sudo reboot
+else
+  echo ""
+  echo -e "${GREEN}Reset complete! No reboot requested.${NC}"
+fi
+RESET_EOF
+  
+  chmod +x $USER_HOME/Desktop/RESET_CTF_BOX.sh
+  chown "$USERNAME":"$USERNAME" $USER_HOME/Desktop/RESET_CTF_BOX.sh
+  
   log_info "✓ Automation & dotfiles setup complete"
 }
 
@@ -1328,6 +1929,14 @@ EOF
   echo " ${GREEN}•${NC} http                  : Modern cURL (httpie)"
   echo ""
   echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+  echo -e "${CYAN}IMPORTANT FILES ON DESKTOP:${NC}"
+  echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+  echo ""
+  echo " ${GREEN}•${NC} ${YELLOW}RESET_CTF_BOX.sh${NC}     : Reset system to clean state"
+  echo "                          Archives engagements, clears history,"
+  echo "                          resets /etc/hosts, clears Kerberos, etc."
+  echo ""
+  echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
   echo ""
   echo -e "${YELLOW}Installation log saved to: /var/log/ctfbox-install.log${NC}"
   echo ""
@@ -1364,13 +1973,18 @@ main() {
         install_full
         exit 0
         ;;
+      --install-all)
+        install_all_immediate
+        exit 0
+        ;;
       --help|-h)
         echo "CTF Box Installer v${SCRIPT_VERSION}"
         echo "Usage: $0 [OPTIONS]"
         echo ""
         echo "Options:"
         echo "  --user=<username>, -u <username>  Set username"
-        echo "  --full                            Run full installation"
+        echo "  --full                            Run full installation (with confirmation)"
+        echo "  --install-all                     Install everything immediately (no prompts)"
         echo "  --help, -h                        Show this help"
         echo ""
         exit 0
