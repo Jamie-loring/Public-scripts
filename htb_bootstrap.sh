@@ -5,12 +5,9 @@
 # following commands to clean the line endings:
 # tr -cd '[:print:]\n\t' < /your/file/ >/your/file/
 # Modular installation system with component selection
+# last updated 10/28/2025
 
 #!/bin/bash
-
-# CTF Box Installer - Pentesting Toolkit Bootstrap v3.0
-# Modular installation system with component selection
-# Modern CTF Edition - 2025
 
 set -e
 
