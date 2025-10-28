@@ -5,11 +5,7 @@
 # --- SCRIPT CLEANUP NOTE ---
 # If you encounter 'command not found' errors related to unexpected tokens or newline issues
 # after downloading this file, run the following commands to clean the line endings:
-# tr -cd '[:print:]\n\t' < /tmp/bootstrap.sh > /tmp/bootstrap_clean.sh
-
-# wget -O /tmp/bootstrap.sh https://raw.githubusercontent.com/Jamie-loring/<YOUR_REPO>/main/bootstrap.sh
-# sudo bash /tmp/bootstrap_clean.sh
-# updated 10/27/2025
+# tr -cd '[:print:]\n\t' < /your/file/ >/your/file/
 # ---------------------------
 
 #!/bin/bash
