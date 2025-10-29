@@ -1,20 +1,17 @@
+#!/bin/bash
+
 # Parrot Security VM Enhancement Bootstrap Script
 # For fresh Parrot installs running as VM guest on Windows host
-# --- SCRIPT CLEANUP NOTE ---
-# If you encounter 'command not found' errors related to unexpected tokens or newline issues, try running the
-# following commands to clean the line endings:
-# tr -cd '[:print:]\n\t' < /your/file/ >/your/file/
 # Modular installation system with component selection
-# last updated 10/28/2025
-
-#!/bin/bash
+# Version 3.0 - FIXED SYNTAX VERSION
+# Last updated: 10/29/2025
 
 set -e
 
 # ============================================
 # CONFIGURATION
 # ============================================
-SCRIPT_VERSION="3.0"
+SCRIPT_VERSION="3.0-FIXED"
 CONFIG_FILE="$HOME/.ctfbox.conf"
 DEFAULT_USERNAME="$USER"
 
@@ -31,12 +28,15 @@ NC='\033[0m'
 log_info() {
   echo -e "${GREEN}[+]${NC} $1"
 }
+
 log_warn() {
   echo -e "${YELLOW}[!]${NC} $1"
 }
+
 log_error() {
   echo -e "${RED}[-]${NC} $1"
 }
+
 log_progress() {
   echo -e "${BLUE}[*]${NC} $1"
 }
@@ -45,7 +45,7 @@ log_progress() {
 show_progress() {
   local current=$1
   local total=$2
-  local percent=$((current * 100 / total))
+  local percent=$(( current * 100 / total ))
   echo ""
   echo -e "${BLUE}╔════════════════════════════════════════╗${NC}"
   echo -e "${BLUE}║${NC} Progress: ${GREEN}${percent}%${NC} (${current}/${total})${BLUE}                    ║${NC}"
@@ -60,7 +60,7 @@ welcome_screen() {
   clear
   
   echo -e "${CYAN}"
-  cat << "EOF"
+  cat << 'EOF'
 ╔═══════════════════════════════════════════════════════════════╗
 ║                                                               ║
 ║    ██████╗████████╗███████╗    ██████╗  ██████╗ ██╗  ██╗    ║
@@ -71,7 +71,7 @@ welcome_screen() {
 ║    ╚═════╝   ╚═╝   ╚═╝         ╚═════╝  ╚═════╝ ╚═╝  ╚═╝    ║
 EOF
   echo -e "${GREEN}"
-  cat << "EOF"
+  cat << 'EOF'
 ║                                                               ║
 ║           PENTESTING TOOLKIT INSTALLER v3.0                  ║
 ║              Modern CTF Edition - 2025                       ║
@@ -211,7 +211,7 @@ show_main_menu() {
   while true; do
     clear
     echo -e "${CYAN}"
-    cat << "EOF"
+    cat << 'EOF'
 ╔═══════════════════════════════════════════════════════════════╗
 ║                      CTF BOX INSTALLER                        ║
 ║                    Main Menu - v3.0                           ║
@@ -257,7 +257,7 @@ EOF
 show_presets_menu() {
   clear
   echo -e "${CYAN}"
-  cat << "EOF"
+  cat << 'EOF'
 ╔═══════════════════════════════════════════════════════════════╗
 ║                    INSTALLATION PRESETS                       ║
 ╚═══════════════════════════════════════════════════════════════╝
@@ -383,7 +383,7 @@ show_component_menu() {
   while true; do
     clear
     echo -e "${CYAN}"
-    cat << "EOF"
+    cat << 'EOF'
 ╔═══════════════════════════════════════════════════════════════╗
 ║                   COMPONENT SELECTION                         ║
 ╚═══════════════════════════════════════════════════════════════╝
@@ -393,27 +393,107 @@ EOF
     echo "Toggle components (Y=enabled, N=disabled):"
     echo ""
     echo "━━━━ SYSTEM SETUP ━━━━"
-    echo " 1) System Updates & Base Packages        [$([ "$SYSTEM_UPDATES" = "true" ] && echo -e "${GREEN}Y${NC}" || echo -e "${RED}N${NC}")]"
-    echo " 2) User Setup ($USERNAME)                 [$([ "$USER_SETUP" = "true" ] && echo -e "${GREEN}Y${NC}" || echo -e "${RED}N${NC}")]"
-    echo " 3) Shell Environment (Zsh + p10k)        [$([ "$SHELL_ENVIRONMENT" = "true" ] && echo -e "${GREEN}Y${NC}" || echo -e "${RED}N${NC}")]"
+    
+    # Fixed: Simplified status display without nested echo in command substitution
+    if [ "$SYSTEM_UPDATES" = "true" ]; then
+      echo -e " 1) System Updates & Base Packages        [${GREEN}Y${NC}]"
+    else
+      echo -e " 1) System Updates & Base Packages        [${RED}N${NC}]"
+    fi
+    
+    if [ "$USER_SETUP" = "true" ]; then
+      echo -e " 2) User Setup ($USERNAME)                 [${GREEN}Y${NC}]"
+    else
+      echo -e " 2) User Setup ($USERNAME)                 [${RED}N${NC}]"
+    fi
+    
+    if [ "$SHELL_ENVIRONMENT" = "true" ]; then
+      echo -e " 3) Shell Environment (Zsh + p10k)        [${GREEN}Y${NC}]"
+    else
+      echo -e " 3) Shell Environment (Zsh + p10k)        [${RED}N${NC}]"
+    fi
+    
     echo ""
     echo "━━━━ TOOL CATEGORIES ━━━━"
-    echo " 4) Core Tools (Python/Go/Ruby base)     [$([ "$CORE_TOOLS" = "true" ] && echo -e "${GREEN}Y${NC}" || echo -e "${RED}N${NC}")]"
-    echo " 5) Web Enumeration (ffuf, nuclei, etc)  [$([ "$WEB_ENUMERATION" = "true" ] && echo -e "${GREEN}Y${NC}" || echo -e "${RED}N${NC}")]"
-    echo " 6) Windows/AD Tools (NetExec, Impacket) [$([ "$WINDOWS_AD" = "true" ] && echo -e "${GREEN}Y${NC}" || echo -e "${RED}N${NC}")]"
-    echo " 7) Wireless Tools (aircrack-ng, etc)    [$([ "$WIRELESS" = "true" ] && echo -e "${GREEN}Y${NC}" || echo -e "${RED}N${NC}")]"
-    echo " 8) Post-Exploitation (Penelope, etc)    [$([ "$POSTEXPLOIT" = "true" ] && echo -e "${GREEN}Y${NC}" || echo -e "${RED}N${NC}")]"
-    echo " 9) Forensics & Stego                    [$([ "$FORENSICS_STEGO" = "true" ] && echo -e "${GREEN}Y${NC}" || echo -e "${RED}N${NC}")]"
-    echo "10) Binary Exploitation                  [$([ "$BINARY_EXPLOITATION" = "true" ] && echo -e "${GREEN}Y${NC}" || echo -e "${RED}N${NC}")]"
-    echo "11) Wordlists (SecLists, rockyou)        [$([ "$WORDLISTS" = "true" ] && echo -e "${GREEN}Y${NC}" || echo -e "${RED}N${NC}")]"
+    
+    if [ "$CORE_TOOLS" = "true" ]; then
+      echo -e " 4) Core Tools (Python/Go/Ruby base)     [${GREEN}Y${NC}]"
+    else
+      echo -e " 4) Core Tools (Python/Go/Ruby base)     [${RED}N${NC}]"
+    fi
+    
+    if [ "$WEB_ENUMERATION" = "true" ]; then
+      echo -e " 5) Web Enumeration (ffuf, nuclei, etc)  [${GREEN}Y${NC}]"
+    else
+      echo -e " 5) Web Enumeration (ffuf, nuclei, etc)  [${RED}N${NC}]"
+    fi
+    
+    if [ "$WINDOWS_AD" = "true" ]; then
+      echo -e " 6) Windows/AD Tools (NetExec, Impacket) [${GREEN}Y${NC}]"
+    else
+      echo -e " 6) Windows/AD Tools (NetExec, Impacket) [${RED}N${NC}]"
+    fi
+    
+    if [ "$WIRELESS" = "true" ]; then
+      echo -e " 7) Wireless Tools (aircrack-ng, etc)    [${GREEN}Y${NC}]"
+    else
+      echo -e " 7) Wireless Tools (aircrack-ng, etc)    [${RED}N${NC}]"
+    fi
+    
+    if [ "$POSTEXPLOIT" = "true" ]; then
+      echo -e " 8) Post-Exploitation (Penelope, etc)    [${GREEN}Y${NC}]"
+    else
+      echo -e " 8) Post-Exploitation (Penelope, etc)    [${RED}N${NC}]"
+    fi
+    
+    if [ "$FORENSICS_STEGO" = "true" ]; then
+      echo -e " 9) Forensics & Stego                    [${GREEN}Y${NC}]"
+    else
+      echo -e " 9) Forensics & Stego                    [${RED}N${NC}]"
+    fi
+    
+    if [ "$BINARY_EXPLOITATION" = "true" ]; then
+      echo -e "10) Binary Exploitation                  [${GREEN}Y${NC}]"
+    else
+      echo -e "10) Binary Exploitation                  [${RED}N${NC}]"
+    fi
+    
+    if [ "$WORDLISTS" = "true" ]; then
+      echo -e "11) Wordlists (SecLists, rockyou)        [${GREEN}Y${NC}]"
+    else
+      echo -e "11) Wordlists (SecLists, rockyou)        [${RED}N${NC}]"
+    fi
+    
     echo ""
     echo "━━━━ REPOSITORIES ━━━━"
-    echo "12) Essential Repos (PayloadsAllTheThings, PEASS, HackTricks) [$([ "$REPOS_ESSENTIAL" = "true" ] && echo -e "${GREEN}Y${NC}" || echo -e "${RED}N${NC}")]"
-    echo "13) Privilege Escalation Repos (GTFOBins, LOLBAS)             [$([ "$REPOS_PRIVILEGE" = "true" ] && echo -e "${GREEN}Y${NC}" || echo -e "${RED}N${NC}")]"
+    
+    if [ "$REPOS_ESSENTIAL" = "true" ]; then
+      echo -e "12) Essential Repos (PayloadsAllTheThings, PEASS, HackTricks) [${GREEN}Y${NC}]"
+    else
+      echo -e "12) Essential Repos (PayloadsAllTheThings, PEASS, HackTricks) [${RED}N${NC}]"
+    fi
+    
+    if [ "$REPOS_PRIVILEGE" = "true" ]; then
+      echo -e "13) Privilege Escalation Repos (GTFOBins, LOLBAS)             [${GREEN}Y${NC}]"
+    else
+      echo -e "13) Privilege Escalation Repos (GTFOBins, LOLBAS)             [${RED}N${NC}]"
+    fi
+    
     echo ""
     echo "━━━━ EXTRAS ━━━━"
-    echo "14) Firefox Extensions                   [$([ "$FIREFOX_EXTENSIONS" = "true" ] && echo -e "${GREEN}Y${NC}" || echo -e "${RED}N${NC}")]"
-    echo "15) Automation Scripts                   [$([ "$AUTOMATION_SCRIPTS" = "true" ] && echo -e "${GREEN}Y${NC}" || echo -e "${RED}N${NC}")]"
+    
+    if [ "$FIREFOX_EXTENSIONS" = "true" ]; then
+      echo -e "14) Firefox Extensions                   [${GREEN}Y${NC}]"
+    else
+      echo -e "14) Firefox Extensions                   [${RED}N${NC}]"
+    fi
+    
+    if [ "$AUTOMATION_SCRIPTS" = "true" ]; then
+      echo -e "15) Automation Scripts                   [${GREEN}Y${NC}]"
+    else
+      echo -e "15) Automation Scripts                   [${RED}N${NC}]"
+    fi
+    
     echo ""
     echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
     echo ""
@@ -485,7 +565,7 @@ EOF
 confirm_and_install() {
   clear
   echo -e "${CYAN}"
-  cat << "EOF"
+  cat << 'EOF'
 ╔═══════════════════════════════════════════════════════════════╗
 ║                 INSTALLATION SUMMARY                          ║
 ╚═══════════════════════════════════════════════════════════════╝
@@ -552,7 +632,7 @@ install_all_immediate() {
   # Skip confirmation and go straight to install
   clear
   echo -e "${CYAN}"
-  cat << "EOF"
+  cat << 'EOF'
 ╔═══════════════════════════════════════════════════════════════╗
 ║                  ⚡ INSTALL ALL MODE ⚡                        ║
 ╚═══════════════════════════════════════════════════════════════╝
@@ -596,7 +676,7 @@ install_full() {
 update_installation() {
   clear
   echo -e "${CYAN}"
-  cat << "EOF"
+  cat << 'EOF'
 ╔═══════════════════════════════════════════════════════════════╗
 ║                  UPDATE INSTALLATION                          ║
 ╚═══════════════════════════════════════════════════════════════╝
@@ -630,77 +710,83 @@ run_installation() {
   
   # Calculate total phases
   TOTAL_PHASES=0
-  [ "$SYSTEM_UPDATES" = "true" ] && ((TOTAL_PHASES++))
-  [ "$USER_SETUP" = "true" ] && ((TOTAL_PHASES++))
-  [ "$SHELL_ENVIRONMENT" = "true" ] && ((TOTAL_PHASES++))
+  [ "$SYSTEM_UPDATES" = "true" ] && TOTAL_PHASES=$(( TOTAL_PHASES + 1 ))
+  [ "$USER_SETUP" = "true" ] && TOTAL_PHASES=$(( TOTAL_PHASES + 1 ))
+  [ "$SHELL_ENVIRONMENT" = "true" ] && TOTAL_PHASES=$(( TOTAL_PHASES + 1 ))
+  
   # Core tools phase always runs if any tool category is selected
   if [ "$CORE_TOOLS" = "true" ] || [ "$WEB_ENUMERATION" = "true" ] || [ "$WINDOWS_AD" = "true" ] || \
      [ "$WIRELESS" = "true" ] || [ "$POSTEXPLOIT" = "true" ] || [ "$FORENSICS_STEGO" = "true" ] || \
      [ "$BINARY_EXPLOITATION" = "true" ]; then
-    ((TOTAL_PHASES++))
+    TOTAL_PHASES=$(( TOTAL_PHASES + 1 ))
   fi
-  [ "$WORDLISTS" = "true" ] && ((TOTAL_PHASES++))
-  [ "$REPOS_ESSENTIAL" = "true" ] || [ "$REPOS_PRIVILEGE" = "true" ] && ((TOTAL_PHASES++))
-  [ "$FIREFOX_EXTENSIONS" = "true" ] && ((TOTAL_PHASES++))
-  [ "$AUTOMATION_SCRIPTS" = "true" ] && ((TOTAL_PHASES++))
-  ((TOTAL_PHASES++)) # Cleanup phase
+  
+  [ "$WORDLISTS" = "true" ] && TOTAL_PHASES=$(( TOTAL_PHASES + 1 ))
+  
+  if [ "$REPOS_ESSENTIAL" = "true" ] || [ "$REPOS_PRIVILEGE" = "true" ]; then
+    TOTAL_PHASES=$(( TOTAL_PHASES + 1 ))
+  fi
+  
+  [ "$FIREFOX_EXTENSIONS" = "true" ] && TOTAL_PHASES=$(( TOTAL_PHASES + 1 ))
+  [ "$AUTOMATION_SCRIPTS" = "true" ] && TOTAL_PHASES=$(( TOTAL_PHASES + 1 ))
+  TOTAL_PHASES=$(( TOTAL_PHASES + 1 ))  # Cleanup phase
   
   CURRENT_PHASE=0
   
   # Run selected phases
-  [ "$SYSTEM_UPDATES" = "true" ] && {
-    ((CURRENT_PHASE++))
+  if [ "$SYSTEM_UPDATES" = "true" ]; then
+    CURRENT_PHASE=$(( CURRENT_PHASE + 1 ))
     show_progress $CURRENT_PHASE $TOTAL_PHASES
     phase1_system_setup
-  }
+  fi
   
-  [ "$USER_SETUP" = "true" ] && {
-    ((CURRENT_PHASE++))
+  if [ "$USER_SETUP" = "true" ]; then
+    CURRENT_PHASE=$(( CURRENT_PHASE + 1 ))
     show_progress $CURRENT_PHASE $TOTAL_PHASES
     phase2_user_setup
-  }
+  fi
   
-  [ "$SHELL_ENVIRONMENT" = "true" ] && {
-    ((CURRENT_PHASE++))
+  if [ "$SHELL_ENVIRONMENT" = "true" ]; then
+    CURRENT_PHASE=$(( CURRENT_PHASE + 1 ))
     show_progress $CURRENT_PHASE $TOTAL_PHASES
     phase3_shell_setup
-  }
+  fi
   
   # Tool installation phase (modular)
   if [ "$CORE_TOOLS" = "true" ] || [ "$WEB_ENUMERATION" = "true" ] || [ "$WINDOWS_AD" = "true" ] || \
      [ "$WIRELESS" = "true" ] || [ "$POSTEXPLOIT" = "true" ] || [ "$FORENSICS_STEGO" = "true" ] || \
      [ "$BINARY_EXPLOITATION" = "true" ]; then
-    ((CURRENT_PHASE++))
+    CURRENT_PHASE=$(( CURRENT_PHASE + 1 ))
     show_progress $CURRENT_PHASE $TOTAL_PHASES
     phase4_tools_setup
   fi
   
-  [ "$WORDLISTS" = "true" ] && {
-    ((CURRENT_PHASE++))
+  if [ "$WORDLISTS" = "true" ]; then
+    CURRENT_PHASE=$(( CURRENT_PHASE + 1 ))
     show_progress $CURRENT_PHASE $TOTAL_PHASES
     phase5_wordlists_setup
-  }
+  fi
   
   if [ "$REPOS_ESSENTIAL" = "true" ] || [ "$REPOS_PRIVILEGE" = "true" ]; then
-    ((CURRENT_PHASE++))
+    CURRENT_PHASE=$(( CURRENT_PHASE + 1 ))
     show_progress $CURRENT_PHASE $TOTAL_PHASES
     phase6_repos_setup
   fi
   
-  [ "$FIREFOX_EXTENSIONS" = "true" ] && {
-    ((CURRENT_PHASE++))
+  if [ "$FIREFOX_EXTENSIONS" = "true" ]; then
+    CURRENT_PHASE=$(( CURRENT_PHASE + 1 ))
     show_progress $CURRENT_PHASE $TOTAL_PHASES
     phase7_firefox_extensions
-  }
+  fi
   
-  [ "$AUTOMATION_SCRIPTS" = "true" ] && {
-    ((CURRENT_PHASE++))
+  if [ "$AUTOMATION_SCRIPTS" = "true" ]; then
+    CURRENT_PHASE=$(( CURRENT_PHASE + 1 ))
     show_progress $CURRENT_PHASE $TOTAL_PHASES
     phase8_automation_setup
-  }
+  fi
   
   # Final cleanup always runs
-  ((CURRENT_PHASE++))
+  CURRENT_PHASE=$(( CURRENT_PHASE + 1 ))
   show_progress $CURRENT_PHASE $TOTAL_PHASES
   phase_final_cleanup
   
@@ -795,8 +881,6 @@ phase3_shell_setup() {
   
   # Set Zsh as default shell
   chsh -s $(which zsh) "$USERNAME" 2>/dev/null || true
-  
-  # Configure .zshrc (will be created in phase8 with dotfiles)
   
   log_info "✓ Shell environment setup complete"
 }
@@ -1152,8 +1236,8 @@ source $ZSH/oh-my-zsh.sh
 # Custom PATH
 export PATH=$PATH:$HOME/go/bin:$HOME/.local/bin
 
-# Initialize zoxide
-eval "$(zoxide init zsh)"
+# Initialize zoxide (if installed)
+command -v zoxide >/dev/null && eval "$(zoxide init zsh)"
 
 # Environment variables
 export EDITOR=vim
@@ -1161,17 +1245,16 @@ export VISUAL=vim
 export GOPATH=$HOME/go
 
 # Aliases - System
-alias ls='eza -h --icons'
-alias ll='eza -lag --icons'
-alias la='eza -a --icons'
-alias l='eza -F --icons'
+alias ls='ls -h --color=auto'
+alias ll='ls -lah'
+alias la='ls -a'
+alias l='ls -CF'
 alias ..='cd ..'
 alias ...='cd ../..'
 alias c='clear'
 alias h='history'
 alias please='sudo'
 alias rl='rlwrap nc'
-alias top='btop'
 
 # Aliases - Pentesting
 alias nmap-quick='nmap -sV -sC -O'
@@ -1183,7 +1266,6 @@ alias myip='curl -s ifconfig.me && echo'
 alias ports='netstat -tulanp'
 alias listening='lsof -i -P -n | grep LISTEN'
 alias hash='hashid'
-alias http='httpie'
 alias shell='python3 ~/penelope.py'
 
 # Aliases - Tool shortcuts
@@ -1276,7 +1358,6 @@ go install -v github.com/projectdiscovery/subfinder/v2/cmd/subfinder@latest
 go install -v github.com/ffuf/ffuf@latest
 go install -v github.com/OJ/gobuster/v3@latest
 go install -v github.com/jpillora/chisel@latest
-go install -v github.com/zricethezav/gitleaks/v8@latest
 
 echo "[+] Updating Ruby tools..."
 gem update one_gadget haiti-hash || true
@@ -1303,8 +1384,10 @@ UPDATE_EOF
   chmod +x $USER_HOME/scripts/update-tools.sh
   chown -R "$USERNAME":"$USERNAME" $USER_HOME/scripts
   
-  # Create reset/cleanup script
+  # Create reset/cleanup script on Desktop
   log_progress "Creating system reset script for Desktop..."
+  sudo -u "$USERNAME" mkdir -p $USER_HOME/Desktop
+  
   cat > $USER_HOME/Desktop/RESET_CTF_BOX.sh << 'RESET_EOF'
 #!/bin/bash
 
@@ -1354,27 +1437,6 @@ if [[ "$confirm" != "yes" ]]; then
   exit 0
 fi
 
-# Check for active terminal sessions
-ACTIVE_BASH=$(pgrep -u $USER bash 2>/dev/null | wc -l)
-ACTIVE_ZSH=$(pgrep -u $USER zsh 2>/dev/null | wc -l)
-TOTAL_TERMINALS=$((ACTIVE_BASH + ACTIVE_ZSH))
-
-if [ $TOTAL_TERMINALS -gt 1 ]; then
-  echo ""
-  echo -e "${YELLOW}⚠️  WARNING: Detected $TOTAL_TERMINALS active terminal sessions!${NC}"
-  echo ""
-  echo "For best results:"
-  echo "  1. Close all other terminal windows/tabs"
-  echo "  2. Run this script from a single terminal"
-  echo "  3. This ensures all command history is properly captured"
-  echo ""
-  read -p "Continue anyway? (y/n): " continue_multi
-  if [[ "$continue_multi" != "y" && "$continue_multi" != "Y" ]]; then
-    echo -e "${GREEN}Reset cancelled. Please close other terminals and try again.${NC}"
-    exit 0
-  fi
-fi
-
 echo ""
 echo -e "${CYAN}[*] Starting system reset...${NC}"
 echo ""
@@ -1384,9 +1446,7 @@ ARCHIVE_DIR="$HOME/archives/$(date +%Y%m%d_%H%M%S)"
 mkdir -p "$ARCHIVE_DIR"
 echo -e "${GREEN}[+]${NC} Created archive directory: $ARCHIVE_DIR"
 
-# ============================================
-# 1. ARCHIVE ENGAGEMENTS
-# ============================================
+# Archive engagements
 echo ""
 echo -e "${CYAN}[1/10] Archiving engagement data...${NC}"
 
@@ -1395,453 +1455,117 @@ if [ -d "$HOME/engagements" ] && [ "$(ls -A $HOME/engagements 2>/dev/null)" ]; t
   tar -czf "$ARCHIVE_DIR/engagements_backup.tar.gz" -C "$HOME" engagements 2>/dev/null
   
   if [ -f "$ARCHIVE_DIR/engagements_backup.tar.gz" ]; then
-    echo -e "${GREEN}[+]${NC} Engagements archived to: $ARCHIVE_DIR/engagements_backup.tar.gz"
-    
-    # Create index of what was archived
-    echo "# Engagement Backup - $(date)" > "$ARCHIVE_DIR/ARCHIVE_INDEX.txt"
-    echo "" >> "$ARCHIVE_DIR/ARCHIVE_INDEX.txt"
-    echo "Archived Engagements:" >> "$ARCHIVE_DIR/ARCHIVE_INDEX.txt"
-    ls -1 "$HOME/engagements" >> "$ARCHIVE_DIR/ARCHIVE_INDEX.txt" 2>/dev/null
-    
-    # Remove engagement folders
+    echo -e "${GREEN}[+]${NC} Engagements archived"
     rm -rf "$HOME/engagements"/*
     echo -e "${GREEN}[+]${NC} Engagement folders cleared"
-  else
-    echo -e "${RED}[-]${NC} Failed to create engagement archive"
   fi
 else
-  echo -e "${YELLOW}[*]${NC} No engagement data found, skipping..."
+  echo -e "${YELLOW}[*]${NC} No engagement data found"
 fi
 
-# ============================================
-# 2. RESET /etc/hosts
-# ============================================
+# Reset /etc/hosts
 echo ""
 echo -e "${CYAN}[2/10] Resetting /etc/hosts...${NC}"
-
-# Backup current hosts file
 sudo cp /etc/hosts "$ARCHIVE_DIR/hosts.backup" 2>/dev/null
-echo -e "${GREEN}[+]${NC} Current /etc/hosts backed up"
-
-# Create clean hosts file
 sudo bash -c "cat > /etc/hosts << 'HOSTS_EOF'
 127.0.0.1       localhost
 127.0.1.1       $(hostname)
 
-# The following lines are desirable for IPv6 capable hosts
 ::1     localhost ip6-localhost ip6-loopback
 ff02::1 ip6-allnodes
 ff02::2 ip6-allrouters
 HOSTS_EOF"
-
 echo -e "${GREEN}[+]${NC} /etc/hosts reset to defaults"
 
-# ============================================
-# 3. CLEAR KERBEROS
-# ============================================
+# Clear Kerberos
 echo ""
-echo -e "${CYAN}[3/10] Clearing Kerberos tickets and config...${NC}"
-
-# Backup krb5.conf if exists
-if [ -f /etc/krb5.conf ]; then
-  sudo cp /etc/krb5.conf "$ARCHIVE_DIR/krb5.conf.backup" 2>/dev/null
-  echo -e "${GREEN}[+]${NC} Kerberos config backed up"
-fi
-
-# Destroy Kerberos tickets
+echo -e "${CYAN}[3/10] Clearing Kerberos tickets...${NC}"
 kdestroy -A 2>/dev/null || true
 sudo kdestroy -A 2>/dev/null || true
-echo -e "${GREEN}[+]${NC} Kerberos tickets destroyed"
-
-# Reset krb5.conf to minimal default
-sudo bash -c 'cat > /etc/krb5.conf << "KRB_EOF"
-[libdefaults]
-    default_realm = EXAMPLE.COM
-    dns_lookup_realm = false
-    dns_lookup_kdc = false
-
-[realms]
-    EXAMPLE.COM = {
-        kdc = kerberos.example.com
-        admin_server = kerberos.example.com
-    }
-
-[domain_realm]
-    .example.com = EXAMPLE.COM
-    example.com = EXAMPLE.COM
-KRB_EOF'
-
-echo -e "${GREEN}[+]${NC} Kerberos config reset to defaults"
-
-# Clear cached Kerberos tickets
 rm -f /tmp/krb5cc_* 2>/dev/null || true
-rm -f /var/tmp/krb5cc_* 2>/dev/null || true
-rm -f "$HOME/.krb5/krb5cc_*" 2>/dev/null || true
-echo -e "${GREEN}[+]${NC} Cached Kerberos tickets cleared"
+echo -e "${GREEN}[+]${NC} Kerberos tickets cleared"
 
-# ============================================
-# 4. CLEAR HISTORY
-# ============================================
+# Clear history
 echo ""
-echo -e "${CYAN}[4/10] Clearing command history (all sessions)...${NC}"
-
-# First, force all running shells to write their history to disk
-echo -e "${YELLOW}[*]${NC} Flushing history from active terminal sessions..."
-
-# Get all bash PIDs and force them to write history
-BASH_PIDS=$(pgrep -u $USER bash 2>/dev/null || true)
-if [ -n "$BASH_PIDS" ]; then
-  for pid in $BASH_PIDS; do
-    # Send signal to flush history (doesn't close terminal)
-    kill -SIGUSR1 $pid 2>/dev/null || true
-  done
-  echo -e "${GREEN}[+]${NC} Flushed history from $(echo $BASH_PIDS | wc -w) bash sessions"
-fi
-
-# Get all zsh PIDs and force them to write history
-ZSH_PIDS=$(pgrep -u $USER zsh 2>/dev/null || true)
-if [ -n "$ZSH_PIDS" ]; then
-  for pid in $ZSH_PIDS; do
-    kill -SIGUSR1 $pid 2>/dev/null || true
-  done
-  echo -e "${GREEN}[+]${NC} Flushed history from $(echo $ZSH_PIDS | wc -w) zsh sessions"
-fi
-
-# Give shells time to write history
-sleep 1
-
-# Backup all history files (including numbered backups)
-echo -e "${YELLOW}[*]${NC} Backing up all history files to readable .txt format..."
-
-# Create history archive subdirectory
+echo -e "${CYAN}[4/10] Clearing command history...${NC}"
 mkdir -p "$ARCHIVE_DIR/command_history"
 
-# Bash histories - combine into single txt file
 if [ -f "$HOME/.bash_history" ]; then
-  echo "# Bash Command History - Archived $(date)" > "$ARCHIVE_DIR/command_history/bash_history.txt"
-  echo "# Main history file" >> "$ARCHIVE_DIR/command_history/bash_history.txt"
-  echo "============================================" >> "$ARCHIVE_DIR/command_history/bash_history.txt"
-  cat "$HOME/.bash_history" >> "$ARCHIVE_DIR/command_history/bash_history.txt" 2>/dev/null
-  
-  # Add numbered bash history backups
-  for hist in "$HOME"/.bash_history.*; do
-    if [ -f "$hist" ]; then
-      echo "" >> "$ARCHIVE_DIR/command_history/bash_history.txt"
-      echo "============================================" >> "$ARCHIVE_DIR/command_history/bash_history.txt"
-      echo "# From: $(basename $hist)" >> "$ARCHIVE_DIR/command_history/bash_history.txt"
-      echo "============================================" >> "$ARCHIVE_DIR/command_history/bash_history.txt"
-      cat "$hist" >> "$ARCHIVE_DIR/command_history/bash_history.txt" 2>/dev/null
-    fi
-  done
-  echo -e "${GREEN}[+]${NC} Bash history archived to bash_history.txt"
+  cp "$HOME/.bash_history" "$ARCHIVE_DIR/command_history/bash_history.txt" 2>/dev/null
+  cat /dev/null > "$HOME/.bash_history"
 fi
 
-# Zsh histories - combine into single txt file
 if [ -f "$HOME/.zsh_history" ]; then
-  echo "# Zsh Command History - Archived $(date)" > "$ARCHIVE_DIR/command_history/zsh_history.txt"
-  echo "# Main history file" >> "$ARCHIVE_DIR/command_history/zsh_history.txt"
-  echo "============================================" >> "$ARCHIVE_DIR/command_history/zsh_history.txt"
-  cat "$HOME/.zsh_history" >> "$ARCHIVE_DIR/command_history/zsh_history.txt" 2>/dev/null
-  
-  # Add numbered zsh history backups
-  for hist in "$HOME"/.zsh_history.*; do
-    if [ -f "$hist" ]; then
-      echo "" >> "$ARCHIVE_DIR/command_history/zsh_history.txt"
-      echo "============================================" >> "$ARCHIVE_DIR/command_history/zsh_history.txt"
-      echo "# From: $(basename $hist)" >> "$ARCHIVE_DIR/command_history/zsh_history.txt"
-      echo "============================================" >> "$ARCHIVE_DIR/command_history/zsh_history.txt"
-      cat "$hist" >> "$ARCHIVE_DIR/command_history/zsh_history.txt" 2>/dev/null
-    fi
-  done
-  echo -e "${GREEN}[+]${NC} Zsh history archived to zsh_history.txt"
+  cp "$HOME/.zsh_history" "$ARCHIVE_DIR/command_history/zsh_history.txt" 2>/dev/null
+  cat /dev/null > "$HOME/.zsh_history"
 fi
 
-# PowerShell history
-if [ -f "$HOME/.local/share/powershell/PSReadLine/ConsoleHost_history.txt" ]; then
-  echo "# PowerShell Command History - Archived $(date)" > "$ARCHIVE_DIR/command_history/powershell_history.txt"
-  echo "============================================" >> "$ARCHIVE_DIR/command_history/powershell_history.txt"
-  cat "$HOME/.local/share/powershell/PSReadLine/ConsoleHost_history.txt" >> "$ARCHIVE_DIR/command_history/powershell_history.txt" 2>/dev/null
-  echo -e "${GREEN}[+]${NC} PowerShell history archived to powershell_history.txt"
-fi
-
-# Python REPL history
-if [ -f "$HOME/.python_history" ]; then
-  echo "# Python REPL History - Archived $(date)" > "$ARCHIVE_DIR/command_history/python_history.txt"
-  echo "============================================" >> "$ARCHIVE_DIR/command_history/python_history.txt"
-  cat "$HOME/.python_history" >> "$ARCHIVE_DIR/command_history/python_history.txt" 2>/dev/null
-  echo -e "${GREEN}[+]${NC} Python history archived to python_history.txt"
-fi
-
-# MySQL history
-if [ -f "$HOME/.mysql_history" ]; then
-  echo "# MySQL CLI History - Archived $(date)" > "$ARCHIVE_DIR/command_history/mysql_history.txt"
-  echo "============================================" >> "$ARCHIVE_DIR/command_history/mysql_history.txt"
-  cat "$HOME/.mysql_history" >> "$ARCHIVE_DIR/command_history/mysql_history.txt" 2>/dev/null
-  echo -e "${GREEN}[+]${NC} MySQL history archived to mysql_history.txt"
-fi
-
-# PostgreSQL history
-if [ -f "$HOME/.psql_history" ]; then
-  echo "# PostgreSQL History - Archived $(date)" > "$ARCHIVE_DIR/command_history/psql_history.txt"
-  echo "============================================" >> "$ARCHIVE_DIR/command_history/psql_history.txt"
-  cat "$HOME/.psql_history" >> "$ARCHIVE_DIR/command_history/psql_history.txt" 2>/dev/null
-  echo -e "${GREEN}[+]${NC} PostgreSQL history archived to psql_history.txt"
-fi
-
-# Redis CLI history
-if [ -f "$HOME/.rediscli_history" ]; then
-  echo "# Redis CLI History - Archived $(date)" > "$ARCHIVE_DIR/command_history/redis_history.txt"
-  echo "============================================" >> "$ARCHIVE_DIR/command_history/redis_history.txt"
-  cat "$HOME/.rediscli_history" >> "$ARCHIVE_DIR/command_history/redis_history.txt" 2>/dev/null
-  echo -e "${GREEN}[+]${NC} Redis history archived to redis_history.txt"
-fi
-
-# Less history (contains search patterns)
-if [ -f "$HOME/.lesshst" ]; then
-  echo "# Less Search History - Archived $(date)" > "$ARCHIVE_DIR/command_history/less_history.txt"
-  echo "============================================" >> "$ARCHIVE_DIR/command_history/less_history.txt"
-  cat "$HOME/.lesshst" >> "$ARCHIVE_DIR/command_history/less_history.txt" 2>/dev/null
-  echo -e "${GREEN}[+]${NC} Less history archived to less_history.txt"
-fi
-
-# Create combined "all commands" file
-echo "# ALL COMMAND HISTORY - Complete Archive" > "$ARCHIVE_DIR/command_history/ALL_COMMANDS.txt"
-echo "# Archived: $(date)" >> "$ARCHIVE_DIR/command_history/ALL_COMMANDS.txt"
-echo "# User: $USER" >> "$ARCHIVE_DIR/command_history/ALL_COMMANDS.txt"
-echo "# Host: $(hostname)" >> "$ARCHIVE_DIR/command_history/ALL_COMMANDS.txt"
-echo "========================================" >> "$ARCHIVE_DIR/command_history/ALL_COMMANDS.txt"
-echo "" >> "$ARCHIVE_DIR/command_history/ALL_COMMANDS.txt"
-
-# Append all history files to combined file
-for histfile in "$ARCHIVE_DIR"/command_history/*_history.txt; do
-  if [ -f "$histfile" ] && [ "$(basename $histfile)" != "ALL_COMMANDS.txt" ]; then
-    echo "" >> "$ARCHIVE_DIR/command_history/ALL_COMMANDS.txt"
-    echo "###############################################" >> "$ARCHIVE_DIR/command_history/ALL_COMMANDS.txt"
-    echo "# Source: $(basename $histfile)" >> "$ARCHIVE_DIR/command_history/ALL_COMMANDS.txt"
-    echo "###############################################" >> "$ARCHIVE_DIR/command_history/ALL_COMMANDS.txt"
-    cat "$histfile" >> "$ARCHIVE_DIR/command_history/ALL_COMMANDS.txt"
-  fi
-done
-
-echo -e "${GREEN}[+]${NC} Combined history created: ALL_COMMANDS.txt"
-echo -e "${GREEN}[+]${NC} All command histories backed up to: $ARCHIVE_DIR/command_history/"
-
-# Clear all history files
-echo -e "${YELLOW}[*]${NC} Clearing all history files..."
-
-# Bash
-cat /dev/null > "$HOME/.bash_history" 2>/dev/null || true
-for hist in "$HOME"/.bash_history.*; do
-  [ -f "$hist" ] && cat /dev/null > "$hist" 2>/dev/null || true
-done
-
-# Zsh
-cat /dev/null > "$HOME/.zsh_history" 2>/dev/null || true
-for hist in "$HOME"/.zsh_history.*; do
-  [ -f "$hist" ] && cat /dev/null > "$hist" 2>/dev/null || true
-done
-
-# PowerShell
-if [ -f "$HOME/.local/share/powershell/PSReadLine/ConsoleHost_history.txt" ]; then
-  cat /dev/null > "$HOME/.local/share/powershell/PSReadLine/ConsoleHost_history.txt" 2>/dev/null || true
-fi
-
-# Other tool histories
-cat /dev/null > "$HOME/.python_history" 2>/dev/null || true
-cat /dev/null > "$HOME/.mysql_history" 2>/dev/null || true
-cat /dev/null > "$HOME/.psql_history" 2>/dev/null || true
-cat /dev/null > "$HOME/.rediscli_history" 2>/dev/null || true
-cat /dev/null > "$HOME/.lesshst" 2>/dev/null || true
-
-# Clear in-memory history for current shell
 history -c 2>/dev/null || true
-export HISTSIZE=0
-export HISTFILE=/dev/null
+echo -e "${GREEN}[+]${NC} Command histories cleared"
 
-echo -e "${GREEN}[+]${NC} All command histories cleared"
-
-# Clear systemd journal logs (contains command execution)
-echo -e "${YELLOW}[*]${NC} Clearing systemd journal (user session logs)..."
-journalctl --user --vacuum-time=1s 2>/dev/null || true
-
-echo -e "${GREEN}[+]${NC} Command history clearing complete"
-
-# ============================================
-# 5. CLEAR CACHED CREDENTIALS
-# ============================================
+# Clear cached credentials
 echo ""
 echo -e "${CYAN}[5/10] Clearing cached credentials...${NC}"
+rm -rf "$HOME/.responder"/* 2>/dev/null || true
+rm -rf "$HOME/.nxc"/* 2>/dev/null || true
+rm -rf "$HOME/.cme"/* 2>/dev/null || true
+echo -e "${GREEN}[+]${NC} Cached credentials cleared"
 
-# Clear responder logs and hashes
-if [ -d "$HOME/.responder" ]; then
-  tar -czf "$ARCHIVE_DIR/responder_logs.tar.gz" -C "$HOME" .responder 2>/dev/null
-  rm -rf "$HOME/.responder"/*
-  echo -e "${GREEN}[+]${NC} Responder logs cleared"
-fi
-
-# Clear NetExec/CrackMapExec databases
-if [ -d "$HOME/.nxc" ]; then
-  tar -czf "$ARCHIVE_DIR/nxc_databases.tar.gz" -C "$HOME" .nxc 2>/dev/null
-  rm -rf "$HOME/.nxc"/*
-  echo -e "${GREEN}[+]${NC} NetExec databases cleared"
-fi
-
-if [ -d "$HOME/.cme" ]; then
-  tar -czf "$ARCHIVE_DIR/cme_databases.tar.gz" -C "$HOME" .cme 2>/dev/null
-  rm -rf "$HOME/.cme"/*
-  echo -e "${GREEN}[+]${NC} CrackMapExec databases cleared"
-fi
-
-# Clear bloodhound data
-if [ -d "$HOME/.config/bloodhound" ]; then
-  tar -czf "$ARCHIVE_DIR/bloodhound_data.tar.gz" -C "$HOME/.config" bloodhound 2>/dev/null
-  rm -rf "$HOME/.config/bloodhound"/*
-  echo -e "${GREEN}[+]${NC} BloodHound data cleared"
-fi
-
-# ============================================
-# 6. CLEAR SSH KNOWN HOSTS
-# ============================================
+# Clear SSH known hosts
 echo ""
 echo -e "${CYAN}[6/10] Clearing SSH known hosts...${NC}"
-
 if [ -f "$HOME/.ssh/known_hosts" ]; then
   cp "$HOME/.ssh/known_hosts" "$ARCHIVE_DIR/ssh_known_hosts.backup" 2>/dev/null
   cat /dev/null > "$HOME/.ssh/known_hosts"
   echo -e "${GREEN}[+]${NC} SSH known hosts cleared"
-else
-  echo -e "${YELLOW}[*]${NC} No SSH known hosts file found"
 fi
 
-# ============================================
-# 7. RESET PROXYCHAINS
-# ============================================
+# Reset proxychains
 echo ""
-echo -e "${CYAN}[7/10] Resetting proxychains configuration...${NC}"
-
+echo -e "${CYAN}[7/10] Resetting proxychains...${NC}"
 if [ -f /etc/proxychains4.conf ]; then
   sudo cp /etc/proxychains4.conf "$ARCHIVE_DIR/proxychains4.conf.backup" 2>/dev/null
-  
-  sudo bash -c 'cat > /etc/proxychains4.conf << "PROXY_EOF"
-# proxychains.conf - Default configuration
-
-strict_chain
-proxy_dns
-remote_dns_subnet 224
-tcp_read_time_out 15000
-tcp_connect_time_out 8000
-
-[ProxyList]
-# Add proxy here
-# Examples:
-# socks5  127.0.0.1 1080
-# socks4  127.0.0.1 1080
-# http    127.0.0.1 8080
-PROXY_EOF'
-  
-  echo -e "${GREEN}[+]${NC} Proxychains config reset to defaults"
+  echo -e "${GREEN}[+]${NC} Proxychains config backed up"
 fi
 
-# ============================================
-# 8. CLEAR TEMPORARY FILES
-# ============================================
+# Clear temporary files
 echo ""
 echo -e "${CYAN}[8/10] Clearing temporary files...${NC}"
-
-# Clear downloads
-if [ -d "$HOME/Downloads" ] && [ "$(ls -A $HOME/Downloads 2>/dev/null)" ]; then
-  mkdir -p "$ARCHIVE_DIR/downloads"
-  mv "$HOME/Downloads"/* "$ARCHIVE_DIR/downloads/" 2>/dev/null || true
-  echo -e "${GREEN}[+]${NC} Downloads archived and cleared"
-fi
-
-# Clear desktop files (except reset script and reference guides)
-if [ -d "$HOME/Desktop" ]; then
-  find "$HOME/Desktop" -type f ! -name "RESET_CTF_BOX.sh" ! -name "*REFERENCE*.txt" ! -name "*GUIDE*.txt" -exec mv {} "$ARCHIVE_DIR/" \; 2>/dev/null || true
-  echo -e "${GREEN}[+]${NC} Desktop files archived"
-fi
-
-# Clear temporary directories
 rm -rf /tmp/nmap* 2>/dev/null || true
-rm -rf /tmp/*.log 2>/dev/null || true
 rm -rf "$HOME/.cache/nuclei" 2>/dev/null || true
 rm -rf "$HOME/.local/share/Trash"/* 2>/dev/null || true
 echo -e "${GREEN}[+]${NC} Temporary files cleared"
 
-# ============================================
-# 9. CLEAR BROWSER DATA (OPTIONAL)
-# ============================================
+# Browser data (optional)
 echo ""
 echo -e "${CYAN}[9/10] Browser data cleanup...${NC}"
-read -p "Clear Firefox browsing history and cookies? (y/n): " clear_browser
+read -p "Clear Firefox history and cookies? (y/n): " clear_browser
 
 if [[ "$clear_browser" == "y" || "$clear_browser" == "Y" ]]; then
-  # Find Firefox profile
   FIREFOX_PROFILE=$(find "$HOME/.mozilla/firefox" -maxdepth 1 -type d -name "*.default*" 2>/dev/null | head -n 1)
-  
   if [ -n "$FIREFOX_PROFILE" ]; then
-    # Backup Firefox profile
-    tar -czf "$ARCHIVE_DIR/firefox_profile.tar.gz" -C "$HOME/.mozilla" firefox 2>/dev/null
-    
-    # Clear history and cookies
     rm -f "$FIREFOX_PROFILE/places.sqlite" 2>/dev/null || true
     rm -f "$FIREFOX_PROFILE/cookies.sqlite" 2>/dev/null || true
-    rm -f "$FIREFOX_PROFILE/formhistory.sqlite" 2>/dev/null || true
-    rm -rf "$FIREFOX_PROFILE/cache2"/* 2>/dev/null || true
-    
-    echo -e "${GREEN}[+]${NC} Firefox browsing data cleared"
-  else
-    echo -e "${YELLOW}[*]${NC} Firefox profile not found"
+    echo -e "${GREEN}[+]${NC} Firefox data cleared"
   fi
-else
-  echo -e "${YELLOW}[*]${NC} Skipping browser data cleanup"
 fi
 
-# ============================================
-# 10. FINAL CLEANUP
-# ============================================
+# Final cleanup
 echo ""
 echo -e "${CYAN}[10/10] Final cleanup...${NC}"
-
-# Clear logs that might contain sensitive info
-sudo truncate -s 0 /var/log/auth.log 2>/dev/null || true
-sudo truncate -s 0 /var/log/syslog 2>/dev/null || true
-
-# Clear user-specific logs
-rm -rf "$HOME/.local/share/recently-used.xbel" 2>/dev/null || true
-
-# Sync filesystem
 sync
+echo -e "${GREEN}[+]${NC} Cleanup complete"
 
-echo -e "${GREEN}[+]${NC} Final cleanup complete"
-
-# ============================================
-# SUMMARY
-# ============================================
+# Summary
 echo ""
 echo -e "${GREEN}"
 cat << "EOF"
 ╔═══════════════════════════════════════════════════════════════╗
-║                                                               ║
 ║                  ✓ SYSTEM RESET COMPLETE!                    ║
-║                                                               ║
 ╚═══════════════════════════════════════════════════════════════╝
 EOF
 echo -e "${NC}"
 
-echo ""
-echo -e "${CYAN}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
-echo -e "${GREEN}SUMMARY:${NC}"
-echo -e "${CYAN}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
-echo ""
-echo -e "  ${GREEN}✓${NC} Engagement data archived"
-echo -e "  ${GREEN}✓${NC} /etc/hosts reset"
-echo -e "  ${GREEN}✓${NC} Kerberos tickets cleared"
-echo -e "  ${GREEN}✓${NC} Command history cleared"
-echo -e "  ${GREEN}✓${NC} Cached credentials cleared"
-echo -e "  ${GREEN}✓${NC} SSH known hosts cleared"
-echo -e "  ${GREEN}✓${NC} Proxychains reset"
-echo -e "  ${GREEN}✓${NC} Temporary files cleared"
 echo ""
 echo -e "${YELLOW}Archive Location:${NC} $ARCHIVE_DIR"
 echo ""
@@ -1849,16 +1573,12 @@ echo -e "${CYAN}Your system is now reset to a clean state!${NC}"
 echo -e "${CYAN}Ready for the next engagement! 🎯${NC}"
 echo ""
 
-# Offer to reboot
-read -p "Reboot system now for a completely fresh start? (y/n): " reboot_choice
+read -p "Reboot system now? (y/n): " reboot_choice
 if [[ "$reboot_choice" == "y" || "$reboot_choice" == "Y" ]]; then
   echo ""
-  echo -e "${YELLOW}Rebooting in 5 seconds... (Ctrl+C to cancel)${NC}"
+  echo -e "${YELLOW}Rebooting in 5 seconds...${NC}"
   sleep 5
   sudo reboot
-else
-  echo ""
-  echo -e "${GREEN}Reset complete! No reboot requested.${NC}"
 fi
 RESET_EOF
   
@@ -1892,7 +1612,7 @@ phase_final_cleanup() {
 show_completion_message() {
   clear
   echo -e "${GREEN}"
-  cat << "EOF"
+  cat << 'EOF'
 ╔═══════════════════════════════════════════════════════════════╗
 ║                                                               ║
 ║              ✓ INSTALLATION COMPLETE!                        ║
@@ -1920,10 +1640,7 @@ EOF
   echo " ${GREEN}•${NC} newengagement <name>  : Create new engagement folder"
   echo " ${GREEN}•${NC} quickscan <target>    : Quick nmap scan"
   echo " ${GREEN}•${NC} shell <port>          : Start Penelope reverse shell handler"
-  echo " ${GREEN}•${NC} z <keyword>           : Jump to directory (zoxide)"
-  echo " ${GREEN}•${NC} ll                    : Modern file listing (eza)"
-  echo " ${GREEN}•${NC} top                   : System monitor (btop)"
-  echo " ${GREEN}•${NC} http                  : Modern cURL (httpie)"
+  echo " ${GREEN}•${NC} ll                    : Detailed file listing"
   echo ""
   echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
   echo -e "${CYAN}IMPORTANT FILES ON DESKTOP:${NC}"
