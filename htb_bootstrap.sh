@@ -3,7 +3,7 @@
 # Parrot Security VM Enhancement Bootstrap Script
 # For fresh Parrot installs running as VM guest on Windows host
 # Modular installation system with component selection
-# Version 3.0 - FIXED SYNTAX VERSION
+# Version 3.1 - FULLY FIXED VERSION
 # Last updated: 10/29/2025
 
 set -e
@@ -11,7 +11,7 @@ set -e
 # ============================================
 # CONFIGURATION
 # ============================================
-SCRIPT_VERSION="3.0-FIXED"
+SCRIPT_VERSION="3.1-FIXED"
 CONFIG_FILE="$HOME/.ctfbox.conf"
 DEFAULT_USERNAME="$USER"
 
@@ -99,7 +99,7 @@ EOF
   echo -e "${GREEN}"
   cat << 'EOF'
 ║                                                               ║
-║           PENTESTING TOOLKIT INSTALLER v3.0                  ║
+║           PENTESTING TOOLKIT INSTALLER v3.1                  ║
 ║              Modern CTF Edition - 2025                       ║
 ║                                                               ║
 ╚═══════════════════════════════════════════════════════════════╝
@@ -184,8 +184,8 @@ configure_username() {
   export USER_HOME="/home/$USERNAME"
   
   echo ""
-  log_info "[+] Username set to: ${GREEN}$USERNAME${NC}"
-  log_info "[+] Home directory: ${GREEN}$USER_HOME${NC}"
+  log_info "Username set to: ${GREEN}$USERNAME${NC}"
+  log_info "Home directory: ${GREEN}$USER_HOME${NC}"
   echo ""
   
   read -p "Press Enter to continue to main menu..."
@@ -230,6 +230,18 @@ load_config() {
   fi
 }
 
+# Helper function to display component status
+display_status() {
+  local var_name=$1
+  local var_value="${!var_name}"
+  
+  if [ "$var_value" = "true" ]; then
+    echo -e "[${GREEN}Y${NC}]"
+  else
+    echo -e "[${RED}N${NC}]"
+  fi
+}
+
 # ============================================
 # MAIN MENU
 # ============================================
@@ -240,7 +252,7 @@ show_main_menu() {
     cat << 'EOF'
 ╔═══════════════════════════════════════════════════════════════╗
 ║                      CTF BOX INSTALLER                        ║
-║                    Main Menu - v3.0                           ║
+║                    Main Menu - v3.1                           ║
 ╚═══════════════════════════════════════════════════════════════╝
 EOF
     echo -e "${NC}"
@@ -266,7 +278,7 @@ EOF
       6) update_installation ;;
       0) 
         echo ""
-        log_info "Exiting installer. Stay safe out there! "
+        log_info "Exiting installer. Stay safe out there!"
         exit 0
         ;;
       *)
@@ -420,105 +432,33 @@ EOF
     echo ""
     echo "━━━━ SYSTEM SETUP ━━━━"
     
-    # Fixed: Simplified status display without nested echo in command substitution
-    if [ "$SYSTEM_UPDATES" = "true" ]; then
-      echo -e " 1) System Updates & Base Packages        [${GREEN}Y${NC}]"
-    else
-      echo -e " 1) System Updates & Base Packages        [${RED}N${NC}]"
-    fi
-    
-    if [ "$USER_SETUP" = "true" ]; then
-      echo -e " 2) User Setup ($USERNAME)                 [${GREEN}Y${NC}]"
-    else
-      echo -e " 2) User Setup ($USERNAME)                 [${RED}N${NC}]"
-    fi
-    
-    if [ "$SHELL_ENVIRONMENT" = "true" ]; then
-      echo -e " 3) Shell Environment (Zsh + p10k)        [${GREEN}Y${NC}]"
-    else
-      echo -e " 3) Shell Environment (Zsh + p10k)        [${RED}N${NC}]"
-    fi
+    echo -e " 1) System Updates & Base Packages        $(display_status SYSTEM_UPDATES)"
+    echo -e " 2) User Setup ($USERNAME)                 $(display_status USER_SETUP)"
+    echo -e " 3) Shell Environment (Zsh + p10k)        $(display_status SHELL_ENVIRONMENT)"
     
     echo ""
     echo "━━━━ TOOL CATEGORIES ━━━━"
     
-    if [ "$CORE_TOOLS" = "true" ]; then
-      echo -e " 4) Core Tools (Python/Go/Ruby base)     [${GREEN}Y${NC}]"
-    else
-      echo -e " 4) Core Tools (Python/Go/Ruby base)     [${RED}N${NC}]"
-    fi
-    
-    if [ "$WEB_ENUMERATION" = "true" ]; then
-      echo -e " 5) Web Enumeration (ffuf, nuclei, etc)  [${GREEN}Y${NC}]"
-    else
-      echo -e " 5) Web Enumeration (ffuf, nuclei, etc)  [${RED}N${NC}]"
-    fi
-    
-    if [ "$WINDOWS_AD" = "true" ]; then
-      echo -e " 6) Windows/AD Tools (NetExec, Impacket) [${GREEN}Y${NC}]"
-    else
-      echo -e " 6) Windows/AD Tools (NetExec, Impacket) [${RED}N${NC}]"
-    fi
-    
-    if [ "$WIRELESS" = "true" ]; then
-      echo -e " 7) Wireless Tools (aircrack-ng, etc)    [${GREEN}Y${NC}]"
-    else
-      echo -e " 7) Wireless Tools (aircrack-ng, etc)    [${RED}N${NC}]"
-    fi
-    
-    if [ "$POSTEXPLOIT" = "true" ]; then
-      echo -e " 8) Post-Exploitation (Penelope, etc)    [${GREEN}Y${NC}]"
-    else
-      echo -e " 8) Post-Exploitation (Penelope, etc)    [${RED}N${NC}]"
-    fi
-    
-    if [ "$FORENSICS_STEGO" = "true" ]; then
-      echo -e " 9) Forensics & Stego                    [${GREEN}Y${NC}]"
-    else
-      echo -e " 9) Forensics & Stego                    [${RED}N${NC}]"
-    fi
-    
-    if [ "$BINARY_EXPLOITATION" = "true" ]; then
-      echo -e "10) Binary Exploitation                  [${GREEN}Y${NC}]"
-    else
-      echo -e "10) Binary Exploitation                  [${RED}N${NC}]"
-    fi
-    
-    if [ "$WORDLISTS" = "true" ]; then
-      echo -e "11) Wordlists (SecLists, rockyou)        [${GREEN}Y${NC}]"
-    else
-      echo -e "11) Wordlists (SecLists, rockyou)        [${RED}N${NC}]"
-    fi
+    echo -e " 4) Core Tools (Python/Go/Ruby base)     $(display_status CORE_TOOLS)"
+    echo -e " 5) Web Enumeration (ffuf, nuclei, etc)  $(display_status WEB_ENUMERATION)"
+    echo -e " 6) Windows/AD Tools (NetExec, Impacket) $(display_status WINDOWS_AD)"
+    echo -e " 7) Wireless Tools (aircrack-ng, etc)    $(display_status WIRELESS)"
+    echo -e " 8) Post-Exploitation (Penelope, etc)    $(display_status POSTEXPLOIT)"
+    echo -e " 9) Forensics & Stego                    $(display_status FORENSICS_STEGO)"
+    echo -e "10) Binary Exploitation                  $(display_status BINARY_EXPLOITATION)"
+    echo -e "11) Wordlists (SecLists, rockyou)        $(display_status WORDLISTS)"
     
     echo ""
     echo "━━━━ REPOSITORIES ━━━━"
     
-    if [ "$REPOS_ESSENTIAL" = "true" ]; then
-      echo -e "12) Essential Repos (PayloadsAllTheThings, PEASS, HackTricks) [${GREEN}Y${NC}]"
-    else
-      echo -e "12) Essential Repos (PayloadsAllTheThings, PEASS, HackTricks) [${RED}N${NC}]"
-    fi
-    
-    if [ "$REPOS_PRIVILEGE" = "true" ]; then
-      echo -e "13) Privilege Escalation Repos (GTFOBins, LOLBAS)             [${GREEN}Y${NC}]"
-    else
-      echo -e "13) Privilege Escalation Repos (GTFOBins, LOLBAS)             [${RED}N${NC}]"
-    fi
+    echo -e "12) Essential Repos (PayloadsAllTheThings, PEASS, HackTricks) $(display_status REPOS_ESSENTIAL)"
+    echo -e "13) Privilege Escalation Repos (GTFOBins, LOLBAS)             $(display_status REPOS_PRIVILEGE)"
     
     echo ""
     echo "━━━━ EXTRAS ━━━━"
     
-    if [ "$FIREFOX_EXTENSIONS" = "true" ]; then
-      echo -e "14) Firefox Extensions                   [${GREEN}Y${NC}]"
-    else
-      echo -e "14) Firefox Extensions                   [${RED}N${NC}]"
-    fi
-    
-    if [ "$AUTOMATION_SCRIPTS" = "true" ]; then
-      echo -e "15) Automation Scripts                   [${GREEN}Y${NC}]"
-    else
-      echo -e "15) Automation Scripts                   [${RED}N${NC}]"
-    fi
+    echo -e "14) Firefox Extensions                   $(display_status FIREFOX_EXTENSIONS)"
+    echo -e "15) Automation Scripts                   $(display_status AUTOMATION_SCRIPTS)"
     
     echo ""
     echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
@@ -895,7 +835,7 @@ phase1_system_setup() {
     silversearcher-ag \
     2>&1 | tee -a /var/log/ctfbox-install.log
   
-  log_info "[+] System setup complete"
+  log_info "System setup complete"
 }
 
 # ============================================
@@ -922,7 +862,7 @@ phase2_user_setup() {
   usermod -aG docker "$USERNAME" 2>/dev/null || true
   export USER_HOME="/home/$USERNAME"
   
-  log_info "[+] User setup complete"
+  log_info "User setup complete"
 }
 
 # ============================================
@@ -939,7 +879,7 @@ phase3_shell_setup() {
   # Install Oh-My-Zsh
   if [ ! -d "$USER_HOME/.oh-my-zsh" ]; then
     log_progress "Installing Oh-My-Zsh..."
-    sudo -u "$USERNAME" sh -c "RUNZSH=no $(curl -fsSL https://raw.githubusercontent.com/ohmyzsh/ohmyzsh/master/tools/install.sh)" "" --unattended 2>&1 | tee -a /var/log/ctfbox-install.log
+    sudo -u "$USERNAME" sh -c "RUNZSH=no \$(curl -fsSL https://raw.githubusercontent.com/ohmyzsh/ohmyzsh/master/tools/install.sh)" "" --unattended 2>&1 | tee -a /var/log/ctfbox-install.log
   fi
   
   # Install zsh plugins
@@ -958,7 +898,7 @@ phase3_shell_setup() {
   # Set Zsh as default shell
   chsh -s $(which zsh) "$USERNAME" 2>/dev/null || true
   
-  log_info "[+] Shell environment setup complete"
+  log_info "Shell environment setup complete"
 }
 
 # ============================================
@@ -1006,7 +946,7 @@ phase4_tools_setup() {
     install_binary_tools
   fi
   
-  log_info "[+] Tool installation complete"
+  log_info "Tool installation complete"
 }
 
 # Core tools module
@@ -1183,7 +1123,7 @@ phase5_wordlists_setup() {
   sudo -u "$USERNAME" ln -sf $USER_HOME/tools/wordlists/SecLists $USER_HOME/SecLists 2>/dev/null || true
   sudo -u "$USERNAME" ln -sf /usr/share/wordlists/rockyou.txt $USER_HOME/tools/wordlists/rockyou.txt 2>/dev/null || true
   
-  log_info "[+] Wordlists setup complete"
+  log_info "Wordlists setup complete"
 }
 
 # ============================================
@@ -1231,7 +1171,7 @@ phase6_repos_setup() {
     sudo -u "$USERNAME" ln -sf $USER_HOME/tools/repos/penelope/penelope.py $USER_HOME/penelope.py 2>/dev/null || true
   fi
   
-  log_info "[+] Repositories setup complete"
+  log_info "Repositories setup complete"
 }
 
 # ============================================
@@ -1273,7 +1213,7 @@ phase7_firefox_extensions() {
     log_warn "Could not find or create Firefox profile"
   fi
   
-  log_info "[+] Firefox extensions setup complete"
+  log_info "Firefox extensions setup complete"
 }
 
 # ============================================
@@ -1545,7 +1485,7 @@ echo -e "${CYAN}[2/10] Resetting /etc/hosts...${NC}"
 sudo cp /etc/hosts "$ARCHIVE_DIR/hosts.backup" 2>/dev/null
 sudo bash -c "cat > /etc/hosts << 'HOSTS_EOF'
 127.0.0.1       localhost
-127.0.1.1       $(hostname)
+127.0.1.1       \$(hostname)
 
 ::1     localhost ip6-localhost ip6-loopback
 ff02::1 ip6-allnodes
@@ -1646,7 +1586,7 @@ echo ""
 echo -e "${YELLOW}Archive Location:${NC} $ARCHIVE_DIR"
 echo ""
 echo -e "${CYAN}Your system is now reset to a clean state!${NC}"
-echo -e "${CYAN}Ready for the next engagement! ${NC}"
+echo -e "${CYAN}Ready for the next engagement!${NC}"
 echo ""
 
 read -p "Reboot system now? (y/n): " reboot_choice
@@ -1661,7 +1601,7 @@ RESET_EOF
   chmod +x $USER_HOME/Desktop/RESET_CTF_BOX.sh
   chown "$USERNAME":"$USERNAME" $USER_HOME/Desktop/RESET_CTF_BOX.sh
   
-  log_info "[+] Automation & dotfiles setup complete"
+  log_info "Automation & dotfiles setup complete"
 }
 
 # ============================================
@@ -1679,7 +1619,7 @@ phase_final_cleanup() {
   # Fix ownership
   chown -R "$USERNAME":"$USERNAME" $USER_HOME
   
-  log_info "[+] Cleanup complete"
+  log_info "Cleanup complete"
 }
 
 # ============================================
@@ -1730,7 +1670,7 @@ EOF
   echo ""
   echo -e "${YELLOW}Installation log saved to: /var/log/ctfbox-install.log${NC}"
   echo ""
-  echo -e "${GREEN}Happy Hacking! ${NC}"
+  echo -e "${GREEN}Happy Hacking!${NC}"
   echo ""
   
   log_warn "System will reboot in 10 seconds (Ctrl+C to cancel)..."
@@ -1805,3 +1745,4 @@ main() {
 }
 
 # Run the installer
+main "$@"
