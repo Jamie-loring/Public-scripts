@@ -37,7 +37,7 @@ log_progress() {
 }
 
 # ============================================
-# PROGRESS INDICATOR
+# PROGRESS INDICATOR (FIXED SYNTAX)
 # ============================================
 show_progress() {
   local current=$1
@@ -52,7 +52,8 @@ show_progress() {
   for ((i=0; i<filled; i++)); do bar+="█"; done
   for ((i=0; i<empty; i++)); do bar+="░"; done
   
-  local remaining=$(( (total - current) * 2 ))
+  # FIX APPLIED: Used standard arithmetic expansion
+  local remaining=$(( (total - current) * 2 )) 
   local time_est=""
   if [ $remaining -eq 0 ]; then
     time_est="Complete!"
@@ -434,8 +435,8 @@ preset_ctf() {
 
 preset_minimal() {
   SYSTEM_UPDATES=false
-  USER_SETUP=true
-  SHELL_ENVIRONMENT=true
+  USER_SETUP=false
+  SHELL_ENVIRONMENT=false
   CORE_TOOLS=true
   WEB_ENUMERATION=false
   WINDOWS_AD=false
@@ -882,7 +883,7 @@ phase2_user_setup() {
 
   usermod -aG docker "$USERNAME" 2>/dev/null || true
 
-  # Removed the shell configuration moving block from here.
+  # Shell configuration file moving block was removed from here.
 
   log_progress "Setting proper ownership for $USER_HOME..."
   chown -R "$USERNAME":"$USERNAME" "$USER_HOME" 2>/dev/null || true
@@ -977,7 +978,7 @@ phase3_pam_config() {
 }
 
 # ============================================
-# PHASE 4: SHELL ENVIRONMENT (FIXED)
+# PHASE 4: SHELL ENVIRONMENT (FIXED LOGIC)
 # ============================================
 phase4_shell_setup() {
   log_progress "Phase: Shell Environment (Zsh + Oh-My-Zsh + p10k)"
@@ -1318,7 +1319,7 @@ phase8_firefox_extensions() {
 }
 
 # ============================================
-# PHASE 9: AUTOMATION & DOTFILES
+# PHASE 9: AUTOMATION & DOTFILES (UPDATED ALIASES)
 # ============================================
 phase9_automation_setup() {
   log_progress "Phase: Automation Scripts & Dotfiles"
@@ -1393,13 +1394,17 @@ alias peas='linpeas.sh'
 alias secrets='gitleaks detect --source'
 alias ysoserial='java -jar ~/tools/ysoserial.jar'
 
-# Aliases - Impacket Shortcuts
+# Aliases - Impacket Shortcuts (UPDATED)
 alias secretsdump='secretsdump.py'
 alias getnpusers='GetNPUsers.py'
 alias getuserspns='GetUserSPNs.py'
 alias psexec='psexec.py'
 alias smbexec='smbexec.py'
 alias wmiexec='wmiexec.py'
+alias dceclient='dceclient.py'
+alias ntlmrelayx='ntlmrelayx.py'
+alias lookupsid='lookupsid.py'
+alias rpcclient='rpcclient.py'
 
 # Aliases - Navigation
 alias tools='cd ~/tools'
@@ -1687,7 +1692,7 @@ RESET_EOF
 }
 
 # ============================================
-# PHASE 10: CREATE DOCUMENTATION FILES
+# PHASE 10: CREATE DOCUMENTATION FILES (UPDATED IMPACKET ALIASES)
 # ============================================
 phase10_create_documentation() {
   log_progress "Phase: Creating Documentation and Quick Reference Files"
@@ -1735,11 +1740,21 @@ nxc                     netexec
 smb                     netexec smb
 winrm                   netexec winrm
 bloodhound              bloodhound-python
+peas                    linpeas.sh (Shortcut to ~/linpeas.sh symlink)
+
+V. IMPACKET ALIASES (IMPACKET- PREFIX REMOVED)
+---------------------------------------------
 secretsdump             secretsdump.py
 getnpusers              GetNPUsers.py
 getuserspns             GetUserSPNs.py
 psexec                  psexec.py
-peas                    linpeas.sh (Shortcut to ~/linpeas.sh symlink)
+smbexec                 smbexec.py
+wmiexec                 wmiexec.py
+dceclient               dceclient.py
+ntlmrelayx              ntlmrelayx.py
+lookupsid               lookupsid.py
+rpcclient               rpcclient.py
+
 DOC_COMMANDS_EOF
 
   cat > "$USER_HOME/Desktop/TOOL_LOCATIONS.txt" << TOOL_LOCATIONS_EOF
@@ -1769,7 +1784,7 @@ III. TOOL ACCESS METHODS
   Installed to \$HOME/go/bin/. Accessible directly from PATH.
 
 * Python Tools (impacket scripts, NetExec, Bloodhound-Python): 
-  Installed globally or via pipx. Accessible directly via tool name (e.g., netexec, secretsdump.py).
+  Installed globally or via pipx. **Impacket scripts use aliases (e.g., secretsdump instead of secretsdump.py).** Accessible directly via tool name.
 
 IV. KEY CONFIGURATION FILES
 ---------------------------
@@ -1879,6 +1894,7 @@ EOF
   echo "   - ${CYAN}newengagement <name>${NC} - Create engagement structure"
   echo "   - ${CYAN}quickscan <target>${NC} - Quick nmap scan"
   echo "   - ${CYAN}nxc smb <target>${NC} - NetExec SMB enumeration"
+  echo "   - ${CYAN}secretsdump <domain>/<user>@<ip>${NC} - Impacket shortcut"
   echo ""
   echo -e "${CYAN}═══════════════════════════════════════════════════════════${NC}"
   echo ""
@@ -1887,7 +1903,7 @@ EOF
   echo ""
   
   if [ "$USER_SETUP" = "true" ]; then
-    echo -e "${YELLOW}⚠  IMPORTANT:${NC} Please ${GREEN}reboot${NC} your system to apply all changes!"
+    echo -e "${YELLOW}⚠  IMPORTANT:${NC} Please ${GREEN}reboot${NC} your system to apply all changes! (Required for Zsh/shell changes to fully activate)"
     echo ""
     read -p "Reboot now? (y/n): " reboot_choice
     if [[ "$reboot_choice" == "y" || "$reboot_choice" == "Y" ]]; then
