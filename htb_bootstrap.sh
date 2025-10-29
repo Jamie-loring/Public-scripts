@@ -3,7 +3,7 @@
 # Parrot Security VM Enhancement Bootstrap Script
 # For fresh Parrot installs running as VM guest on Windows host
 # Modular installation system with component selection
-# Version 3.1 - FULLY FIXED VERSION
+# Version 3.2 - USER SETUP FIXED
 # Last updated: 10/29/2025
 
 set -e
@@ -11,7 +11,7 @@ set -e
 # ============================================
 # CONFIGURATION
 # ============================================
-SCRIPT_VERSION="3.1-FIXED"
+SCRIPT_VERSION="3.2-FIXED"
 CONFIG_FILE="$HOME/.ctfbox.conf"
 DEFAULT_USERNAME="$USER"
 
@@ -99,7 +99,7 @@ EOF
   echo -e "${GREEN}"
   cat << 'EOF'
 ║                                                               ║
-║           PENTESTING TOOLKIT INSTALLER v3.1                  ║
+║           PENTESTING TOOLKIT INSTALLER v3.2                  ║
 ║              Modern CTF Edition - 2025                       ║
 ║                                                               ║
 ╚═══════════════════════════════════════════════════════════════╝
@@ -252,7 +252,7 @@ show_main_menu() {
     cat << 'EOF'
 ╔═══════════════════════════════════════════════════════════════╗
 ║                      CTF BOX INSTALLER                        ║
-║                    Main Menu - v3.1                           ║
+║                    Main Menu - v3.2                           ║
 ╚═══════════════════════════════════════════════════════════════╝
 EOF
     echo -e "${NC}"
@@ -676,6 +676,7 @@ run_installation() {
   
   # Calculate total phases
   TOTAL_PHASES=0
+  [ "$USER_SETUP" = "true" ] && TOTAL_PHASES=$(( TOTAL_PHASES + 1 ))  # USER SETUP FIRST NOW!
   [ "$SYSTEM_UPDATES" = "true" ] && TOTAL_PHASES=$(( TOTAL_PHASES + 1 ))
   [ "$SHELL_ENVIRONMENT" = "true" ] && TOTAL_PHASES=$(( TOTAL_PHASES + 1 ))
   
@@ -695,7 +696,6 @@ run_installation() {
   [ "$FIREFOX_EXTENSIONS" = "true" ] && TOTAL_PHASES=$(( TOTAL_PHASES + 1 ))
   [ "$AUTOMATION_SCRIPTS" = "true" ] && TOTAL_PHASES=$(( TOTAL_PHASES + 1 ))
   TOTAL_PHASES=$(( TOTAL_PHASES + 1 ))  # Cleanup phase
-  [ "$USER_SETUP" = "true" ] && TOTAL_PHASES=$(( TOTAL_PHASES + 1 ))  # User setup (last phase)
   
   # Show installation roadmap
   echo -e "${CYAN}╔════════════════════════════════════════════════════════════╗${NC}"
@@ -706,6 +706,10 @@ run_installation() {
   echo -e "${CYAN}║${NC}                                                            ${CYAN}║${NC}"
   
   local phase_num=1
+  [ "$USER_SETUP" = "true" ] && {
+    echo -e "${CYAN}║${NC} ${phase_num}. User Account Setup & Renaming (RUNS FIRST!)          ${CYAN}║${NC}"
+    phase_num=$(( phase_num + 1 ))
+  }
   [ "$SYSTEM_UPDATES" = "true" ] && {
     echo -e "${CYAN}║${NC} ${phase_num}. System Updates & Base Packages                      ${CYAN}║${NC}"
     phase_num=$(( phase_num + 1 ))
@@ -736,11 +740,7 @@ run_installation() {
     echo -e "${CYAN}║${NC} ${phase_num}. Creating Automation Scripts & Dotfiles               ${CYAN}║${NC}"
     phase_num=$(( phase_num + 1 ))
   }
-  echo -e "${CYAN}║${NC} ${phase_num}. Final Cleanup & Optimization                          ${CYAN}║${NC}"
-  phase_num=$(( phase_num + 1 ))
-  [ "$USER_SETUP" = "true" ] && {
-    echo -e "${CYAN}║${NC} ${phase_num}. User Account Setup & Switching                       ${CYAN}║${NC}"
-  }
+  echo -e "${CYAN}║${NC} ${phase_num}. Final Cleanup & Ownership Fix                        ${CYAN}║${NC}"
   
   echo -e "${CYAN}╚════════════════════════════════════════════════════════════╝${NC}"
   echo ""
@@ -749,7 +749,14 @@ run_installation() {
   
   CURRENT_PHASE=0
   
-  # Run selected phases
+  # *** KEY FIX: USER SETUP RUNS FIRST! ***
+  if [ "$USER_SETUP" = "true" ]; then
+    CURRENT_PHASE=$(( CURRENT_PHASE + 1 ))
+    show_progress $CURRENT_PHASE $TOTAL_PHASES "User Account Setup & Renaming"
+    phase2_user_setup
+  fi
+  
+  # Now run all other phases with correct USER_HOME
   if [ "$SYSTEM_UPDATES" = "true" ]; then
     CURRENT_PHASE=$(( CURRENT_PHASE + 1 ))
     show_progress $CURRENT_PHASE $TOTAL_PHASES "System Updates & Base Packages"
@@ -797,15 +804,8 @@ run_installation() {
   
   # Final cleanup always runs
   CURRENT_PHASE=$(( CURRENT_PHASE + 1 ))
-  show_progress $CURRENT_PHASE $TOTAL_PHASES "Final Cleanup & Optimization"
+  show_progress $CURRENT_PHASE $TOTAL_PHASES "Final Cleanup & Ownership Fix"
   phase_final_cleanup
-  
-  # User setup runs LAST (after everything else is done)
-  if [ "$USER_SETUP" = "true" ]; then
-    CURRENT_PHASE=$(( CURRENT_PHASE + 1 ))
-    show_progress $CURRENT_PHASE $TOTAL_PHASES "User Account Setup & Switching"
-    phase2_user_setup
-  fi
   
   show_completion_message
 }
@@ -840,10 +840,10 @@ phase1_system_setup() {
 }
 
 # ============================================
-# PHASE 2: USER SETUP (NOW RUNS LAST!)
+# PHASE 2: USER SETUP (NOW RUNS FIRST!)
 # ============================================
 phase2_user_setup() {
-  log_progress "Phase: User Account Setup & Switching"
+  log_progress "Phase: User Account Setup & Renaming"
   
   # Detect who actually ran the script (the real user before sudo)
   local REAL_USER="${SUDO_USER:-$USER}"
@@ -908,25 +908,8 @@ phase2_user_setup() {
   # Ensure user is in docker group
   usermod -aG docker "$USERNAME" 2>/dev/null || true
   
-  # Move shell configuration from temp location if it exists
-  if [ -f /tmp/shell-setup-temp-home ]; then
-    local TEMP_HOME=$(cat /tmp/shell-setup-temp-home)
-    if [ -d "$TEMP_HOME" ]; then
-      log_progress "Moving shell configuration to user home..."
-      cp -r "$TEMP_HOME"/.oh-my-zsh "$USER_HOME/" 2>/dev/null || true
-      cp "$TEMP_HOME"/.p10k.zsh "$USER_HOME/" 2>/dev/null || true
-      rm -rf "$TEMP_HOME"
-      rm /tmp/shell-setup-temp-home
-      log_info "Shell configuration moved to $USER_HOME"
-    fi
-  fi
-  
   # Set Zsh as default shell for the user
   chsh -s $(which zsh) "$USERNAME" 2>/dev/null || true
-  
-  # Fix ownership of all user files
-  log_progress "Setting proper ownership for $USER_HOME..."
-  chown -R "$USERNAME":"$USERNAME" "$USER_HOME" 2>/dev/null || true
   
   # Configure automatic login for the user
   echo ""
@@ -966,8 +949,8 @@ LIGHTDM_EOF
     log_info "Auto-login configured for $USERNAME"
   fi
   
-  log_info "User setup complete"
-  log_info "After reboot, log in as: $USERNAME"
+  log_info "User setup complete - all future operations will use correct home directory"
+  log_info "USER_HOME is now: $USER_HOME"
 }
 
 # ============================================
@@ -975,37 +958,28 @@ LIGHTDM_EOF
 # ============================================
 phase3_shell_setup() {
   log_progress "Phase: Shell Environment (Zsh + Oh-My-Zsh + p10k)"
-  log_info "Pre-configuring Zsh and Oh-My-Zsh for $USERNAME"
+  log_info "Installing Zsh and Oh-My-Zsh for $USERNAME"
   
-  # Set up in a temporary location that will be moved to user home later
-  local TEMP_HOME="/tmp/user-setup-$USERNAME"
-  rm -rf "$TEMP_HOME" 2>/dev/null || true
-  mkdir -p "$TEMP_HOME"
-  
-  # Install Oh-My-Zsh to temp location
-  if [ ! -d "$TEMP_HOME/.oh-my-zsh" ]; then
+  # Install Oh-My-Zsh to user home (which is now correctly set)
+  if [ ! -d "$USER_HOME/.oh-my-zsh" ]; then
     log_progress "Installing Oh-My-Zsh..."
-    export HOME="$TEMP_HOME"
-    sh -c "RUNZSH=no $(curl -fsSL https://raw.githubusercontent.com/ohmyzsh/ohmyzsh/master/tools/install.sh)" "" --unattended 2>&1 | tee -a /var/log/ctfbox-install.log
+    sudo -u "$USERNAME" sh -c "RUNZSH=no $(curl -fsSL https://raw.githubusercontent.com/ohmyzsh/ohmyzsh/master/tools/install.sh)" "" --unattended 2>&1 | tee -a /var/log/ctfbox-install.log
   fi
   
   # Install zsh plugins
   log_progress "Installing zsh plugins..."
-  git clone https://github.com/zsh-users/zsh-autosuggestions ${TEMP_HOME}/.oh-my-zsh/custom/plugins/zsh-autosuggestions 2>/dev/null || true
-  git clone https://github.com/zsh-users/zsh-syntax-highlighting.git ${TEMP_HOME}/.oh-my-zsh/custom/plugins/zsh-syntax-highlighting 2>/dev/null || true
+  sudo -u "$USERNAME" git clone https://github.com/zsh-users/zsh-autosuggestions ${USER_HOME}/.oh-my-zsh/custom/plugins/zsh-autosuggestions 2>/dev/null || true
+  sudo -u "$USERNAME" git clone https://github.com/zsh-users/zsh-syntax-highlighting.git ${USER_HOME}/.oh-my-zsh/custom/plugins/zsh-syntax-highlighting 2>/dev/null || true
   
   # Install Powerlevel10k theme
   log_progress "Installing Powerlevel10k theme..."
-  git clone --depth=1 https://github.com/romkatv/powerlevel10k.git ${TEMP_HOME}/.oh-my-zsh/custom/themes/powerlevel10k 2>/dev/null || true
+  sudo -u "$USERNAME" git clone --depth=1 https://github.com/romkatv/powerlevel10k.git ${USER_HOME}/.oh-my-zsh/custom/themes/powerlevel10k 2>/dev/null || true
   
   # Download pre-configured p10k config
   log_info "Downloading pre-configured Powerlevel10k config..."
-  wget -q https://raw.githubusercontent.com/Jamie-loring/Public-scripts/main/p10k-jamie-config.zsh -O ${TEMP_HOME}/.p10k.zsh 2>/dev/null || log_warn "Failed to download p10k config"
+  sudo -u "$USERNAME" wget -q https://raw.githubusercontent.com/Jamie-loring/Public-scripts/main/p10k-jamie-config.zsh -O ${USER_HOME}/.p10k.zsh 2>/dev/null || log_warn "Failed to download p10k config"
   
-  # Store the temp location for later use in phase2
-  echo "$TEMP_HOME" > /tmp/shell-setup-temp-home
-  
-  log_info "Shell environment pre-configured (will be moved to user home after user creation)"
+  log_info "Shell environment configured for $USERNAME"
 }
 
 # ============================================
@@ -1014,10 +988,7 @@ phase3_shell_setup() {
 phase4_tools_setup() {
   log_progress "Phase: Tool Installation"
   
-  # Ensure USER_HOME is set
-  export USER_HOME="/home/$USERNAME"
-  
-  # Create tool directory structure (will be owned by user later in phase2)
+  # Create tool directory structure (ownership will be fixed in cleanup)
   log_progress "Creating tool directory structure..."
   mkdir -p $USER_HOME/tools/{wordlists,scripts,exploits,repos}
   
@@ -1092,7 +1063,7 @@ install_core_tools() {
   # RsaCtfTool from GitHub
   if [ ! -d "$USER_HOME/tools/repos/RsaCtfTool" ]; then
     log_progress "Installing RsaCtfTool..."
-    git clone https://github.com/RsaCtfTool/RsaCtfTool.git $USER_HOME/tools/repos/RsaCtfTool 2>&1 | tee -a /var/log/ctfbox-install.log || log_warn "RsaCtfTool clone failed"
+    sudo -u "$USERNAME" git clone https://github.com/RsaCtfTool/RsaCtfTool.git $USER_HOME/tools/repos/RsaCtfTool 2>&1 | tee -a /var/log/ctfbox-install.log || log_warn "RsaCtfTool clone failed"
   fi
   
   # ysoserial
@@ -1128,7 +1099,7 @@ install_web_tools() {
   fi
   
   log_progress "Installing ProjectDiscovery suite..."
-  bash -c 'export GOPATH=$HOME/go && \
+  sudo -u "$USERNAME" bash -c 'export GOPATH=$HOME/go && \
     go install -v github.com/projectdiscovery/naabu/v2/cmd/naabu@latest && \
     go install -v github.com/projectdiscovery/httpx/cmd/httpx@latest && \
     go install -v github.com/projectdiscovery/nuclei/v3/cmd/nuclei@latest && \
@@ -1138,7 +1109,7 @@ install_web_tools() {
     2>&1 | tee -a /var/log/ctfbox-install.log || true
   
   log_progress "Installing other web tools..."
-  bash -c 'export GOPATH=$HOME/go && \
+  sudo -u "$USERNAME" bash -c 'export GOPATH=$HOME/go && \
     go install -v github.com/ffuf/ffuf@latest && \
     go install -v github.com/OJ/gobuster/v3@latest' \
     2>&1 | tee -a /var/log/ctfbox-install.log || true
@@ -1154,7 +1125,7 @@ install_windows_tools() {
   # Kerberos tools
   if command -v go &> /dev/null; then
     log_progress "Installing kerbrute..."
-    bash -c 'export GOPATH=$HOME/go && go install -v github.com/ropnop/kerbrute@latest' 2>&1 | tee -a /var/log/ctfbox-install.log || true
+    sudo -u "$USERNAME" bash -c 'export GOPATH=$HOME/go && go install -v github.com/ropnop/kerbrute@latest' 2>&1 | tee -a /var/log/ctfbox-install.log || true
   fi
 }
 
@@ -1179,13 +1150,13 @@ install_postexploit_tools() {
   # Chisel
   if command -v go &> /dev/null; then
     log_progress "Installing chisel..."
-    bash -c 'export GOPATH=$HOME/go && go install -v github.com/jpillora/chisel@latest' 2>&1 | tee -a /var/log/ctfbox-install.log || true
+    sudo -u "$USERNAME" bash -c 'export GOPATH=$HOME/go && go install -v github.com/jpillora/chisel@latest' 2>&1 | tee -a /var/log/ctfbox-install.log || true
   fi
   
   # Penelope
   if [ ! -d "$USER_HOME/tools/repos/penelope" ]; then
     log_progress "Installing Penelope reverse shell handler..."
-    git clone https://github.com/brightio/penelope.git $USER_HOME/tools/repos/penelope 2>&1 | tee -a /var/log/ctfbox-install.log || log_warn "Penelope clone failed"
+    sudo -u "$USERNAME" git clone https://github.com/brightio/penelope.git $USER_HOME/tools/repos/penelope 2>&1 | tee -a /var/log/ctfbox-install.log || log_warn "Penelope clone failed"
   fi
 }
 
@@ -1219,7 +1190,7 @@ phase5_wordlists_setup() {
   # SecLists
   log_progress "Downloading SecLists (~700MB, this will take a while)..."
   if [ ! -d "$USER_HOME/tools/wordlists/SecLists" ]; then
-    git clone --depth 1 https://github.com/danielmiessler/SecLists.git $USER_HOME/tools/wordlists/SecLists 2>&1 | tee -a /var/log/ctfbox-install.log || log_warn "SecLists clone failed"
+    sudo -u "$USERNAME" git clone --depth 1 https://github.com/danielmiessler/SecLists.git $USER_HOME/tools/wordlists/SecLists 2>&1 | tee -a /var/log/ctfbox-install.log || log_warn "SecLists clone failed"
   fi
   
   # Extract rockyou.txt
@@ -1230,8 +1201,8 @@ phase5_wordlists_setup() {
   
   # Create symlinks
   log_progress "Creating wordlist symlinks..."
-  ln -sf $USER_HOME/tools/wordlists/SecLists $USER_HOME/SecLists 2>/dev/null || true
-  ln -sf /usr/share/wordlists/rockyou.txt $USER_HOME/tools/wordlists/rockyou.txt 2>/dev/null || true
+  sudo -u "$USERNAME" ln -sf $USER_HOME/tools/wordlists/SecLists $USER_HOME/SecLists 2>/dev/null || true
+  sudo -u "$USERNAME" ln -sf /usr/share/wordlists/rockyou.txt $USER_HOME/tools/wordlists/rockyou.txt 2>/dev/null || true
   
   log_info "Wordlists setup complete"
 }
@@ -1247,7 +1218,7 @@ phase6_repos_setup() {
     local name=$(basename $url .git)
     if [ ! -d "$USER_HOME/tools/repos/$name" ]; then
       log_progress "Cloning $name..."
-      git clone $url $USER_HOME/tools/repos/$name 2>&1 | tee -a /var/log/ctfbox-install.log || log_warn "Failed to clone $name"
+      sudo -u "$USERNAME" git clone $url $USER_HOME/tools/repos/$name 2>&1 | tee -a /var/log/ctfbox-install.log || log_warn "Failed to clone $name"
     fi
   }
   
@@ -1272,13 +1243,13 @@ phase6_repos_setup() {
   
   # Create PEASS symlinks
   if [ -d "$USER_HOME/tools/repos/PEASS-ng" ]; then
-    ln -sf $USER_HOME/tools/repos/PEASS-ng/linPEAS/linpeas.sh $USER_HOME/linpeas.sh 2>/dev/null || true
-    ln -sf $USER_HOME/tools/repos/PEASS-ng/winPEAS/winPEASx64.exe $USER_HOME/winpeas.exe 2>/dev/null || true
+    sudo -u "$USERNAME" ln -sf $USER_HOME/tools/repos/PEASS-ng/linPEAS/linpeas.sh $USER_HOME/linpeas.sh 2>/dev/null || true
+    sudo -u "$USERNAME" ln -sf $USER_HOME/tools/repos/PEASS-ng/winPEAS/winPEASx64.exe $USER_HOME/winpeas.exe 2>/dev/null || true
   fi
   
   # Create Penelope symlink
   if [ -d "$USER_HOME/tools/repos/penelope" ]; then
-    ln -sf $USER_HOME/tools/repos/penelope/penelope.py $USER_HOME/penelope.py 2>/dev/null || true
+    sudo -u "$USERNAME" ln -sf $USER_HOME/tools/repos/penelope/penelope.py $USER_HOME/penelope.py 2>/dev/null || true
   fi
   
   log_info "Repositories setup complete"
@@ -1295,7 +1266,7 @@ phase7_firefox_extensions() {
   
   if [ -z "$FIREFOX_PROFILE" ]; then
     log_warn "Firefox profile not found. Starting Firefox once to create profile..."
-    timeout 5 firefox --headless 2>/dev/null || true
+    sudo -u "$USERNAME" timeout 5 firefox --headless 2>/dev/null || true
     sleep 2
     FIREFOX_PROFILE=$(find $USER_HOME/.mozilla/firefox -maxdepth 1 -type d -name "*.default*" 2>/dev/null | head -n 1)
   fi
@@ -1460,8 +1431,6 @@ extract() {
   fi
 }
 ZSH_EOF
-  
-  # Don't chown yet - user doesn't exist. Will be done in phase2
   
   # Create update script
   log_progress "Creating update-tools script..."
@@ -1710,14 +1679,14 @@ RESET_EOF
   
   chmod +x $USER_HOME/Desktop/RESET_CTF_BOX.sh
   
-  log_info "Automation & dotfiles setup complete (ownership will be fixed in user setup phase)"
+  log_info "Automation & dotfiles setup complete"
 }
 
 # ============================================
 # FINAL CLEANUP
 # ============================================
 phase_final_cleanup() {
-  log_progress "Phase: Final Cleanup"
+  log_progress "Phase: Final Cleanup & Ownership Fix"
   
   log_progress "Removing unnecessary packages..."
   DEBIAN_FRONTEND=noninteractive apt autoremove -y -qq 2>&1 | tee -a /var/log/ctfbox-install.log
@@ -1725,7 +1694,9 @@ phase_final_cleanup() {
   log_progress "Cleaning package cache..."
   DEBIAN_FRONTEND=noninteractive apt autoclean -y -qq 2>&1 | tee -a /var/log/ctfbox-install.log
   
-  # Don't fix ownership yet - user will be created in next phase
+  # Fix ownership of ALL files in user home
+  log_progress "Fixing ownership for all files in $USER_HOME..."
+  chown -R "$USERNAME":"$USERNAME" "$USER_HOME" 2>/dev/null || true
   
   log_info "Cleanup complete"
 }
