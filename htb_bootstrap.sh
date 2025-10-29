@@ -844,38 +844,68 @@ phase1_system_setup() {
 # ============================================
 phase2_user_setup() {
   log_progress "Phase: User Account Setup & Switching"
-  log_info "Setting up user account: $USERNAME"
   
-  # Ensure USER_HOME is set
-  export USER_HOME="/home/$USERNAME"
+  # Detect who actually ran the script (the real user before sudo)
+  local REAL_USER="${SUDO_USER:-$USER}"
+  local REAL_UID=$(id -u "$REAL_USER" 2>/dev/null || echo "")
   
-  # Detect default user (typically the first non-root user with UID >= 1000)
-  local default_user=""
-  local default_uid=""
+  log_info "Detected running user: $REAL_USER"
   
-  # Find the default user (first user with UID >= 1000 that isn't the new username)
-  while IFS=: read -r user _ uid _ _ home _; do
-    if [ "$uid" -ge 1000 ] && [ "$uid" -lt 65534 ] && [ "$user" != "$USERNAME" ] && [ "$user" != "nobody" ]; then
-      default_user="$user"
-      default_uid="$uid"
-      break
-    fi
-  done < /etc/passwd
-  
-  # Create user if doesn't exist
-  if ! id "$USERNAME" &>/dev/null; then
-    useradd -m -s /bin/bash -G sudo "$USERNAME"
-    passwd -d "$USERNAME"
-    chage -d 0 "$USERNAME"
+  # If REAL_USER is root or not found, find the default user automatically
+  if [ "$REAL_USER" = "root" ] || [ -z "$REAL_UID" ] || [ "$REAL_UID" -eq 0 ]; then
+    log_progress "Running as root, detecting default user..."
     
-    echo "$USERNAME ALL=(ALL) NOPASSWD:ALL" > /etc/sudoers.d/"$USERNAME"
-    chmod 440 /etc/sudoers.d/"$USERNAME"
-    
-    log_info "User '$USERNAME' created with sudo privileges"
-  else
-    log_warn "User '$USERNAME' already exists, updating configuration"
+    # Find first non-root user with UID >= 1000
+    while IFS=: read -r user _ uid _ _ home _; do
+      if [ "$uid" -ge 1000 ] && [ "$uid" -lt 65534 ] && [ "$user" != "nobody" ]; then
+        REAL_USER="$user"
+        REAL_UID="$uid"
+        log_info "Found default user: $REAL_USER (UID: $REAL_UID)"
+        break
+      fi
+    done < /etc/passwd
   fi
   
+  # If REAL_USER is already the target username, nothing to rename
+  if [ "$REAL_USER" = "$USERNAME" ]; then
+    log_info "User is already named '$USERNAME' - no rename needed"
+    export USER_HOME="/home/$USERNAME"
+  else
+    # Rename the current user to the target username
+    log_info "Renaming user '$REAL_USER' to '$USERNAME'..."
+    
+    # Kill any processes owned by the user (to allow rename)
+    pkill -u "$REAL_USER" 2>/dev/null || true
+    sleep 2
+    
+    # Rename the user
+    log_progress "Changing username from '$REAL_USER' to '$USERNAME'..."
+    usermod -l "$USERNAME" "$REAL_USER" 2>&1 | tee -a /var/log/ctfbox-install.log
+    
+    # Rename the home directory
+    log_progress "Moving home directory to /home/$USERNAME..."
+    usermod -d "/home/$USERNAME" -m "$USERNAME" 2>&1 | tee -a /var/log/ctfbox-install.log
+    
+    # Rename the primary group
+    log_progress "Renaming group from '$REAL_USER' to '$USERNAME'..."
+    groupmod -n "$USERNAME" "$REAL_USER" 2>/dev/null || true
+    
+    # Update sudoers if exists
+    if [ -f "/etc/sudoers.d/$REAL_USER" ]; then
+      mv "/etc/sudoers.d/$REAL_USER" "/etc/sudoers.d/$USERNAME" 2>/dev/null || true
+      sed -i "s/$REAL_USER/$USERNAME/g" "/etc/sudoers.d/$USERNAME" 2>/dev/null || true
+    fi
+    
+    export USER_HOME="/home/$USERNAME"
+    
+    log_info "User successfully renamed from '$REAL_USER' to '$USERNAME'"
+  fi
+  
+  # Ensure user has sudo with NOPASSWD
+  echo "$USERNAME ALL=(ALL) NOPASSWD:ALL" > /etc/sudoers.d/"$USERNAME"
+  chmod 440 /etc/sudoers.d/"$USERNAME"
+  
+  # Ensure user is in docker group
   usermod -aG docker "$USERNAME" 2>/dev/null || true
   
   # Move shell configuration from temp location if it exists
@@ -885,7 +915,6 @@ phase2_user_setup() {
       log_progress "Moving shell configuration to user home..."
       cp -r "$TEMP_HOME"/.oh-my-zsh "$USER_HOME/" 2>/dev/null || true
       cp "$TEMP_HOME"/.p10k.zsh "$USER_HOME/" 2>/dev/null || true
-      chown -R "$USERNAME":"$USERNAME" "$USER_HOME/.oh-my-zsh" "$USER_HOME/.p10k.zsh" 2>/dev/null || true
       rm -rf "$TEMP_HOME"
       rm /tmp/shell-setup-temp-home
       log_info "Shell configuration moved to $USER_HOME"
@@ -899,69 +928,14 @@ phase2_user_setup() {
   log_progress "Setting proper ownership for $USER_HOME..."
   chown -R "$USERNAME":"$USERNAME" "$USER_HOME" 2>/dev/null || true
   
-  # Handle default user deletion
-  if [ -n "$default_user" ] && [ "$default_user" != "$USERNAME" ]; then
-    echo ""
-    log_warn "Detected existing user: $default_user"
-    echo ""
-    echo "Would you like to:"
-    echo "  1) Keep both users ($default_user and $USERNAME)"
-    echo "  2) Delete $default_user and use only $USERNAME"
-    echo "  3) Archive $default_user home directory, then delete user"
-    echo ""
-    read -p "Select option [1-3]: " user_choice
-    
-    case $user_choice in
-      2)
-        log_progress "Deleting user $default_user..."
-        # Kill all processes owned by the user
-        pkill -u "$default_user" 2>/dev/null || true
-        sleep 2
-        # Delete user and home directory
-        userdel -r "$default_user" 2>/dev/null || {
-          log_warn "Failed to delete home directory, trying force delete..."
-          userdel -f "$default_user" 2>/dev/null || true
-          rm -rf "/home/$default_user" 2>/dev/null || true
-        }
-        # Remove from sudoers
-        rm -f "/etc/sudoers.d/$default_user" 2>/dev/null || true
-        log_info "User $default_user deleted"
-        ;;
-      3)
-        log_progress "Archiving $default_user home directory..."
-        local archive_dir="/root/user-archives"
-        mkdir -p "$archive_dir"
-        tar -czf "$archive_dir/${default_user}-home-$(date +%Y%m%d-%H%M%S).tar.gz" -C /home "$default_user" 2>/dev/null || {
-          log_warn "Failed to create archive"
-        }
-        
-        if [ -f "$archive_dir/${default_user}-home-"*".tar.gz" ]; then
-          log_info "Archive created in $archive_dir"
-          log_progress "Deleting user $default_user..."
-          pkill -u "$default_user" 2>/dev/null || true
-          sleep 2
-          userdel -r "$default_user" 2>/dev/null || {
-            userdel -f "$default_user" 2>/dev/null || true
-            rm -rf "/home/$default_user" 2>/dev/null || true
-          }
-          rm -f "/etc/sudoers.d/$default_user" 2>/dev/null || true
-          log_info "User $default_user archived and deleted"
-        fi
-        ;;
-      *)
-        log_info "Keeping both users"
-        ;;
-    esac
-  fi
-  
-  # Configure automatic login for the new user
+  # Configure automatic login for the user
   echo ""
   read -p "Set $USERNAME as automatic login user? (y/n): " auto_login
   
   if [[ "$auto_login" == "y" || "$auto_login" == "Y" ]]; then
     log_progress "Configuring automatic login for $USERNAME..."
     
-    # LightDM configuration (common in Debian/Ubuntu)
+    # LightDM configuration (common in Debian/Ubuntu/Parrot)
     if [ -d "/etc/lightdm" ]; then
       mkdir -p /etc/lightdm/lightdm.conf.d
       cat > /etc/lightdm/lightdm.conf.d/50-autologin.conf << LIGHTDM_EOF
@@ -993,6 +967,7 @@ LIGHTDM_EOF
   fi
   
   log_info "User setup complete"
+  log_info "After reboot, log in as: $USERNAME"
 }
 
 # ============================================
