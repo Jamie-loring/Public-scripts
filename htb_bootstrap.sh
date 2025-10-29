@@ -110,10 +110,10 @@ EOF
   echo -e "${YELLOW}[*]${NC} Welcome to the CTF Pentesting Toolkit Installer!"
   echo ""
   echo "This script will set up a complete offensive security environment with:"
-  echo -e "  ${GREEN}*${NC} 40+ pentesting tools (Python, Go, Ruby)"
-  echo -e "  ${GREEN}*${NC} 12 essential exploit/payload repositories"
-  echo -e "  ${GREEN}*${NC} Modern shell environment (Zsh + Powerlevel10k)"
-  echo -e "  ${GREEN}*${NC} Automated workflows and scripts"
+  echo "  * 40+ pentesting tools (Python, Go, Ruby)"
+  echo "  * 12 essential exploit/payload repositories"
+  echo "  * Modern shell environment (Zsh + Powerlevel10k)"
+  echo "  * Automated workflows and scripts"
   echo ""
   
   # Username configuration
@@ -259,13 +259,13 @@ EOF
     echo ""
     echo -e "${GREEN}Current User:${NC} $USERNAME"
     echo ""
-    echo "1) ${YELLOW}>>>${NC} Install All (Everything - No Questions Asked)"
-    echo "2) ${CYAN}==>${NC} Full Installation (All Components - With Confirmation)"
-    echo "3) ${BLUE}[*]${NC} Custom Installation (Choose Components)"
-    echo "4) ${MAGENTA}[#]${NC} Quick Presets (Web/Windows/CTF/Minimal)"
-    echo "5) ${GREEN}[@]${NC} Change Username (Current: $USERNAME)"
-    echo "6) ${CYAN}[+]${NC} Update Existing Installation"
-    echo "0) ${RED}[X]${NC} Exit"
+    echo "1) Install All (Everything - No Questions Asked)"
+    echo "2) Full Installation (All Components - With Confirmation)"
+    echo "3) Custom Installation (Choose Components)"
+    echo "4) Quick Presets (Web/Windows/CTF/Minimal)"
+    echo "5) Change Username (Current: $USERNAME)"
+    echo "6) Update Existing Installation"
+    echo "0) Exit"
     echo ""
     read -p "Select option [0-6]: " choice
     
@@ -302,11 +302,11 @@ show_presets_menu() {
 EOF
   echo -e "${NC}"
   echo ""
-  echo "1) ${CYAN}[WEB]${NC} Web Pentesting (Recon, enumeration, fuzzing)"
-  echo "2) ${YELLOW}[WIN]${NC} Windows/AD Focus (NetExec, Impacket, Bloodhound)"
-  echo "3) ${MAGENTA}[CTF]${NC} CTF Player (Crypto, stego, forensics, binary)"
-  echo "4) ${GREEN}[MIN]${NC} Minimal Setup (Core tools only, no extras)"
-  echo "5) ${BLUE}[<-]${NC} Back to Main Menu"
+  echo "1) Web Pentesting (Recon, enumeration, fuzzing)"
+  echo "2) Windows/AD Focus (NetExec, Impacket, Bloodhound)"
+  echo "3) CTF Player (Crypto, stego, forensics, binary)"
+  echo "4) Minimal Setup (Core tools only, no extras)"
+  echo "5) Back to Main Menu"
   echo ""
   read -p "Select preset [1-5]: " preset
   
@@ -845,6 +845,19 @@ phase2_user_setup() {
   log_progress "Phase: User Account Setup"
   log_info "Setting up user account: $USERNAME"
   
+  # Detect default user (typically the first non-root user with UID >= 1000)
+  local default_user=""
+  local default_uid=""
+  
+  # Find the default user (first user with UID >= 1000 that isn't the new username)
+  while IFS=: read -r user _ uid _ _ home _; do
+    if [ "$uid" -ge 1000 ] && [ "$uid" -lt 65534 ] && [ "$user" != "$USERNAME" ] && [ "$user" != "nobody" ]; then
+      default_user="$user"
+      default_uid="$uid"
+      break
+    fi
+  done < /etc/passwd
+  
   # Create user if doesn't exist
   if ! id "$USERNAME" &>/dev/null; then
     useradd -m -s /bin/bash -G sudo "$USERNAME"
@@ -861,6 +874,98 @@ phase2_user_setup() {
   
   usermod -aG docker "$USERNAME" 2>/dev/null || true
   export USER_HOME="/home/$USERNAME"
+  
+  # Handle default user deletion
+  if [ -n "$default_user" ] && [ "$default_user" != "$USERNAME" ]; then
+    echo ""
+    log_warn "Detected existing user: $default_user"
+    echo ""
+    echo "Would you like to:"
+    echo "  1) Keep both users ($default_user and $USERNAME)"
+    echo "  2) Delete $default_user and use only $USERNAME"
+    echo "  3) Archive $default_user home directory, then delete user"
+    echo ""
+    read -p "Select option [1-3]: " user_choice
+    
+    case $user_choice in
+      2)
+        log_progress "Deleting user $default_user..."
+        # Kill all processes owned by the user
+        pkill -u "$default_user" 2>/dev/null || true
+        sleep 2
+        # Delete user and home directory
+        userdel -r "$default_user" 2>/dev/null || {
+          log_warn "Failed to delete home directory, trying force delete..."
+          userdel -f "$default_user" 2>/dev/null || true
+          rm -rf "/home/$default_user" 2>/dev/null || true
+        }
+        # Remove from sudoers
+        rm -f "/etc/sudoers.d/$default_user" 2>/dev/null || true
+        log_info "User $default_user deleted"
+        ;;
+      3)
+        log_progress "Archiving $default_user home directory..."
+        local archive_dir="/root/user-archives"
+        mkdir -p "$archive_dir"
+        tar -czf "$archive_dir/${default_user}-home-$(date +%Y%m%d-%H%M%S).tar.gz" -C /home "$default_user" 2>/dev/null || {
+          log_warn "Failed to create archive"
+        }
+        
+        if [ -f "$archive_dir/${default_user}-home-"*".tar.gz" ]; then
+          log_info "Archive created in $archive_dir"
+          log_progress "Deleting user $default_user..."
+          pkill -u "$default_user" 2>/dev/null || true
+          sleep 2
+          userdel -r "$default_user" 2>/dev/null || {
+            userdel -f "$default_user" 2>/dev/null || true
+            rm -rf "/home/$default_user" 2>/dev/null || true
+          }
+          rm -f "/etc/sudoers.d/$default_user" 2>/dev/null || true
+          log_info "User $default_user archived and deleted"
+        fi
+        ;;
+      *)
+        log_info "Keeping both users"
+        ;;
+    esac
+  fi
+  
+  # Configure automatic login for the new user
+  echo ""
+  read -p "Set $USERNAME as automatic login user? (y/n): " auto_login
+  
+  if [[ "$auto_login" == "y" || "$auto_login" == "Y" ]]; then
+    log_progress "Configuring automatic login for $USERNAME..."
+    
+    # LightDM configuration (common in Debian/Ubuntu)
+    if [ -d "/etc/lightdm" ]; then
+      cat > /etc/lightdm/lightdm.conf.d/50-autologin.conf << LIGHTDM_EOF
+[Seat:*]
+autologin-user=$USERNAME
+autologin-user-timeout=0
+LIGHTDM_EOF
+      log_info "LightDM auto-login configured"
+    fi
+    
+    # GDM configuration (GNOME Display Manager)
+    if [ -f "/etc/gdm3/custom.conf" ]; then
+      sed -i '/^\[daemon\]/a AutomaticLoginEnable = true' /etc/gdm3/custom.conf 2>/dev/null || true
+      sed -i "/^AutomaticLoginEnable/a AutomaticLogin = $USERNAME" /etc/gdm3/custom.conf 2>/dev/null || true
+      log_info "GDM3 auto-login configured"
+    fi
+    
+    # SDDM configuration (KDE)
+    if [ -f "/etc/sddm.conf" ]; then
+      if ! grep -q "\[Autologin\]" /etc/sddm.conf; then
+        echo -e "\n[Autologin]" >> /etc/sddm.conf
+      fi
+      sed -i "/^\[Autologin\]/a User=$USERNAME" /etc/sddm.conf 2>/dev/null || true
+      sed -i "/^\[Autologin\]/a Session=plasma" /etc/sddm.conf 2>/dev/null || true
+      log_info "SDDM auto-login configured"
+    fi
+    
+    log_info "Auto-login configured for $USERNAME"
+  fi
   
   log_info "User setup complete"
 }
@@ -1653,16 +1758,16 @@ EOF
   echo -e "${CYAN}USEFUL COMMANDS:${NC}"
   echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
   echo ""
-  echo " ${GREEN}*${NC} newengagement <name>  : Create new engagement folder"
-  echo " ${GREEN}*${NC} quickscan <target>    : Quick nmap scan"
-  echo " ${GREEN}*${NC} shell <port>          : Start Penelope reverse shell handler"
-  echo " ${GREEN}*${NC} ll                    : Detailed file listing"
+  echo " * newengagement <name>  : Create new engagement folder"
+  echo " * quickscan <target>    : Quick nmap scan"
+  echo " * shell <port>          : Start Penelope reverse shell handler"
+  echo " * ll                    : Detailed file listing"
   echo ""
   echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
   echo -e "${CYAN}IMPORTANT FILES ON DESKTOP:${NC}"
   echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
   echo ""
-  echo " ${GREEN}*${NC} ${YELLOW}RESET_CTF_BOX.sh${NC}     : Reset system to clean state"
+  echo " * ${YELLOW}RESET_CTF_BOX.sh${NC}     : Reset system to clean state"
   echo "                          Archives engagements, clears history,"
   echo "                          resets /etc/hosts, clears Kerberos, etc."
   echo ""
