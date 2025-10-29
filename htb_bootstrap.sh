@@ -677,7 +677,6 @@ run_installation() {
   # Calculate total phases
   TOTAL_PHASES=0
   [ "$SYSTEM_UPDATES" = "true" ] && TOTAL_PHASES=$(( TOTAL_PHASES + 1 ))
-  [ "$USER_SETUP" = "true" ] && TOTAL_PHASES=$(( TOTAL_PHASES + 1 ))
   [ "$SHELL_ENVIRONMENT" = "true" ] && TOTAL_PHASES=$(( TOTAL_PHASES + 1 ))
   
   # Core tools phase always runs if any tool category is selected
@@ -696,6 +695,7 @@ run_installation() {
   [ "$FIREFOX_EXTENSIONS" = "true" ] && TOTAL_PHASES=$(( TOTAL_PHASES + 1 ))
   [ "$AUTOMATION_SCRIPTS" = "true" ] && TOTAL_PHASES=$(( TOTAL_PHASES + 1 ))
   TOTAL_PHASES=$(( TOTAL_PHASES + 1 ))  # Cleanup phase
+  [ "$USER_SETUP" = "true" ] && TOTAL_PHASES=$(( TOTAL_PHASES + 1 ))  # User setup (last phase)
   
   # Show installation roadmap
   echo -e "${CYAN}╔════════════════════════════════════════════════════════════╗${NC}"
@@ -708,10 +708,6 @@ run_installation() {
   local phase_num=1
   [ "$SYSTEM_UPDATES" = "true" ] && {
     echo -e "${CYAN}║${NC} ${phase_num}. System Updates & Base Packages                      ${CYAN}║${NC}"
-    phase_num=$(( phase_num + 1 ))
-  }
-  [ "$USER_SETUP" = "true" ] && {
-    echo -e "${CYAN}║${NC} ${phase_num}. User Account Setup                                   ${CYAN}║${NC}"
     phase_num=$(( phase_num + 1 ))
   }
   [ "$SHELL_ENVIRONMENT" = "true" ] && {
@@ -741,6 +737,10 @@ run_installation() {
     phase_num=$(( phase_num + 1 ))
   }
   echo -e "${CYAN}║${NC} ${phase_num}. Final Cleanup & Optimization                          ${CYAN}║${NC}"
+  phase_num=$(( phase_num + 1 ))
+  [ "$USER_SETUP" = "true" ] && {
+    echo -e "${CYAN}║${NC} ${phase_num}. User Account Setup & Switching                       ${CYAN}║${NC}"
+  }
   
   echo -e "${CYAN}╚════════════════════════════════════════════════════════════╝${NC}"
   echo ""
@@ -754,12 +754,6 @@ run_installation() {
     CURRENT_PHASE=$(( CURRENT_PHASE + 1 ))
     show_progress $CURRENT_PHASE $TOTAL_PHASES "System Updates & Base Packages"
     phase1_system_setup
-  fi
-  
-  if [ "$USER_SETUP" = "true" ]; then
-    CURRENT_PHASE=$(( CURRENT_PHASE + 1 ))
-    show_progress $CURRENT_PHASE $TOTAL_PHASES "User Account Setup"
-    phase2_user_setup
   fi
   
   if [ "$SHELL_ENVIRONMENT" = "true" ]; then
@@ -806,6 +800,13 @@ run_installation() {
   show_progress $CURRENT_PHASE $TOTAL_PHASES "Final Cleanup & Optimization"
   phase_final_cleanup
   
+  # User setup runs LAST (after everything else is done)
+  if [ "$USER_SETUP" = "true" ]; then
+    CURRENT_PHASE=$(( CURRENT_PHASE + 1 ))
+    show_progress $CURRENT_PHASE $TOTAL_PHASES "User Account Setup & Switching"
+    phase2_user_setup
+  fi
+  
   show_completion_message
 }
 
@@ -839,11 +840,14 @@ phase1_system_setup() {
 }
 
 # ============================================
-# PHASE 2: USER SETUP
+# PHASE 2: USER SETUP (NOW RUNS LAST!)
 # ============================================
 phase2_user_setup() {
-  log_progress "Phase: User Account Setup"
+  log_progress "Phase: User Account Setup & Switching"
   log_info "Setting up user account: $USERNAME"
+  
+  # Ensure USER_HOME is set
+  export USER_HOME="/home/$USERNAME"
   
   # Detect default user (typically the first non-root user with UID >= 1000)
   local default_user=""
@@ -873,7 +877,27 @@ phase2_user_setup() {
   fi
   
   usermod -aG docker "$USERNAME" 2>/dev/null || true
-  export USER_HOME="/home/$USERNAME"
+  
+  # Move shell configuration from temp location if it exists
+  if [ -f /tmp/shell-setup-temp-home ]; then
+    local TEMP_HOME=$(cat /tmp/shell-setup-temp-home)
+    if [ -d "$TEMP_HOME" ]; then
+      log_progress "Moving shell configuration to user home..."
+      cp -r "$TEMP_HOME"/.oh-my-zsh "$USER_HOME/" 2>/dev/null || true
+      cp "$TEMP_HOME"/.p10k.zsh "$USER_HOME/" 2>/dev/null || true
+      chown -R "$USERNAME":"$USERNAME" "$USER_HOME/.oh-my-zsh" "$USER_HOME/.p10k.zsh" 2>/dev/null || true
+      rm -rf "$TEMP_HOME"
+      rm /tmp/shell-setup-temp-home
+      log_info "Shell configuration moved to $USER_HOME"
+    fi
+  fi
+  
+  # Set Zsh as default shell for the user
+  chsh -s $(which zsh) "$USERNAME" 2>/dev/null || true
+  
+  # Fix ownership of all user files
+  log_progress "Setting proper ownership for $USER_HOME..."
+  chown -R "$USERNAME":"$USERNAME" "$USER_HOME" 2>/dev/null || true
   
   # Handle default user deletion
   if [ -n "$default_user" ] && [ "$default_user" != "$USERNAME" ]; then
@@ -939,6 +963,7 @@ phase2_user_setup() {
     
     # LightDM configuration (common in Debian/Ubuntu)
     if [ -d "/etc/lightdm" ]; then
+      mkdir -p /etc/lightdm/lightdm.conf.d
       cat > /etc/lightdm/lightdm.conf.d/50-autologin.conf << LIGHTDM_EOF
 [Seat:*]
 autologin-user=$USERNAME
@@ -975,35 +1000,37 @@ LIGHTDM_EOF
 # ============================================
 phase3_shell_setup() {
   log_progress "Phase: Shell Environment (Zsh + Oh-My-Zsh + p10k)"
-  log_info "Setting up Zsh and Oh-My-Zsh for $USERNAME"
+  log_info "Pre-configuring Zsh and Oh-My-Zsh for $USERNAME"
   
-  # Switch to user's home
-  export HOME=$USER_HOME
-  cd $USER_HOME
+  # Set up in a temporary location that will be moved to user home later
+  local TEMP_HOME="/tmp/user-setup-$USERNAME"
+  rm -rf "$TEMP_HOME" 2>/dev/null || true
+  mkdir -p "$TEMP_HOME"
   
-  # Install Oh-My-Zsh
-  if [ ! -d "$USER_HOME/.oh-my-zsh" ]; then
+  # Install Oh-My-Zsh to temp location
+  if [ ! -d "$TEMP_HOME/.oh-my-zsh" ]; then
     log_progress "Installing Oh-My-Zsh..."
-    sudo -u "$USERNAME" sh -c "RUNZSH=no \$(curl -fsSL https://raw.githubusercontent.com/ohmyzsh/ohmyzsh/master/tools/install.sh)" "" --unattended 2>&1 | tee -a /var/log/ctfbox-install.log
+    export HOME="$TEMP_HOME"
+    sh -c "RUNZSH=no $(curl -fsSL https://raw.githubusercontent.com/ohmyzsh/ohmyzsh/master/tools/install.sh)" "" --unattended 2>&1 | tee -a /var/log/ctfbox-install.log
   fi
   
   # Install zsh plugins
   log_progress "Installing zsh plugins..."
-  sudo -u "$USERNAME" git clone https://github.com/zsh-users/zsh-autosuggestions ${USER_HOME}/.oh-my-zsh/custom/plugins/zsh-autosuggestions 2>/dev/null || true
-  sudo -u "$USERNAME" git clone https://github.com/zsh-users/zsh-syntax-highlighting.git ${USER_HOME}/.oh-my-zsh/custom/plugins/zsh-syntax-highlighting 2>/dev/null || true
+  git clone https://github.com/zsh-users/zsh-autosuggestions ${TEMP_HOME}/.oh-my-zsh/custom/plugins/zsh-autosuggestions 2>/dev/null || true
+  git clone https://github.com/zsh-users/zsh-syntax-highlighting.git ${TEMP_HOME}/.oh-my-zsh/custom/plugins/zsh-syntax-highlighting 2>/dev/null || true
   
   # Install Powerlevel10k theme
   log_progress "Installing Powerlevel10k theme..."
-  sudo -u "$USERNAME" git clone --depth=1 https://github.com/romkatv/powerlevel10k.git ${USER_HOME}/.oh-my-zsh/custom/themes/powerlevel10k 2>/dev/null || true
+  git clone --depth=1 https://github.com/romkatv/powerlevel10k.git ${TEMP_HOME}/.oh-my-zsh/custom/themes/powerlevel10k 2>/dev/null || true
   
   # Download pre-configured p10k config
   log_info "Downloading pre-configured Powerlevel10k config..."
-  sudo -u "$USERNAME" wget -q https://raw.githubusercontent.com/Jamie-loring/Public-scripts/main/p10k-jamie-config.zsh -O ${USER_HOME}/.p10k.zsh 2>/dev/null || log_warn "Failed to download p10k config"
+  wget -q https://raw.githubusercontent.com/Jamie-loring/Public-scripts/main/p10k-jamie-config.zsh -O ${TEMP_HOME}/.p10k.zsh 2>/dev/null || log_warn "Failed to download p10k config"
   
-  # Set Zsh as default shell
-  chsh -s $(which zsh) "$USERNAME" 2>/dev/null || true
+  # Store the temp location for later use in phase2
+  echo "$TEMP_HOME" > /tmp/shell-setup-temp-home
   
-  log_info "Shell environment setup complete"
+  log_info "Shell environment pre-configured (will be moved to user home after user creation)"
 }
 
 # ============================================
@@ -1012,9 +1039,12 @@ phase3_shell_setup() {
 phase4_tools_setup() {
   log_progress "Phase: Tool Installation"
   
-  # Create tool directory structure
+  # Ensure USER_HOME is set
+  export USER_HOME="/home/$USERNAME"
+  
+  # Create tool directory structure (will be owned by user later in phase2)
   log_progress "Creating tool directory structure..."
-  sudo -u "$USERNAME" mkdir -p $USER_HOME/tools/{wordlists,scripts,exploits,repos}
+  mkdir -p $USER_HOME/tools/{wordlists,scripts,exploits,repos}
   
   # Core tools (always if any tool category is selected)
   if [ "$CORE_TOOLS" = "true" ]; then
@@ -1071,7 +1101,7 @@ install_core_tools() {
   if command -v pipx &> /dev/null; then
     pipx ensurepath
     log_progress "Installing NetExec..."
-    sudo -u "$USERNAME" pipx install git+https://github.com/Pennyw0rth/NetExec 2>&1 | tee -a /var/log/ctfbox-install.log || log_warn "NetExec failed to install"
+    pipx install git+https://github.com/Pennyw0rth/NetExec 2>&1 | tee -a /var/log/ctfbox-install.log || log_warn "NetExec failed to install"
   fi
   
   # Essential Python tools
@@ -1087,14 +1117,14 @@ install_core_tools() {
   # RsaCtfTool from GitHub
   if [ ! -d "$USER_HOME/tools/repos/RsaCtfTool" ]; then
     log_progress "Installing RsaCtfTool..."
-    sudo -u "$USERNAME" git clone https://github.com/RsaCtfTool/RsaCtfTool.git $USER_HOME/tools/repos/RsaCtfTool 2>&1 | tee -a /var/log/ctfbox-install.log || log_warn "RsaCtfTool clone failed"
+    git clone https://github.com/RsaCtfTool/RsaCtfTool.git $USER_HOME/tools/repos/RsaCtfTool 2>&1 | tee -a /var/log/ctfbox-install.log || log_warn "RsaCtfTool clone failed"
   fi
   
   # ysoserial
   log_progress "Installing ysoserial..."
   if [ ! -f "$USER_HOME/tools/ysoserial.jar" ]; then
     if command -v java &> /dev/null; then
-      sudo -u "$USERNAME" wget -q https://github.com/frohoff/ysoserial/releases/latest/download/ysoserial-all.jar -O $USER_HOME/tools/ysoserial.jar 2>/dev/null || log_warn "Failed to download ysoserial"
+      wget -q https://github.com/frohoff/ysoserial/releases/latest/download/ysoserial-all.jar -O $USER_HOME/tools/ysoserial.jar 2>/dev/null || log_warn "Failed to download ysoserial"
       
       if [ -f "$USER_HOME/tools/ysoserial.jar" ]; then
         cat > /usr/local/bin/ysoserial << 'YSOSERIAL_EOF'
@@ -1123,7 +1153,7 @@ install_web_tools() {
   fi
   
   log_progress "Installing ProjectDiscovery suite..."
-  sudo -u "$USERNAME" bash -c 'export GOPATH=$HOME/go && \
+  bash -c 'export GOPATH=$HOME/go && \
     go install -v github.com/projectdiscovery/naabu/v2/cmd/naabu@latest && \
     go install -v github.com/projectdiscovery/httpx/cmd/httpx@latest && \
     go install -v github.com/projectdiscovery/nuclei/v3/cmd/nuclei@latest && \
@@ -1133,7 +1163,7 @@ install_web_tools() {
     2>&1 | tee -a /var/log/ctfbox-install.log || true
   
   log_progress "Installing other web tools..."
-  sudo -u "$USERNAME" bash -c 'export GOPATH=$HOME/go && \
+  bash -c 'export GOPATH=$HOME/go && \
     go install -v github.com/ffuf/ffuf@latest && \
     go install -v github.com/OJ/gobuster/v3@latest' \
     2>&1 | tee -a /var/log/ctfbox-install.log || true
@@ -1149,7 +1179,7 @@ install_windows_tools() {
   # Kerberos tools
   if command -v go &> /dev/null; then
     log_progress "Installing kerbrute..."
-    sudo -u "$USERNAME" bash -c 'export GOPATH=$HOME/go && go install -v github.com/ropnop/kerbrute@latest' 2>&1 | tee -a /var/log/ctfbox-install.log || true
+    bash -c 'export GOPATH=$HOME/go && go install -v github.com/ropnop/kerbrute@latest' 2>&1 | tee -a /var/log/ctfbox-install.log || true
   fi
 }
 
@@ -1174,13 +1204,13 @@ install_postexploit_tools() {
   # Chisel
   if command -v go &> /dev/null; then
     log_progress "Installing chisel..."
-    sudo -u "$USERNAME" bash -c 'export GOPATH=$HOME/go && go install -v github.com/jpillora/chisel@latest' 2>&1 | tee -a /var/log/ctfbox-install.log || true
+    bash -c 'export GOPATH=$HOME/go && go install -v github.com/jpillora/chisel@latest' 2>&1 | tee -a /var/log/ctfbox-install.log || true
   fi
   
   # Penelope
   if [ ! -d "$USER_HOME/tools/repos/penelope" ]; then
     log_progress "Installing Penelope reverse shell handler..."
-    sudo -u "$USERNAME" git clone https://github.com/brightio/penelope.git $USER_HOME/tools/repos/penelope 2>&1 | tee -a /var/log/ctfbox-install.log || log_warn "Penelope clone failed"
+    git clone https://github.com/brightio/penelope.git $USER_HOME/tools/repos/penelope 2>&1 | tee -a /var/log/ctfbox-install.log || log_warn "Penelope clone failed"
   fi
 }
 
@@ -1214,7 +1244,7 @@ phase5_wordlists_setup() {
   # SecLists
   log_progress "Downloading SecLists (~700MB, this will take a while)..."
   if [ ! -d "$USER_HOME/tools/wordlists/SecLists" ]; then
-    sudo -u "$USERNAME" git clone --depth 1 https://github.com/danielmiessler/SecLists.git $USER_HOME/tools/wordlists/SecLists 2>&1 | tee -a /var/log/ctfbox-install.log || log_warn "SecLists clone failed"
+    git clone --depth 1 https://github.com/danielmiessler/SecLists.git $USER_HOME/tools/wordlists/SecLists 2>&1 | tee -a /var/log/ctfbox-install.log || log_warn "SecLists clone failed"
   fi
   
   # Extract rockyou.txt
@@ -1225,8 +1255,8 @@ phase5_wordlists_setup() {
   
   # Create symlinks
   log_progress "Creating wordlist symlinks..."
-  sudo -u "$USERNAME" ln -sf $USER_HOME/tools/wordlists/SecLists $USER_HOME/SecLists 2>/dev/null || true
-  sudo -u "$USERNAME" ln -sf /usr/share/wordlists/rockyou.txt $USER_HOME/tools/wordlists/rockyou.txt 2>/dev/null || true
+  ln -sf $USER_HOME/tools/wordlists/SecLists $USER_HOME/SecLists 2>/dev/null || true
+  ln -sf /usr/share/wordlists/rockyou.txt $USER_HOME/tools/wordlists/rockyou.txt 2>/dev/null || true
   
   log_info "Wordlists setup complete"
 }
@@ -1242,7 +1272,7 @@ phase6_repos_setup() {
     local name=$(basename $url .git)
     if [ ! -d "$USER_HOME/tools/repos/$name" ]; then
       log_progress "Cloning $name..."
-      sudo -u "$USERNAME" git clone $url $USER_HOME/tools/repos/$name 2>&1 | tee -a /var/log/ctfbox-install.log || log_warn "Failed to clone $name"
+      git clone $url $USER_HOME/tools/repos/$name 2>&1 | tee -a /var/log/ctfbox-install.log || log_warn "Failed to clone $name"
     fi
   }
   
@@ -1267,13 +1297,13 @@ phase6_repos_setup() {
   
   # Create PEASS symlinks
   if [ -d "$USER_HOME/tools/repos/PEASS-ng" ]; then
-    sudo -u "$USERNAME" ln -sf $USER_HOME/tools/repos/PEASS-ng/linPEAS/linpeas.sh $USER_HOME/linpeas.sh 2>/dev/null || true
-    sudo -u "$USERNAME" ln -sf $USER_HOME/tools/repos/PEASS-ng/winPEAS/winPEASx64.exe $USER_HOME/winpeas.exe 2>/dev/null || true
+    ln -sf $USER_HOME/tools/repos/PEASS-ng/linPEAS/linpeas.sh $USER_HOME/linpeas.sh 2>/dev/null || true
+    ln -sf $USER_HOME/tools/repos/PEASS-ng/winPEAS/winPEASx64.exe $USER_HOME/winpeas.exe 2>/dev/null || true
   fi
   
   # Create Penelope symlink
   if [ -d "$USER_HOME/tools/repos/penelope" ]; then
-    sudo -u "$USERNAME" ln -sf $USER_HOME/tools/repos/penelope/penelope.py $USER_HOME/penelope.py 2>/dev/null || true
+    ln -sf $USER_HOME/tools/repos/penelope/penelope.py $USER_HOME/penelope.py 2>/dev/null || true
   fi
   
   log_info "Repositories setup complete"
@@ -1290,27 +1320,27 @@ phase7_firefox_extensions() {
   
   if [ -z "$FIREFOX_PROFILE" ]; then
     log_warn "Firefox profile not found. Starting Firefox once to create profile..."
-    sudo -u "$USERNAME" timeout 5 firefox --headless 2>/dev/null || true
+    timeout 5 firefox --headless 2>/dev/null || true
     sleep 2
     FIREFOX_PROFILE=$(find $USER_HOME/.mozilla/firefox -maxdepth 1 -type d -name "*.default*" 2>/dev/null | head -n 1)
   fi
   
   if [ -n "$FIREFOX_PROFILE" ]; then
     log_info "Firefox profile found: $FIREFOX_PROFILE"
-    sudo -u "$USERNAME" mkdir -p "$FIREFOX_PROFILE/extensions"
+    mkdir -p "$FIREFOX_PROFILE/extensions"
     
     # Download extensions
     log_progress "Installing Firefox extensions..."
-    sudo -u "$USERNAME" wget -q "https://addons.mozilla.org/firefox/downloads/latest/foxyproxy-standard/latest.xpi" \
+    wget -q "https://addons.mozilla.org/firefox/downloads/latest/foxyproxy-standard/latest.xpi" \
       -O "$FIREFOX_PROFILE/extensions/foxyproxy@eric.h.jung.xpi" 2>/dev/null || log_warn "Failed to download FoxyProxy"
     
-    sudo -u "$USERNAME" wget -q "https://addons.mozilla.org/firefox/downloads/latest/darkreader/latest.xpi" \
+    wget -q "https://addons.mozilla.org/firefox/downloads/latest/darkreader/latest.xpi" \
       -O "$FIREFOX_PROFILE/extensions/addon@darkreader.org.xpi" 2>/dev/null || log_warn "Failed to download Dark Reader"
     
-    sudo -u "$USERNAME" wget -q "https://addons.mozilla.org/firefox/downloads/latest/cookie-editor/latest.xpi" \
+    wget -q "https://addons.mozilla.org/firefox/downloads/latest/cookie-editor/latest.xpi" \
       -O "$FIREFOX_PROFILE/extensions/{c5f15d22-8421-4a2f-9bed-e4e2c0b560e0}.xpi" 2>/dev/null || log_warn "Failed to download Cookie-Editor"
     
-    sudo -u "$USERNAME" wget -q "https://addons.mozilla.org/firefox/downloads/latest/wappalyzer/latest.xpi" \
+    wget -q "https://addons.mozilla.org/firefox/downloads/latest/wappalyzer/latest.xpi" \
       -O "$FIREFOX_PROFILE/extensions/wappalyzer@crunchlabs.com.xpi" 2>/dev/null || log_warn "Failed to download Wappalyzer"
     
     log_info "Firefox extensions installed"
@@ -1327,7 +1357,7 @@ phase7_firefox_extensions() {
 phase8_automation_setup() {
   log_progress "Phase: Automation Scripts & Dotfiles"
   
-  sudo -u "$USERNAME" mkdir -p $USER_HOME/scripts
+  mkdir -p $USER_HOME/scripts
   
   # Create .zshrc with aliases
   log_progress "Configuring .zshrc..."
@@ -1456,10 +1486,11 @@ extract() {
 }
 ZSH_EOF
   
-  chown "$USERNAME":"$USERNAME" $USER_HOME/.zshrc
+  # Don't chown yet - user doesn't exist. Will be done in phase2
   
   # Create update script
   log_progress "Creating update-tools script..."
+  mkdir -p $USER_HOME/scripts
   cat > $USER_HOME/scripts/update-tools.sh << 'UPDATE_EOF'
 #!/bin/bash
 # Update all pentesting tools
@@ -1503,11 +1534,10 @@ echo "[+] All tools updated!"
 UPDATE_EOF
   
   chmod +x $USER_HOME/scripts/update-tools.sh
-  chown -R "$USERNAME":"$USERNAME" $USER_HOME/scripts
   
   # Create reset/cleanup script on Desktop
   log_progress "Creating system reset script for Desktop..."
-  sudo -u "$USERNAME" mkdir -p $USER_HOME/Desktop
+  mkdir -p $USER_HOME/Desktop
   
   cat > $USER_HOME/Desktop/RESET_CTF_BOX.sh << 'RESET_EOF'
 #!/bin/bash
@@ -1704,9 +1734,8 @@ fi
 RESET_EOF
   
   chmod +x $USER_HOME/Desktop/RESET_CTF_BOX.sh
-  chown "$USERNAME":"$USERNAME" $USER_HOME/Desktop/RESET_CTF_BOX.sh
   
-  log_info "Automation & dotfiles setup complete"
+  log_info "Automation & dotfiles setup complete (ownership will be fixed in user setup phase)"
 }
 
 # ============================================
@@ -1721,8 +1750,7 @@ phase_final_cleanup() {
   log_progress "Cleaning package cache..."
   DEBIAN_FRONTEND=noninteractive apt autoclean -y -qq 2>&1 | tee -a /var/log/ctfbox-install.log
   
-  # Fix ownership
-  chown -R "$USERNAME":"$USERNAME" $USER_HOME
+  # Don't fix ownership yet - user will be created in next phase
   
   log_info "Cleanup complete"
 }
