@@ -41,15 +41,41 @@ log_progress() {
   echo -e "${BLUE}[*]${NC} $1"
 }
 
-# Progress indicator
+# Progress indicator with fancy progress bar
 show_progress() {
   local current=$1
   local total=$2
+  local phase_name=$3
   local percent=$(( current * 100 / total ))
+  
+  # Calculate progress bar (50 characters wide)
+  local filled=$(( percent / 2 ))
+  local empty=$(( 50 - filled ))
+  
+  # Create progress bar
+  local bar=""
+  for ((i=0; i<filled; i++)); do bar+="█"; done
+  for ((i=0; i<empty; i++)); do bar+="░"; done
+  
+  # Estimate time remaining (assume ~2 min per phase on average)
+  local remaining=$(( (total - current) * 2 ))
+  local time_est=""
+  if [ $remaining -eq 0 ]; then
+    time_est="Complete!"
+  elif [ $remaining -lt 5 ]; then
+    time_est="~${remaining} min remaining"
+  else
+    time_est="~${remaining} min remaining"
+  fi
+  
   echo ""
-  echo -e "${BLUE}╔════════════════════════════════════════╗${NC}"
-  echo -e "${BLUE}║${NC} Progress: ${GREEN}${percent}%${NC} (${current}/${total})${BLUE}                    ║${NC}"
-  echo -e "${BLUE}╚════════════════════════════════════════╝${NC}"
+  echo -e "${CYAN}╔════════════════════════════════════════════════════════════╗${NC}"
+  echo -e "${CYAN}║${NC} ${YELLOW}Phase ${current}/${total}:${NC} ${phase_name}"
+  echo -e "${CYAN}║${NC}"
+  echo -e "${CYAN}║${NC} [${GREEN}${bar}${NC}] ${GREEN}${percent}%${NC}"
+  echo -e "${CYAN}║${NC}"
+  echo -e "${CYAN}║${NC} ${BLUE}${time_est}${NC}"
+  echo -e "${CYAN}╚════════════════════════════════════════════════════════════╝${NC}"
   echo ""
 }
 
@@ -84,10 +110,10 @@ EOF
   echo -e "${YELLOW}[*]${NC} Welcome to the CTF Pentesting Toolkit Installer!"
   echo ""
   echo "This script will set up a complete offensive security environment with:"
-  echo -e "  ${GREEN}•${NC} 40+ pentesting tools (Python, Go, Ruby)"
-  echo -e "  ${GREEN}•${NC} 12 essential exploit/payload repositories"
-  echo -e "  ${GREEN}•${NC} Modern shell environment (Zsh + Powerlevel10k)"
-  echo -e "  ${GREEN}•${NC} Automated workflows and scripts"
+  echo -e "  ${GREEN}*${NC} 40+ pentesting tools (Python, Go, Ruby)"
+  echo -e "  ${GREEN}*${NC} 12 essential exploit/payload repositories"
+  echo -e "  ${GREEN}*${NC} Modern shell environment (Zsh + Powerlevel10k)"
+  echo -e "  ${GREEN}*${NC} Automated workflows and scripts"
   echo ""
   
   # Username configuration
@@ -158,8 +184,8 @@ configure_username() {
   export USER_HOME="/home/$USERNAME"
   
   echo ""
-  log_info "✓ Username set to: ${GREEN}$USERNAME${NC}"
-  log_info "✓ Home directory: ${GREEN}$USER_HOME${NC}"
+  log_info "[+] Username set to: ${GREEN}$USERNAME${NC}"
+  log_info "[+] Home directory: ${GREEN}$USER_HOME${NC}"
   echo ""
   
   read -p "Press Enter to continue to main menu..."
@@ -221,13 +247,13 @@ EOF
     echo ""
     echo -e "${GREEN}Current User:${NC} $USERNAME"
     echo ""
-    echo "1) ⚡ Install All (Everything - No Questions Asked)"
-    echo "2) 🚀 Full Installation (All Components - With Confirmation)"
-    echo "3) ⚙️  Custom Installation (Choose Components)"
-    echo "4) 📦 Quick Presets (Web/Windows/CTF/Minimal)"
-    echo "5) 👤 Change Username (Current: $USERNAME)"
-    echo "6) 🔧 Update Existing Installation"
-    echo "0) ❌ Exit"
+    echo "1) ${YELLOW}>>>${NC} Install All (Everything - No Questions Asked)"
+    echo "2) ${CYAN}==>${NC} Full Installation (All Components - With Confirmation)"
+    echo "3) ${BLUE}[*]${NC} Custom Installation (Choose Components)"
+    echo "4) ${MAGENTA}[#]${NC} Quick Presets (Web/Windows/CTF/Minimal)"
+    echo "5) ${GREEN}[@]${NC} Change Username (Current: $USERNAME)"
+    echo "6) ${CYAN}[+]${NC} Update Existing Installation"
+    echo "0) ${RED}[X]${NC} Exit"
     echo ""
     read -p "Select option [0-6]: " choice
     
@@ -240,7 +266,7 @@ EOF
       6) update_installation ;;
       0) 
         echo ""
-        log_info "Exiting installer. Stay safe out there! 🏴‍☠️"
+        log_info "Exiting installer. Stay safe out there! "
         exit 0
         ;;
       *)
@@ -264,11 +290,11 @@ show_presets_menu() {
 EOF
   echo -e "${NC}"
   echo ""
-  echo "1) 🌐 Web Pentesting (Recon, enumeration, fuzzing)"
-  echo "2) 🪟  Windows/AD Focus (NetExec, Impacket, Bloodhound)"
-  echo "3) 🏆 CTF Player (Crypto, stego, forensics, binary)"
-  echo "4) ⚡ Minimal Setup (Core tools only, no extras)"
-  echo "5) 🔙 Back to Main Menu"
+  echo "1) ${CYAN}[WEB]${NC} Web Pentesting (Recon, enumeration, fuzzing)"
+  echo "2) ${YELLOW}[WIN]${NC} Windows/AD Focus (NetExec, Impacket, Bloodhound)"
+  echo "3) ${MAGENTA}[CTF]${NC} CTF Player (Crypto, stego, forensics, binary)"
+  echo "4) ${GREEN}[MIN]${NC} Minimal Setup (Core tools only, no extras)"
+  echo "5) ${BLUE}[<-]${NC} Back to Main Menu"
   echo ""
   read -p "Select preset [1-5]: " preset
   
@@ -577,24 +603,24 @@ EOF
   echo ""
   echo "Selected Components:"
   
-  [ "$SYSTEM_UPDATES" = "true" ] && echo -e "  ${GREEN}✓${NC} System Updates & Base Packages"
-  [ "$USER_SETUP" = "true" ] && echo -e "  ${GREEN}✓${NC} User Setup"
-  [ "$SHELL_ENVIRONMENT" = "true" ] && echo -e "  ${GREEN}✓${NC} Shell Environment"
-  [ "$CORE_TOOLS" = "true" ] && echo -e "  ${GREEN}✓${NC} Core Tools"
-  [ "$WEB_ENUMERATION" = "true" ] && echo -e "  ${GREEN}✓${NC} Web Enumeration"
-  [ "$WINDOWS_AD" = "true" ] && echo -e "  ${GREEN}✓${NC} Windows/AD Tools"
-  [ "$WIRELESS" = "true" ] && echo -e "  ${GREEN}✓${NC} Wireless Tools"
-  [ "$POSTEXPLOIT" = "true" ] && echo -e "  ${GREEN}✓${NC} Post-Exploitation"
-  [ "$FORENSICS_STEGO" = "true" ] && echo -e "  ${GREEN}✓${NC} Forensics & Stego"
-  [ "$BINARY_EXPLOITATION" = "true" ] && echo -e "  ${GREEN}✓${NC} Binary Exploitation"
-  [ "$WORDLISTS" = "true" ] && echo -e "  ${GREEN}✓${NC} Wordlists"
-  [ "$REPOS_ESSENTIAL" = "true" ] && echo -e "  ${GREEN}✓${NC} Essential Repositories"
-  [ "$REPOS_PRIVILEGE" = "true" ] && echo -e "  ${GREEN}✓${NC} Privilege Escalation Repos"
-  [ "$FIREFOX_EXTENSIONS" = "true" ] && echo -e "  ${GREEN}✓${NC} Firefox Extensions"
-  [ "$AUTOMATION_SCRIPTS" = "true" ] && echo -e "  ${GREEN}✓${NC} Automation Scripts"
+  [ "$SYSTEM_UPDATES" = "true" ] && echo -e "  ${GREEN}[+]${NC} System Updates & Base Packages"
+  [ "$USER_SETUP" = "true" ] && echo -e "  ${GREEN}[+]${NC} User Setup"
+  [ "$SHELL_ENVIRONMENT" = "true" ] && echo -e "  ${GREEN}[+]${NC} Shell Environment"
+  [ "$CORE_TOOLS" = "true" ] && echo -e "  ${GREEN}[+]${NC} Core Tools"
+  [ "$WEB_ENUMERATION" = "true" ] && echo -e "  ${GREEN}[+]${NC} Web Enumeration"
+  [ "$WINDOWS_AD" = "true" ] && echo -e "  ${GREEN}[+]${NC} Windows/AD Tools"
+  [ "$WIRELESS" = "true" ] && echo -e "  ${GREEN}[+]${NC} Wireless Tools"
+  [ "$POSTEXPLOIT" = "true" ] && echo -e "  ${GREEN}[+]${NC} Post-Exploitation"
+  [ "$FORENSICS_STEGO" = "true" ] && echo -e "  ${GREEN}[+]${NC} Forensics & Stego"
+  [ "$BINARY_EXPLOITATION" = "true" ] && echo -e "  ${GREEN}[+]${NC} Binary Exploitation"
+  [ "$WORDLISTS" = "true" ] && echo -e "  ${GREEN}[+]${NC} Wordlists"
+  [ "$REPOS_ESSENTIAL" = "true" ] && echo -e "  ${GREEN}[+]${NC} Essential Repositories"
+  [ "$REPOS_PRIVILEGE" = "true" ] && echo -e "  ${GREEN}[+]${NC} Privilege Escalation Repos"
+  [ "$FIREFOX_EXTENSIONS" = "true" ] && echo -e "  ${GREEN}[+]${NC} Firefox Extensions"
+  [ "$AUTOMATION_SCRIPTS" = "true" ] && echo -e "  ${GREEN}[+]${NC} Automation Scripts"
   
   echo ""
-  echo -e "${YELLOW}⚠️  This installation will take 10-30 minutes depending on your connection.${NC}"
+  echo -e "${YELLOW}WARNING:${NC} This installation will take 10-30 minutes depending on your connection."
   echo ""
   read -p "Proceed with installation? (yes/no): " confirm
   
@@ -706,7 +732,7 @@ run_installation() {
   clear
   log_info "Starting CTF Box Installation..."
   log_info "Installation log: /var/log/ctfbox-install.log"
-  sleep 2
+  echo ""
   
   # Calculate total phases
   TOTAL_PHASES=0
@@ -731,24 +757,74 @@ run_installation() {
   [ "$AUTOMATION_SCRIPTS" = "true" ] && TOTAL_PHASES=$(( TOTAL_PHASES + 1 ))
   TOTAL_PHASES=$(( TOTAL_PHASES + 1 ))  # Cleanup phase
   
+  # Show installation roadmap
+  echo -e "${CYAN}╔════════════════════════════════════════════════════════════╗${NC}"
+  echo -e "${CYAN}║${NC}                  ${YELLOW}INSTALLATION ROADMAP${NC}                    ${CYAN}║${NC}"
+  echo -e "${CYAN}╠════════════════════════════════════════════════════════════╣${NC}"
+  echo -e "${CYAN}║${NC} Total Phases: ${GREEN}${TOTAL_PHASES}${NC}                                          ${CYAN}║${NC}"
+  echo -e "${CYAN}║${NC} Estimated Time: ${GREEN}~$(( TOTAL_PHASES * 2 )) minutes${NC}                             ${CYAN}║${NC}"
+  echo -e "${CYAN}║${NC}                                                            ${CYAN}║${NC}"
+  
+  local phase_num=1
+  [ "$SYSTEM_UPDATES" = "true" ] && {
+    echo -e "${CYAN}║${NC} ${phase_num}. System Updates & Base Packages                      ${CYAN}║${NC}"
+    phase_num=$(( phase_num + 1 ))
+  }
+  [ "$USER_SETUP" = "true" ] && {
+    echo -e "${CYAN}║${NC} ${phase_num}. User Account Setup                                   ${CYAN}║${NC}"
+    phase_num=$(( phase_num + 1 ))
+  }
+  [ "$SHELL_ENVIRONMENT" = "true" ] && {
+    echo -e "${CYAN}║${NC} ${phase_num}. Shell Environment (Zsh + Powerlevel10k)              ${CYAN}║${NC}"
+    phase_num=$(( phase_num + 1 ))
+  }
+  if [ "$CORE_TOOLS" = "true" ] || [ "$WEB_ENUMERATION" = "true" ] || [ "$WINDOWS_AD" = "true" ] || \
+     [ "$WIRELESS" = "true" ] || [ "$POSTEXPLOIT" = "true" ] || [ "$FORENSICS_STEGO" = "true" ] || \
+     [ "$BINARY_EXPLOITATION" = "true" ]; then
+    echo -e "${CYAN}║${NC} ${phase_num}. Installing Pentesting Tools                          ${CYAN}║${NC}"
+    phase_num=$(( phase_num + 1 ))
+  fi
+  [ "$WORDLISTS" = "true" ] && {
+    echo -e "${CYAN}║${NC} ${phase_num}. Downloading Wordlists (SecLists ~700MB)              ${CYAN}║${NC}"
+    phase_num=$(( phase_num + 1 ))
+  }
+  if [ "$REPOS_ESSENTIAL" = "true" ] || [ "$REPOS_PRIVILEGE" = "true" ]; then
+    echo -e "${CYAN}║${NC} ${phase_num}. Cloning Essential Repositories                       ${CYAN}║${NC}"
+    phase_num=$(( phase_num + 1 ))
+  fi
+  [ "$FIREFOX_EXTENSIONS" = "true" ] && {
+    echo -e "${CYAN}║${NC} ${phase_num}. Installing Firefox Extensions                        ${CYAN}║${NC}"
+    phase_num=$(( phase_num + 1 ))
+  }
+  [ "$AUTOMATION_SCRIPTS" = "true" ] && {
+    echo -e "${CYAN}║${NC} ${phase_num}. Creating Automation Scripts & Dotfiles               ${CYAN}║${NC}"
+    phase_num=$(( phase_num + 1 ))
+  }
+  echo -e "${CYAN}║${NC} ${phase_num}. Final Cleanup & Optimization                          ${CYAN}║${NC}"
+  
+  echo -e "${CYAN}╚════════════════════════════════════════════════════════════╝${NC}"
+  echo ""
+  echo -e "${YELLOW}Starting installation in 5 seconds...${NC}"
+  sleep 5
+  
   CURRENT_PHASE=0
   
   # Run selected phases
   if [ "$SYSTEM_UPDATES" = "true" ]; then
     CURRENT_PHASE=$(( CURRENT_PHASE + 1 ))
-    show_progress $CURRENT_PHASE $TOTAL_PHASES
+    show_progress $CURRENT_PHASE $TOTAL_PHASES "System Updates & Base Packages"
     phase1_system_setup
   fi
   
   if [ "$USER_SETUP" = "true" ]; then
     CURRENT_PHASE=$(( CURRENT_PHASE + 1 ))
-    show_progress $CURRENT_PHASE $TOTAL_PHASES
+    show_progress $CURRENT_PHASE $TOTAL_PHASES "User Account Setup"
     phase2_user_setup
   fi
   
   if [ "$SHELL_ENVIRONMENT" = "true" ]; then
     CURRENT_PHASE=$(( CURRENT_PHASE + 1 ))
-    show_progress $CURRENT_PHASE $TOTAL_PHASES
+    show_progress $CURRENT_PHASE $TOTAL_PHASES "Shell Environment (Zsh + Powerlevel10k)"
     phase3_shell_setup
   fi
   
@@ -757,37 +833,37 @@ run_installation() {
      [ "$WIRELESS" = "true" ] || [ "$POSTEXPLOIT" = "true" ] || [ "$FORENSICS_STEGO" = "true" ] || \
      [ "$BINARY_EXPLOITATION" = "true" ]; then
     CURRENT_PHASE=$(( CURRENT_PHASE + 1 ))
-    show_progress $CURRENT_PHASE $TOTAL_PHASES
+    show_progress $CURRENT_PHASE $TOTAL_PHASES "Installing Pentesting Tools"
     phase4_tools_setup
   fi
   
   if [ "$WORDLISTS" = "true" ]; then
     CURRENT_PHASE=$(( CURRENT_PHASE + 1 ))
-    show_progress $CURRENT_PHASE $TOTAL_PHASES
+    show_progress $CURRENT_PHASE $TOTAL_PHASES "Downloading Wordlists (SecLists ~700MB)"
     phase5_wordlists_setup
   fi
   
   if [ "$REPOS_ESSENTIAL" = "true" ] || [ "$REPOS_PRIVILEGE" = "true" ]; then
     CURRENT_PHASE=$(( CURRENT_PHASE + 1 ))
-    show_progress $CURRENT_PHASE $TOTAL_PHASES
+    show_progress $CURRENT_PHASE $TOTAL_PHASES "Cloning Essential Repositories"
     phase6_repos_setup
   fi
   
   if [ "$FIREFOX_EXTENSIONS" = "true" ]; then
     CURRENT_PHASE=$(( CURRENT_PHASE + 1 ))
-    show_progress $CURRENT_PHASE $TOTAL_PHASES
+    show_progress $CURRENT_PHASE $TOTAL_PHASES "Installing Firefox Extensions"
     phase7_firefox_extensions
   fi
   
   if [ "$AUTOMATION_SCRIPTS" = "true" ]; then
     CURRENT_PHASE=$(( CURRENT_PHASE + 1 ))
-    show_progress $CURRENT_PHASE $TOTAL_PHASES
+    show_progress $CURRENT_PHASE $TOTAL_PHASES "Creating Automation Scripts & Dotfiles"
     phase8_automation_setup
   fi
   
   # Final cleanup always runs
   CURRENT_PHASE=$(( CURRENT_PHASE + 1 ))
-  show_progress $CURRENT_PHASE $TOTAL_PHASES
+  show_progress $CURRENT_PHASE $TOTAL_PHASES "Final Cleanup & Optimization"
   phase_final_cleanup
   
   show_completion_message
@@ -819,7 +895,7 @@ phase1_system_setup() {
     silversearcher-ag \
     2>&1 | tee -a /var/log/ctfbox-install.log
   
-  log_info "✓ System setup complete"
+  log_info "[+] System setup complete"
 }
 
 # ============================================
@@ -846,7 +922,7 @@ phase2_user_setup() {
   usermod -aG docker "$USERNAME" 2>/dev/null || true
   export USER_HOME="/home/$USERNAME"
   
-  log_info "✓ User setup complete"
+  log_info "[+] User setup complete"
 }
 
 # ============================================
@@ -882,7 +958,7 @@ phase3_shell_setup() {
   # Set Zsh as default shell
   chsh -s $(which zsh) "$USERNAME" 2>/dev/null || true
   
-  log_info "✓ Shell environment setup complete"
+  log_info "[+] Shell environment setup complete"
 }
 
 # ============================================
@@ -930,7 +1006,7 @@ phase4_tools_setup() {
     install_binary_tools
   fi
   
-  log_info "✓ Tool installation complete"
+  log_info "[+] Tool installation complete"
 }
 
 # Core tools module
@@ -1107,7 +1183,7 @@ phase5_wordlists_setup() {
   sudo -u "$USERNAME" ln -sf $USER_HOME/tools/wordlists/SecLists $USER_HOME/SecLists 2>/dev/null || true
   sudo -u "$USERNAME" ln -sf /usr/share/wordlists/rockyou.txt $USER_HOME/tools/wordlists/rockyou.txt 2>/dev/null || true
   
-  log_info "✓ Wordlists setup complete"
+  log_info "[+] Wordlists setup complete"
 }
 
 # ============================================
@@ -1155,7 +1231,7 @@ phase6_repos_setup() {
     sudo -u "$USERNAME" ln -sf $USER_HOME/tools/repos/penelope/penelope.py $USER_HOME/penelope.py 2>/dev/null || true
   fi
   
-  log_info "✓ Repositories setup complete"
+  log_info "[+] Repositories setup complete"
 }
 
 # ============================================
@@ -1197,7 +1273,7 @@ phase7_firefox_extensions() {
     log_warn "Could not find or create Firefox profile"
   fi
   
-  log_info "✓ Firefox extensions setup complete"
+  log_info "[+] Firefox extensions setup complete"
 }
 
 # ============================================
@@ -1416,17 +1492,17 @@ EOF
 echo -e "${NC}"
 
 echo ""
-echo -e "${YELLOW}⚠️  WARNING: This script will:${NC}"
+echo -e "${YELLOW}WARNING: This script will:${NC}"
 echo ""
-echo "  • Archive all engagement folders"
-echo "  • Reset /etc/hosts to defaults"
-echo "  • Clear Kerberos tickets and config"
-echo "  • Clear and archive bash/zsh history"
-echo "  • Clear browser data (optional)"
-echo "  • Clear cached credentials"
-echo "  • Clear temporary files"
-echo "  • Reset proxychains configuration"
-echo "  • Clear SSH known hosts"
+echo "  * Archive all engagement folders"
+echo "  * Reset /etc/hosts to defaults"
+echo "  * Clear Kerberos tickets and config"
+echo "  * Clear and archive bash/zsh history"
+echo "  * Clear browser data (optional)"
+echo "  * Clear cached credentials"
+echo "  * Clear temporary files"
+echo "  * Reset proxychains configuration"
+echo "  * Clear SSH known hosts"
 echo ""
 echo -e "${RED}Archived data will be saved to: ~/archives/<timestamp>${NC}"
 echo ""
@@ -1561,7 +1637,7 @@ echo ""
 echo -e "${GREEN}"
 cat << "EOF"
 ╔═══════════════════════════════════════════════════════════════╗
-║                  ✓ SYSTEM RESET COMPLETE!                    ║
+║                  [+] SYSTEM RESET COMPLETE!                    ║
 ╚═══════════════════════════════════════════════════════════════╝
 EOF
 echo -e "${NC}"
@@ -1570,7 +1646,7 @@ echo ""
 echo -e "${YELLOW}Archive Location:${NC} $ARCHIVE_DIR"
 echo ""
 echo -e "${CYAN}Your system is now reset to a clean state!${NC}"
-echo -e "${CYAN}Ready for the next engagement! 🎯${NC}"
+echo -e "${CYAN}Ready for the next engagement! ${NC}"
 echo ""
 
 read -p "Reboot system now? (y/n): " reboot_choice
@@ -1585,7 +1661,7 @@ RESET_EOF
   chmod +x $USER_HOME/Desktop/RESET_CTF_BOX.sh
   chown "$USERNAME":"$USERNAME" $USER_HOME/Desktop/RESET_CTF_BOX.sh
   
-  log_info "✓ Automation & dotfiles setup complete"
+  log_info "[+] Automation & dotfiles setup complete"
 }
 
 # ============================================
@@ -1603,7 +1679,7 @@ phase_final_cleanup() {
   # Fix ownership
   chown -R "$USERNAME":"$USERNAME" $USER_HOME
   
-  log_info "✓ Cleanup complete"
+  log_info "[+] Cleanup complete"
 }
 
 # ============================================
@@ -1615,7 +1691,7 @@ show_completion_message() {
   cat << 'EOF'
 ╔═══════════════════════════════════════════════════════════════╗
 ║                                                               ║
-║              ✓ INSTALLATION COMPLETE!                        ║
+║              [+] INSTALLATION COMPLETE!                        ║
 ║                                                               ║
 ╚═══════════════════════════════════════════════════════════════╝
 EOF
@@ -1637,16 +1713,16 @@ EOF
   echo -e "${CYAN}USEFUL COMMANDS:${NC}"
   echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
   echo ""
-  echo " ${GREEN}•${NC} newengagement <name>  : Create new engagement folder"
-  echo " ${GREEN}•${NC} quickscan <target>    : Quick nmap scan"
-  echo " ${GREEN}•${NC} shell <port>          : Start Penelope reverse shell handler"
-  echo " ${GREEN}•${NC} ll                    : Detailed file listing"
+  echo " ${GREEN}*${NC} newengagement <name>  : Create new engagement folder"
+  echo " ${GREEN}*${NC} quickscan <target>    : Quick nmap scan"
+  echo " ${GREEN}*${NC} shell <port>          : Start Penelope reverse shell handler"
+  echo " ${GREEN}*${NC} ll                    : Detailed file listing"
   echo ""
   echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
   echo -e "${CYAN}IMPORTANT FILES ON DESKTOP:${NC}"
   echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
   echo ""
-  echo " ${GREEN}•${NC} ${YELLOW}RESET_CTF_BOX.sh${NC}     : Reset system to clean state"
+  echo " ${GREEN}*${NC} ${YELLOW}RESET_CTF_BOX.sh${NC}     : Reset system to clean state"
   echo "                          Archives engagements, clears history,"
   echo "                          resets /etc/hosts, clears Kerberos, etc."
   echo ""
@@ -1654,7 +1730,7 @@ EOF
   echo ""
   echo -e "${YELLOW}Installation log saved to: /var/log/ctfbox-install.log${NC}"
   echo ""
-  echo -e "${GREEN}Happy Hacking! 🏴‍☠️${NC}"
+  echo -e "${GREEN}Happy Hacking! ${NC}"
   echo ""
   
   log_warn "System will reboot in 10 seconds (Ctrl+C to cancel)..."
@@ -1729,4 +1805,3 @@ main() {
 }
 
 # Run the installer
-main "$@"
