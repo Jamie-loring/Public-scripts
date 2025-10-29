@@ -1,17 +1,10 @@
 #!/bin/bash
 
-# Parrot Security VM Enhancement Bootstrap Script
-# For fresh Parrot installs running as VM guest on Windows host
-# Modular installation system with component selection
-# Version 3.2 - USER SETUP FIXED
-# Last updated: 10/29/2025
-
 set -e
 
 # ============================================
 # CONFIGURATION
 # ============================================
-SCRIPT_VERSION="3.2-FIXED"
 CONFIG_FILE="$HOME/.ctfbox.conf"
 DEFAULT_USERNAME="$USER"
 
@@ -48,16 +41,13 @@ show_progress() {
   local phase_name=$3
   local percent=$(( current * 100 / total ))
   
-  # Calculate progress bar (50 characters wide)
   local filled=$(( percent / 2 ))
   local empty=$(( 50 - filled ))
   
-  # Create progress bar
   local bar=""
   for ((i=0; i<filled; i++)); do bar+="█"; done
   for ((i=0; i<empty; i++)); do bar+="░"; done
   
-  # Estimate time remaining (assume ~2 min per phase on average)
   local remaining=$(( (total - current) * 2 ))
   local time_est=""
   if [ $remaining -eq 0 ]; then
@@ -88,19 +78,18 @@ welcome_screen() {
   echo -e "${CYAN}"
   cat << 'EOF'
 ╔═══════════════════════════════════════════════════════════════╗
-║                                                               ║
-║    ██████╗████████╗███████╗    ██████╗  ██████╗ ██╗  ██╗    ║
-║   ██╔════╝╚══██╔══╝██╔════╝    ██╔══██╗██╔═══██╗╚██╗██╔╝    ║
-║   ██║        ██║   █████╗      ██████╔╝██║   ██║ ╚███╔╝     ║
-║   ██║        ██║   ██╔══╝      ██╔══██╗██║   ██║ ██╔██╗     ║
-║   ╚██████╗   ██║   ██║         ██████╔╝╚██████╔╝██╔╝ ██╗    ║
-║    ╚═════╝   ╚═╝   ╚═╝         ╚═════╝  ╚═════╝ ╚═╝  ╚═╝    ║
+║     ██████╗████████╗███████╗    ██████╗  ██████╗ ██╗  ██╗     ║
+║    ██╔════╝╚══██╔══╝██╔════╝    ██╔══██╗██╔═══██╗╚██╗██╔╝     ║
+║    ██║         ██║  █████╗      ██████╔╝██║   ██║ ╚███╔╝      ║
+║    ██║         ██║  ██╔══╝      ██╔══██╗██║   ██║ ██╔██╗      ║
+║    ╚██████╗    ██║  ██║         ██████╔╝╚██████╔╝██╔╝ ██╗     ║
+║     ╚═════╝    ╚═╝  ╚═╝         ╚═════╝  ╚═════╝ ╚═╝  ╚═╝     ║
 EOF
   echo -e "${GREEN}"
   cat << 'EOF'
 ║                                                               ║
-║           PENTESTING TOOLKIT INSTALLER v3.2                  ║
-║              Modern CTF Edition - 2025                       ║
+║            PENTESTING TOOLKIT INSTALLER                       ║
+║           Clean User Creation Model                           ║
 ║                                                               ║
 ╚═══════════════════════════════════════════════════════════════╝
 EOF
@@ -110,13 +99,11 @@ EOF
   echo -e "${YELLOW}[*]${NC} Welcome to the CTF Pentesting Toolkit Installer!"
   echo ""
   echo "This script will set up a complete offensive security environment with:"
-  echo "  * 40+ pentesting tools (Python, Go, Ruby)"
-  echo "  * 12 essential exploit/payload repositories"
+  echo "  * A dedicated, non-root pentesting user profile (making it the default)"
   echo "  * Modern shell environment (Zsh + Powerlevel10k)"
-  echo "  * Automated workflows and scripts"
+  echo "  * 40+ specialized pentesting tools"
   echo ""
   
-  # Username configuration
   configure_username
 }
 
@@ -126,7 +113,6 @@ EOF
 validate_username() {
   local username=$1
   
-  # Check format
   if [[ ! "$username" =~ ^[a-z_][a-z0-9_-]{0,31}$ ]]; then
     log_error "Invalid username format!"
     echo "Username must:"
@@ -136,7 +122,6 @@ validate_username() {
     return 1
   fi
   
-  # Check if reserved
   local reserved=("root" "daemon" "bin" "sys" "sync" "games" "man" "lp" "mail" "news" "uucp" "proxy" "www-data" "backup" "list" "irc" "nobody")
   for reserved_name in "${reserved[@]}"; do
     if [[ "$username" == "$reserved_name" ]]; then
@@ -154,7 +139,6 @@ configure_username() {
   echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
   echo ""
   
-  # Check for existing config
   if [ -f "$CONFIG_FILE" ]; then
     source "$CONFIG_FILE"
     log_info "Found existing config: Username=${USERNAME}"
@@ -169,9 +153,8 @@ configure_username() {
     fi
   fi
   
-  # Get username from user
   while true; do
-    read -p "Enter username for pentesting user [default: $DEFAULT_USERNAME]: " USERNAME
+    read -p "Enter desired pentesting username [default: $DEFAULT_USERNAME]: " USERNAME
     USERNAME=${USERNAME:-$DEFAULT_USERNAME}
     
     if validate_username "$USERNAME"; then
@@ -184,8 +167,7 @@ configure_username() {
   export USER_HOME="/home/$USERNAME"
   
   echo ""
-  log_info "Username set to: ${GREEN}$USERNAME${NC}"
-  log_info "Home directory: ${GREEN}$USER_HOME${NC}"
+  log_info "Pentesting username set to: ${GREEN}$USERNAME${NC}"
   echo ""
   
   read -p "Press Enter to continue to main menu..."
@@ -230,7 +212,6 @@ load_config() {
   fi
 }
 
-# Helper function to display component status
 display_status() {
   local var_name=$1
   local var_value="${!var_name}"
@@ -251,19 +232,19 @@ show_main_menu() {
     echo -e "${CYAN}"
     cat << 'EOF'
 ╔═══════════════════════════════════════════════════════════════╗
-║                      CTF BOX INSTALLER                        ║
-║                    Main Menu - v3.2                           ║
+║             CTF BOX INSTALLER                                 ║
+║             Main Menu                                         ║
 ╚═══════════════════════════════════════════════════════════════╝
 EOF
     echo -e "${NC}"
     echo ""
-    echo -e "${GREEN}Current User:${NC} $USERNAME"
+    echo -e "${GREEN}Current Target User:${NC} $USERNAME"
     echo ""
     echo "1) Install All (Everything - No Questions Asked)"
     echo "2) Full Installation (All Components - With Confirmation)"
     echo "3) Custom Installation (Choose Components)"
     echo "4) Quick Presets (Web/Windows/CTF/Minimal)"
-    echo "5) Change Username (Current: $USERNAME)"
+    echo "5) Change Target Username (Current: $USERNAME)"
     echo "6) Update Existing Installation"
     echo "0) Exit"
     echo ""
@@ -423,7 +404,7 @@ show_component_menu() {
     echo -e "${CYAN}"
     cat << 'EOF'
 ╔═══════════════════════════════════════════════════════════════╗
-║                   COMPONENT SELECTION                         ║
+║                    COMPONENT SELECTION                        ║
 ╚═══════════════════════════════════════════════════════════════╝
 EOF
     echo -e "${NC}"
@@ -432,9 +413,9 @@ EOF
     echo ""
     echo "━━━━ SYSTEM SETUP ━━━━"
     
-    echo -e " 1) System Updates & Base Packages        $(display_status SYSTEM_UPDATES)"
-    echo -e " 2) User Setup ($USERNAME)                 $(display_status USER_SETUP)"
-    echo -e " 3) Shell Environment (Zsh + p10k)        $(display_status SHELL_ENVIRONMENT)"
+    echo -e " 1) System Updates & Base Packages         $(display_status SYSTEM_UPDATES)"
+    echo -e " 2) Pentesting User Setup ($USERNAME)      $(display_status USER_SETUP)"
+    echo -e " 3) Shell Environment (Zsh + p10k)         $(display_status SHELL_ENVIRONMENT)"
     
     echo ""
     echo "━━━━ TOOL CATEGORIES ━━━━"
@@ -446,7 +427,7 @@ EOF
     echo -e " 8) Post-Exploitation (Penelope, etc)    $(display_status POSTEXPLOIT)"
     echo -e " 9) Forensics & Stego                    $(display_status FORENSICS_STEGO)"
     echo -e "10) Binary Exploitation                  $(display_status BINARY_EXPLOITATION)"
-    echo -e "11) Wordlists (SecLists, rockyou)        $(display_status WORDLISTS)"
+    echo -e "11) Wordlists (SecLists, rockyou)         $(display_status WORDLISTS)"
     
     echo ""
     echo "━━━━ REPOSITORIES ━━━━"
@@ -533,18 +514,17 @@ confirm_and_install() {
   echo -e "${CYAN}"
   cat << 'EOF'
 ╔═══════════════════════════════════════════════════════════════╗
-║                 INSTALLATION SUMMARY                          ║
+║                    INSTALLATION SUMMARY                       ║
 ╚═══════════════════════════════════════════════════════════════╝
 EOF
   echo -e "${NC}"
   echo ""
-  echo -e "${GREEN}Username:${NC} $USERNAME"
-  echo -e "${GREEN}Home Directory:${NC} $USER_HOME"
+  echo -e "${GREEN}Target Username:${NC} $USERNAME"
   echo ""
   echo "Selected Components:"
   
   [ "$SYSTEM_UPDATES" = "true" ] && echo -e "  ${GREEN}[+]${NC} System Updates & Base Packages"
-  [ "$USER_SETUP" = "true" ] && echo -e "  ${GREEN}[+]${NC} User Setup"
+  [ "$USER_SETUP" = "true" ] && echo -e "  ${GREEN}[+]${NC} User Setup (Creation/Configuration)"
   [ "$SHELL_ENVIRONMENT" = "true" ] && echo -e "  ${GREEN}[+]${NC} Shell Environment"
   [ "$CORE_TOOLS" = "true" ] && echo -e "  ${GREEN}[+]${NC} Core Tools"
   [ "$WEB_ENUMERATION" = "true" ] && echo -e "  ${GREEN}[+]${NC} Web Enumeration"
@@ -576,7 +556,6 @@ EOF
 # FULL INSTALLATION
 # ============================================
 install_all_immediate() {
-  # Enable all components
   SYSTEM_UPDATES=true
   USER_SETUP=true
   SHELL_ENVIRONMENT=true
@@ -595,12 +574,11 @@ install_all_immediate() {
   
   save_config
   
-  # Skip confirmation and go straight to install
   clear
   echo -e "${CYAN}"
   cat << 'EOF'
 ╔═══════════════════════════════════════════════════════════════╗
-║                  ⚡ INSTALL ALL MODE ⚡                        ║
+║                   ⚡ INSTALL ALL MODE ⚡                       ║
 ╚═══════════════════════════════════════════════════════════════╝
 EOF
   echo -e "${NC}"
@@ -615,7 +593,6 @@ EOF
 }
 
 install_full() {
-  # Enable all components
   SYSTEM_UPDATES=true
   USER_SETUP=true
   SHELL_ENVIRONMENT=true
@@ -644,7 +621,7 @@ update_installation() {
   echo -e "${CYAN}"
   cat << 'EOF'
 ╔═══════════════════════════════════════════════════════════════╗
-║                  UPDATE INSTALLATION                          ║
+║                    UPDATE INSTALLATION                        ║
 ╚═══════════════════════════════════════════════════════════════╝
 EOF
   echo -e "${NC}"
@@ -676,14 +653,13 @@ run_installation() {
   
   # Calculate total phases
   TOTAL_PHASES=0
-  [ "$USER_SETUP" = "true" ] && TOTAL_PHASES=$(( TOTAL_PHASES + 1 ))  # USER SETUP FIRST NOW!
   [ "$SYSTEM_UPDATES" = "true" ] && TOTAL_PHASES=$(( TOTAL_PHASES + 1 ))
+  [ "$USER_SETUP" = "true" ] && TOTAL_PHASES=$(( TOTAL_PHASES + 1 ))
   [ "$SHELL_ENVIRONMENT" = "true" ] && TOTAL_PHASES=$(( TOTAL_PHASES + 1 ))
   
-  # Core tools phase always runs if any tool category is selected
   if [ "$CORE_TOOLS" = "true" ] || [ "$WEB_ENUMERATION" = "true" ] || [ "$WINDOWS_AD" = "true" ] || \
-     [ "$WIRELESS" = "true" ] || [ "$POSTEXPLOIT" = "true" ] || [ "$FORENSICS_STEGO" = "true" ] || \
-     [ "$BINARY_EXPLOITATION" = "true" ]; then
+      [ "$WIRELESS" = "true" ] || [ "$POSTEXPLOIT" = "true" ] || [ "$FORENSICS_STEGO" = "true" ] || \
+      [ "$BINARY_EXPLOITATION" = "true" ]; then
     TOTAL_PHASES=$(( TOTAL_PHASES + 1 ))
   fi
   
@@ -695,52 +671,52 @@ run_installation() {
   
   [ "$FIREFOX_EXTENSIONS" = "true" ] && TOTAL_PHASES=$(( TOTAL_PHASES + 1 ))
   [ "$AUTOMATION_SCRIPTS" = "true" ] && TOTAL_PHASES=$(( TOTAL_PHASES + 1 ))
-  TOTAL_PHASES=$(( TOTAL_PHASES + 1 ))  # Cleanup phase
+  TOTAL_PHASES=$(( TOTAL_PHASES + 1 ))
   
   # Show installation roadmap
   echo -e "${CYAN}╔════════════════════════════════════════════════════════════╗${NC}"
-  echo -e "${CYAN}║${NC}                  ${YELLOW}INSTALLATION ROADMAP${NC}                    ${CYAN}║${NC}"
+  echo -e "${CYAN}║              ${YELLOW}INSTALLATION ROADMAP${NC}                           ${CYAN}║${NC}"
   echo -e "${CYAN}╠════════════════════════════════════════════════════════════╣${NC}"
-  echo -e "${CYAN}║${NC} Total Phases: ${GREEN}${TOTAL_PHASES}${NC}                                          ${CYAN}║${NC}"
-  echo -e "${CYAN}║${NC} Estimated Time: ${GREEN}~$(( TOTAL_PHASES * 2 )) minutes${NC}                             ${CYAN}║${NC}"
-  echo -e "${CYAN}║${NC}                                                            ${CYAN}║${NC}"
+  echo -e "${CYAN}║ Total Phases: ${GREEN}${TOTAL_PHASES}${NC}                                       ${CYAN}║${NC}"
+  echo -e "${CYAN}║ Estimated Time: ${GREEN}~$(( TOTAL_PHASES * 2 )) minutes${NC}                         ${CYAN}║${NC}"
+  echo -e "${CYAN}║                                                            ${CYAN}║${NC}"
   
   local phase_num=1
-  [ "$USER_SETUP" = "true" ] && {
-    echo -e "${CYAN}║${NC} ${phase_num}. User Account Setup & Renaming (RUNS FIRST!)          ${CYAN}║${NC}"
+  [ "$SYSTEM_UPDATES" = "true" ] && {
+    echo -e "${CYAN}║ ${phase_num}. System Updates & Base Packages               ${CYAN}║${NC}"
     phase_num=$(( phase_num + 1 ))
   }
-  [ "$SYSTEM_UPDATES" = "true" ] && {
-    echo -e "${CYAN}║${NC} ${phase_num}. System Updates & Base Packages                      ${CYAN}║${NC}"
+  [ "$USER_SETUP" = "true" ] && {
+    echo -e "${CYAN}║ ${phase_num}. User Account Creation & Configuration        ${CYAN}║${NC}"
     phase_num=$(( phase_num + 1 ))
   }
   [ "$SHELL_ENVIRONMENT" = "true" ] && {
-    echo -e "${CYAN}║${NC} ${phase_num}. Shell Environment (Zsh + Powerlevel10k)              ${CYAN}║${NC}"
+    echo -e "${CYAN}║ ${phase_num}. Shell Environment (Zsh + Powerlevel10k)      ${CYAN}║${NC}"
     phase_num=$(( phase_num + 1 ))
   }
   if [ "$CORE_TOOLS" = "true" ] || [ "$WEB_ENUMERATION" = "true" ] || [ "$WINDOWS_AD" = "true" ] || \
-     [ "$WIRELESS" = "true" ] || [ "$POSTEXPLOIT" = "true" ] || [ "$FORENSICS_STEGO" = "true" ] || \
-     [ "$BINARY_EXPLOITATION" = "true" ]; then
-    echo -e "${CYAN}║${NC} ${phase_num}. Installing Pentesting Tools                          ${CYAN}║${NC}"
+      [ "$WIRELESS" = "true" ] || [ "$POSTEXPLOIT" = "true" ] || [ "$FORENSICS_STEGO" = "true" ] || \
+      [ "$BINARY_EXPLOITATION" = "true" ]; then
+    echo -e "${CYAN}║ ${phase_num}. Installing Pentesting Tools                  ${CYAN}║${NC}"
     phase_num=$(( phase_num + 1 ))
   fi
   [ "$WORDLISTS" = "true" ] && {
-    echo -e "${CYAN}║${NC} ${phase_num}. Downloading Wordlists (SecLists ~700MB)              ${CYAN}║${NC}"
+    echo -e "${CYAN}║ ${phase_num}. Downloading Wordlists (SecLists ~700MB)      ${CYAN}║${NC}"
     phase_num=$(( phase_num + 1 ))
   }
   if [ "$REPOS_ESSENTIAL" = "true" ] || [ "$REPOS_PRIVILEGE" = "true" ]; then
-    echo -e "${CYAN}║${NC} ${phase_num}. Cloning Essential Repositories                       ${CYAN}║${NC}"
+    echo -e "${CYAN}║ ${phase_num}. Cloning Essential Repositories               ${CYAN}║${NC}"
     phase_num=$(( phase_num + 1 ))
   fi
   [ "$FIREFOX_EXTENSIONS" = "true" ] && {
-    echo -e "${CYAN}║${NC} ${phase_num}. Installing Firefox Extensions                        ${CYAN}║${NC}"
+    echo -e "${CYAN}║ ${phase_num}. Installing Firefox Extensions                  ${CYAN}║${NC}"
     phase_num=$(( phase_num + 1 ))
   }
   [ "$AUTOMATION_SCRIPTS" = "true" ] && {
-    echo -e "${CYAN}║${NC} ${phase_num}. Creating Automation Scripts & Dotfiles               ${CYAN}║${NC}"
+    echo -e "${CYAN}║ ${phase_num}. Creating Automation Scripts & Dotfiles         ${CYAN}║${NC}"
     phase_num=$(( phase_num + 1 ))
   }
-  echo -e "${CYAN}║${NC} ${phase_num}. Final Cleanup & Ownership Fix                        ${CYAN}║${NC}"
+  echo -e "${CYAN}║ ${phase_num}. Final Cleanup & Optimization                 ${CYAN}║${NC}"
   
   echo -e "${CYAN}╚════════════════════════════════════════════════════════════╝${NC}"
   echo ""
@@ -749,18 +725,16 @@ run_installation() {
   
   CURRENT_PHASE=0
   
-  # *** KEY FIX: USER SETUP RUNS FIRST! ***
-  if [ "$USER_SETUP" = "true" ]; then
-    CURRENT_PHASE=$(( CURRENT_PHASE + 1 ))
-    show_progress $CURRENT_PHASE $TOTAL_PHASES "User Account Setup & Renaming"
-    phase2_user_setup
-  fi
-  
-  # Now run all other phases with correct USER_HOME
   if [ "$SYSTEM_UPDATES" = "true" ]; then
     CURRENT_PHASE=$(( CURRENT_PHASE + 1 ))
     show_progress $CURRENT_PHASE $TOTAL_PHASES "System Updates & Base Packages"
     phase1_system_setup
+  fi
+  
+  if [ "$USER_SETUP" = "true" ]; then
+    CURRENT_PHASE=$(( CURRENT_PHASE + 1 ))
+    show_progress $CURRENT_PHASE $TOTAL_PHASES "User Account Creation & Configuration"
+    phase2_user_setup
   fi
   
   if [ "$SHELL_ENVIRONMENT" = "true" ]; then
@@ -769,10 +743,9 @@ run_installation() {
     phase3_shell_setup
   fi
   
-  # Tool installation phase (modular)
   if [ "$CORE_TOOLS" = "true" ] || [ "$WEB_ENUMERATION" = "true" ] || [ "$WINDOWS_AD" = "true" ] || \
-     [ "$WIRELESS" = "true" ] || [ "$POSTEXPLOIT" = "true" ] || [ "$FORENSICS_STEGO" = "true" ] || \
-     [ "$BINARY_EXPLOITATION" = "true" ]; then
+      [ "$WIRELESS" = "true" ] || [ "$POSTEXPLOIT" = "true" ] || [ "$FORENSICS_STEGO" = "true" ] || \
+      [ "$BINARY_EXPLOITATION" = "true" ]; then
     CURRENT_PHASE=$(( CURRENT_PHASE + 1 ))
     show_progress $CURRENT_PHASE $TOTAL_PHASES "Installing Pentesting Tools"
     phase4_tools_setup
@@ -802,9 +775,8 @@ run_installation() {
     phase8_automation_setup
   fi
   
-  # Final cleanup always runs
   CURRENT_PHASE=$(( CURRENT_PHASE + 1 ))
-  show_progress $CURRENT_PHASE $TOTAL_PHASES "Final Cleanup & Ownership Fix"
+  show_progress $CURRENT_PHASE $TOTAL_PHASES "Final Cleanup & Optimization"
   phase_final_cleanup
   
   show_completion_message
@@ -840,117 +812,101 @@ phase1_system_setup() {
 }
 
 # ============================================
-# PHASE 2: USER SETUP (NOW RUNS FIRST!)
+# PHASE 2: USER SETUP (NO PASSWORD)
 # ============================================
 phase2_user_setup() {
-  log_progress "Phase: User Account Setup & Renaming"
-  
-  # Detect who actually ran the script (the real user before sudo)
-  local REAL_USER="${SUDO_USER:-$USER}"
-  local REAL_UID=$(id -u "$REAL_USER" 2>/dev/null || echo "")
-  
-  log_info "Detected running user: $REAL_USER"
-  
-  # If REAL_USER is root or not found, find the default user automatically
-  if [ "$REAL_USER" = "root" ] || [ -z "$REAL_UID" ] || [ "$REAL_UID" -eq 0 ]; then
-    log_progress "Running as root, detecting default user..."
-    
-    # Find first non-root user with UID >= 1000
-    while IFS=: read -r user _ uid _ _ home _; do
-      if [ "$uid" -ge 1000 ] && [ "$uid" -lt 65534 ] && [ "$user" != "nobody" ]; then
-        REAL_USER="$user"
-        REAL_UID="$uid"
-        log_info "Found default user: $REAL_USER (UID: $REAL_UID)"
-        break
-      fi
-    done < /etc/passwd
-  fi
-  
-  # If REAL_USER is already the target username, nothing to rename
-  if [ "$REAL_USER" = "$USERNAME" ]; then
-    log_info "User is already named '$USERNAME' - no rename needed"
-    export USER_HOME="/home/$USERNAME"
+  log_progress "Phase: User Account Creation & Configuration"
+
+  export USER_HOME="/home/$USERNAME"
+
+  # 1. Check/Create User
+  if id "$USERNAME" &>/dev/null; then
+    log_info "User '$USERNAME' already exists. Skipping creation."
   else
-    # Rename the current user to the target username
-    log_info "Renaming user '$REAL_USER' to '$USERNAME'..."
+    log_warn "User '$USERNAME' does not exist. Creating new user..."
     
-    # Kill any processes owned by the user (to allow rename)
-    pkill -u "$REAL_USER" 2>/dev/null || true
-    sleep 2
+    # Create user with home directory, set shell, and add to initial groups (sudo, docker)
+    log_progress "Adding user and setting home directory..."
+    useradd -m -s /bin/zsh -G sudo,docker "$USERNAME" 2>&1 | tee -a /var/log/ctfbox-install.log
+
+    # Set no password (empty string) to allow passwordless login/auto-login
+    log_progress "Setting user to passwordless access..."
+    echo "$USERNAME:''" | chpasswd -e 2>&1 | tee -a /var/log/ctfbox-install.log
     
-    # Rename the user
-    log_progress "Changing username from '$REAL_USER' to '$USERNAME'..."
-    usermod -l "$USERNAME" "$REAL_USER" 2>&1 | tee -a /var/log/ctfbox-install.log
-    
-    # Rename the home directory
-    log_progress "Moving home directory to /home/$USERNAME..."
-    usermod -d "/home/$USERNAME" -m "$USERNAME" 2>&1 | tee -a /var/log/ctfbox-install.log
-    
-    # Rename the primary group
-    log_progress "Renaming group from '$REAL_USER' to '$USERNAME'..."
-    groupmod -n "$USERNAME" "$REAL_USER" 2>/dev/null || true
-    
-    # Update sudoers if exists
-    if [ -f "/etc/sudoers.d/$REAL_USER" ]; then
-      mv "/etc/sudoers.d/$REAL_USER" "/etc/sudoers.d/$USERNAME" 2>/dev/null || true
-      sed -i "s/$REAL_USER/$USERNAME/g" "/etc/sudoers.d/$USERNAME" 2>/dev/null || true
-    fi
-    
-    export USER_HOME="/home/$USERNAME"
-    
-    log_info "User successfully renamed from '$REAL_USER' to '$USERNAME'"
+    log_info "User '$USERNAME' created successfully with no password."
   fi
+
+  # 2. Configure Permissions and Access
   
   # Ensure user has sudo with NOPASSWD
   echo "$USERNAME ALL=(ALL) NOPASSWD:ALL" > /etc/sudoers.d/"$USERNAME"
   chmod 440 /etc/sudoers.d/"$USERNAME"
-  
+  log_info "Sudo NOPASSWD configured for $USERNAME."
+
   # Ensure user is in docker group
   usermod -aG docker "$USERNAME" 2>/dev/null || true
+
+  # 3. Handle Shell Configuration Files (Moving from temp)
+  
+  if [ -f /tmp/shell-setup-temp-home ]; then
+      local TEMP_HOME=$(cat /tmp/shell-setup-temp-home)
+      if [ -d "$TEMP_HOME" ]; then
+          log_progress "Moving shell configuration to user home..."
+          cp -r "$TEMP_HOME"/.oh-my-zsh "$USER_HOME/" 2>/dev/null || true
+          cp "$TEMP_HOME"/.p10k.zsh "$USER_HOME/" 2>/dev/null || true
+          rm -rf "$TEMP_HOME"
+          rm /tmp/shell-setup-temp-home
+          log_info "Shell configuration moved to $USER_HOME"
+      fi
+  fi
+
+  # Fix ownership of all user files
+  log_progress "Setting proper ownership for $USER_HOME..."
+  chown -R "$USERNAME":"$USERNAME" "$USER_HOME" 2>/dev/null || true
   
   # Set Zsh as default shell for the user
   chsh -s $(which zsh) "$USERNAME" 2>/dev/null || true
+
+  # 4. Configure Auto-Login
   
-  # Configure automatic login for the user
   echo ""
   read -p "Set $USERNAME as automatic login user? (y/n): " auto_login
   
   if [[ "$auto_login" == "y" || "$auto_login" == "Y" ]]; then
-    log_progress "Configuring automatic login for $USERNAME..."
-    
-    # LightDM configuration (common in Debian/Ubuntu/Parrot)
-    if [ -d "/etc/lightdm" ]; then
-      mkdir -p /etc/lightdm/lightdm.conf.d
-      cat > /etc/lightdm/lightdm.conf.d/50-autologin.conf << LIGHTDM_EOF
+      log_progress "Configuring automatic login for $USERNAME..."
+      
+      if [ -d "/etc/lightdm" ]; then
+          mkdir -p /etc/lightdm/lightdm.conf.d
+          cat > /etc/lightdm/lightdm.conf.d/50-autologin.conf << LIGHTDM_EOF
 [Seat:*]
 autologin-user=$USERNAME
 autologin-user-timeout=0
 LIGHTDM_EOF
-      log_info "LightDM auto-login configured"
-    fi
-    
-    # GDM configuration (GNOME Display Manager)
-    if [ -f "/etc/gdm3/custom.conf" ]; then
-      sed -i '/^\[daemon\]/a AutomaticLoginEnable = true' /etc/gdm3/custom.conf 2>/dev/null || true
-      sed -i "/^AutomaticLoginEnable/a AutomaticLogin = $USERNAME" /etc/gdm3/custom.conf 2>/dev/null || true
-      log_info "GDM3 auto-login configured"
-    fi
-    
-    # SDDM configuration (KDE)
-    if [ -f "/etc/sddm.conf" ]; then
-      if ! grep -q "\[Autologin\]" /etc/sddm.conf; then
-        echo -e "\n[Autologin]" >> /etc/sddm.conf
+          log_info "LightDM auto-login configured"
       fi
-      sed -i "/^\[Autologin\]/a User=$USERNAME" /etc/sddm.conf 2>/dev/null || true
-      sed -i "/^\[Autologin\]/a Session=plasma" /etc/sddm.conf 2>/dev/null || true
-      log_info "SDDM auto-login configured"
-    fi
-    
-    log_info "Auto-login configured for $USERNAME"
+      
+      if [ -f "/etc/gdm3/custom.conf" ]; then
+          if ! grep -q '^\[daemon\]' /etc/gdm3/custom.conf; then
+              echo -e "\n[daemon]" | sudo tee -a /etc/gdm3/custom.conf >/dev/null
+          fi
+          sed -i '/^\[daemon\]/a AutomaticLoginEnable = true' /etc/gdm3/custom.conf 2>/dev/null || true
+          sed -i "/^AutomaticLoginEnable/a AutomaticLogin = $USERNAME" /etc/gdm3/custom.conf 2>/dev/null || true
+          log_info "GDM3 auto-login configured"
+      fi
+      
+      if [ -f "/etc/sddm.conf" ]; then
+          if ! grep -q "\[Autologin\]" /etc/sddm.conf; then
+              echo -e "\n[Autologin]" >> /etc/sddm.conf
+          fi
+          sed -i "/^\[Autologin\]/a User=$USERNAME" /etc/sddm.conf 2>/dev/null || true
+          sed -i "/^\[Autologin\]/a Session=plasma" /etc/sddm.conf 2>/dev/null || true
+          log_info "SDDM auto-login configured"
+      fi
+      
+      log_info "Auto-login configured for $USERNAME (the new 'default' user)"
   fi
   
-  log_info "User setup complete - all future operations will use correct home directory"
-  log_info "USER_HOME is now: $USER_HOME"
+  log_info "User creation and setup complete"
 }
 
 # ============================================
@@ -958,28 +914,32 @@ LIGHTDM_EOF
 # ============================================
 phase3_shell_setup() {
   log_progress "Phase: Shell Environment (Zsh + Oh-My-Zsh + p10k)"
-  log_info "Installing Zsh and Oh-My-Zsh for $USERNAME"
+  log_info "Pre-configuring Zsh and Oh-My-Zsh for $USERNAME"
   
-  # Install Oh-My-Zsh to user home (which is now correctly set)
-  if [ ! -d "$USER_HOME/.oh-my-zsh" ]; then
+  local TEMP_HOME="/tmp/user-setup-$USERNAME"
+  rm -rf "$TEMP_HOME" 2>/dev/null || true
+  mkdir -p "$TEMP_HOME"
+  
+  if [ ! -d "$TEMP_HOME/.oh-my-zsh" ]; then
     log_progress "Installing Oh-My-Zsh..."
-    sudo -u "$USERNAME" sh -c "RUNZSH=no $(curl -fsSL https://raw.githubusercontent.com/ohmyzsh/ohmyzsh/master/tools/install.sh)" "" --unattended 2>&1 | tee -a /var/log/ctfbox-install.log
+    export HOME="$TEMP_HOME"
+    sh -c "RUNZSH=no $(curl -fsSL https://raw.githubusercontent.com/ohmyzsh/ohmyzsh/master/tools/install.sh)" "" --unattended 2>&1 | tee -a /var/log/ctfbox-install.log
+    export HOME="/root" 
   fi
   
-  # Install zsh plugins
   log_progress "Installing zsh plugins..."
-  sudo -u "$USERNAME" git clone https://github.com/zsh-users/zsh-autosuggestions ${USER_HOME}/.oh-my-zsh/custom/plugins/zsh-autosuggestions 2>/dev/null || true
-  sudo -u "$USERNAME" git clone https://github.com/zsh-users/zsh-syntax-highlighting.git ${USER_HOME}/.oh-my-zsh/custom/plugins/zsh-syntax-highlighting 2>/dev/null || true
+  git clone https://github.com/zsh-users/zsh-autosuggestions ${TEMP_HOME}/.oh-my-zsh/custom/plugins/zsh-autosuggestions 2>/dev/null || true
+  git clone https://github.com/zsh-users/zsh-syntax-highlighting.git ${TEMP_HOME}/.oh-my-zsh/custom/plugins/zsh-syntax-highlighting 2>/dev/null || true
   
-  # Install Powerlevel10k theme
   log_progress "Installing Powerlevel10k theme..."
-  sudo -u "$USERNAME" git clone --depth=1 https://github.com/romkatv/powerlevel10k.git ${USER_HOME}/.oh-my-zsh/custom/themes/powerlevel10k 2>/dev/null || true
+  git clone --depth=1 https://github.com/romkatv/powerlevel10k.git ${TEMP_HOME}/.oh-my-zsh/custom/themes/powerlevel10k 2>/dev/null || true
   
-  # Download pre-configured p10k config
   log_info "Downloading pre-configured Powerlevel10k config..."
-  sudo -u "$USERNAME" wget -q https://raw.githubusercontent.com/Jamie-loring/Public-scripts/main/p10k-jamie-config.zsh -O ${USER_HOME}/.p10k.zsh 2>/dev/null || log_warn "Failed to download p10k config"
+  wget -q https://raw.githubusercontent.com/Jamie-loring/Public-scripts/main/p10k-jamie-config.zsh -O ${TEMP_HOME}/.p10k.zsh 2>/dev/null || log_warn "Failed to download p10k config"
   
-  log_info "Shell environment configured for $USERNAME"
+  echo "$TEMP_HOME" > /tmp/shell-setup-temp-home
+  
+  log_info "Shell environment pre-configured (will be moved to user home in phase 2)"
 }
 
 # ============================================
@@ -988,41 +948,35 @@ phase3_shell_setup() {
 phase4_tools_setup() {
   log_progress "Phase: Tool Installation"
   
-  # Create tool directory structure (ownership will be fixed in cleanup)
+  export USER_HOME="/home/$USERNAME"
+  
   log_progress "Creating tool directory structure..."
   mkdir -p $USER_HOME/tools/{wordlists,scripts,exploits,repos}
   
-  # Core tools (always if any tool category is selected)
   if [ "$CORE_TOOLS" = "true" ]; then
     install_core_tools
   fi
   
-  # Web enumeration tools
   if [ "$WEB_ENUMERATION" = "true" ]; then
     install_web_tools
   fi
   
-  # Windows/AD tools
   if [ "$WINDOWS_AD" = "true" ]; then
     install_windows_tools
   fi
   
-  # Wireless tools
   if [ "$WIRELESS" = "true" ]; then
     install_wireless_tools
   fi
   
-  # Post-exploitation tools
   if [ "$POSTEXPLOIT" = "true" ]; then
     install_postexploit_tools
   fi
   
-  # Forensics & Stego tools
   if [ "$FORENSICS_STEGO" = "true" ]; then
     install_forensics_tools
   fi
   
-  # Binary exploitation tools
   if [ "$BINARY_EXPLOITATION" = "true" ]; then
     install_binary_tools
   fi
@@ -1034,11 +988,9 @@ phase4_tools_setup() {
 install_core_tools() {
   log_progress "Installing core tools (Python, Go, Ruby base)..."
   
-  # Impacket
   log_progress "Installing Impacket..."
   pip3 install impacket --break-system-packages 2>&1 | tee -a /var/log/ctfbox-install.log || pip3 install impacket 2>&1 | tee -a /var/log/ctfbox-install.log
   
-  # Install pipx
   log_progress "Installing pipx..."
   if ! command -v pipx &> /dev/null; then
     apt update -qq > /dev/null 2>&1 && apt install -y pipx 2>&1 | tee -a /var/log/ctfbox-install.log || log_warn "Failed to install pipx"
@@ -1050,7 +1002,6 @@ install_core_tools() {
     pipx install git+https://github.com/Pennyw0rth/NetExec 2>&1 | tee -a /var/log/ctfbox-install.log || log_warn "NetExec failed to install"
   fi
   
-  # Essential Python tools
   log_progress "Installing essential Python tools..."
   pip3 install --break-system-packages \
     hashid featherduster \
@@ -1060,13 +1011,11 @@ install_core_tools() {
     ROPgadget truffleHog \
     2>&1 | tee -a /var/log/ctfbox-install.log || true
   
-  # RsaCtfTool from GitHub
   if [ ! -d "$USER_HOME/tools/repos/RsaCtfTool" ]; then
     log_progress "Installing RsaCtfTool..."
-    sudo -u "$USERNAME" git clone https://github.com/RsaCtfTool/RsaCtfTool.git $USER_HOME/tools/repos/RsaCtfTool 2>&1 | tee -a /var/log/ctfbox-install.log || log_warn "RsaCtfTool clone failed"
+    git clone https://github.com/RsaCtfTool/RsaCtfTool.git $USER_HOME/tools/repos/RsaCtfTool 2>&1 | tee -a /var/log/ctfbox-install.log || log_warn "RsaCtfTool clone failed"
   fi
   
-  # ysoserial
   log_progress "Installing ysoserial..."
   if [ ! -f "$USER_HOME/tools/ysoserial.jar" ]; then
     if command -v java &> /dev/null; then
@@ -1075,14 +1024,13 @@ install_core_tools() {
       if [ -f "$USER_HOME/tools/ysoserial.jar" ]; then
         cat > /usr/local/bin/ysoserial << 'YSOSERIAL_EOF'
 #!/bin/bash
-java -jar ~/tools/ysoserial.jar "$@"
+java -jar /home/$SUDO_USER/tools/ysoserial.jar "$@" 
 YSOSERIAL_EOF
         chmod +x /usr/local/bin/ysoserial
       fi
     fi
   fi
   
-  # Ruby gems
   log_progress "Installing Ruby gems (one_gadget, haiti)..."
   if command -v gem &> /dev/null; then
     gem install one_gadget haiti-hash 2>&1 | tee -a /var/log/ctfbox-install.log || log_warn "Ruby gem installation failed"
@@ -1098,20 +1046,21 @@ install_web_tools() {
     return
   fi
   
+  export GOPATH=$USER_HOME/go
+  mkdir -p $GOPATH/bin
+  
   log_progress "Installing ProjectDiscovery suite..."
-  sudo -u "$USERNAME" bash -c 'export GOPATH=$HOME/go && \
-    go install -v github.com/projectdiscovery/naabu/v2/cmd/naabu@latest && \
+  bash -c "go install -v github.com/projectdiscovery/naabu/v2/cmd/naabu@latest && \
     go install -v github.com/projectdiscovery/httpx/cmd/httpx@latest && \
     go install -v github.com/projectdiscovery/nuclei/v3/cmd/nuclei@latest && \
     go install -v github.com/projectdiscovery/subfinder/v2/cmd/subfinder@latest && \
     go install -v github.com/projectdiscovery/katana/cmd/katana@latest && \
-    go install -v github.com/projectdiscovery/dnsx/cmd/dnsx@latest' \
+    go install -v github.com/projectdiscovery/dnsx/cmd/dnsx@latest" \
     2>&1 | tee -a /var/log/ctfbox-install.log || true
   
   log_progress "Installing other web tools..."
-  sudo -u "$USERNAME" bash -c 'export GOPATH=$HOME/go && \
-    go install -v github.com/ffuf/ffuf@latest && \
-    go install -v github.com/OJ/gobuster/v3@latest' \
+  bash -c "go install -v github.com/ffuf/ffuf@latest && \
+    go install -v github.com/OJ/gobuster/v3@latest" \
     2>&1 | tee -a /var/log/ctfbox-install.log || true
 }
 
@@ -1119,13 +1068,11 @@ install_web_tools() {
 install_windows_tools() {
   log_progress "Installing Windows/AD tools..."
   
-  # Already installed in core: NetExec, Impacket, bloodhound, bloodyAD, certipy-ad, pypykatz, lsassy
   log_info "Windows/AD tools (NetExec, Impacket, etc.) installed in core tools"
   
-  # Kerberos tools
   if command -v go &> /dev/null; then
     log_progress "Installing kerbrute..."
-    sudo -u "$USERNAME" bash -c 'export GOPATH=$HOME/go && go install -v github.com/ropnop/kerbrute@latest' 2>&1 | tee -a /var/log/ctfbox-install.log || true
+    bash -c "export GOPATH=$USER_HOME/go && go install -v github.com/ropnop/kerbrute@latest" 2>&1 | tee -a /var/log/ctfbox-install.log || true
   fi
 }
 
@@ -1142,21 +1089,18 @@ install_wireless_tools() {
 install_postexploit_tools() {
   log_progress "Installing post-exploitation tools..."
   
-  # Pivoting tools
   DEBIAN_FRONTEND=noninteractive apt install -y \
     socat rlwrap proxychains4 sshuttle \
     2>&1 | tee -a /var/log/ctfbox-install.log || true
   
-  # Chisel
   if command -v go &> /dev/null; then
     log_progress "Installing chisel..."
-    sudo -u "$USERNAME" bash -c 'export GOPATH=$HOME/go && go install -v github.com/jpillora/chisel@latest' 2>&1 | tee -a /var/log/ctfbox-install.log || true
+    bash -c "export GOPATH=$USER_HOME/go && go install -v github.com/jpillora/chisel@latest" 2>&1 | tee -a /var/log/ctfbox-install.log || true
   fi
   
-  # Penelope
   if [ ! -d "$USER_HOME/tools/repos/penelope" ]; then
     log_progress "Installing Penelope reverse shell handler..."
-    sudo -u "$USERNAME" git clone https://github.com/brightio/penelope.git $USER_HOME/tools/repos/penelope 2>&1 | tee -a /var/log/ctfbox-install.log || log_warn "Penelope clone failed"
+    git clone https://github.com/brightio/penelope.git $USER_HOME/tools/repos/penelope 2>&1 | tee -a /var/log/ctfbox-install.log || log_warn "Penelope clone failed"
   fi
 }
 
@@ -1176,9 +1120,6 @@ install_binary_tools() {
   DEBIAN_FRONTEND=noninteractive apt install -y \
     gdb radare2 \
     2>&1 | tee -a /var/log/ctfbox-install.log || true
-  
-  # pwntools already installed in core Python tools
-  # one_gadget already installed in core Ruby gems
 }
 
 # ============================================
@@ -1187,22 +1128,19 @@ install_binary_tools() {
 phase5_wordlists_setup() {
   log_progress "Phase: Wordlists"
   
-  # SecLists
   log_progress "Downloading SecLists (~700MB, this will take a while)..."
   if [ ! -d "$USER_HOME/tools/wordlists/SecLists" ]; then
-    sudo -u "$USERNAME" git clone --depth 1 https://github.com/danielmiessler/SecLists.git $USER_HOME/tools/wordlists/SecLists 2>&1 | tee -a /var/log/ctfbox-install.log || log_warn "SecLists clone failed"
+    git clone --depth 1 https://github.com/danielmiessler/SecLists.git $USER_HOME/tools/wordlists/SecLists 2>&1 | tee -a /var/log/ctfbox-install.log || log_warn "SecLists clone failed"
   fi
   
-  # Extract rockyou.txt
   if [ -f "/usr/share/wordlists/rockyou.txt.gz" ] && [ ! -f "/usr/share/wordlists/rockyou.txt" ]; then
     log_progress "Extracting rockyou.txt..."
     gunzip /usr/share/wordlists/rockyou.txt.gz
   fi
   
-  # Create symlinks
   log_progress "Creating wordlist symlinks..."
-  sudo -u "$USERNAME" ln -sf $USER_HOME/tools/wordlists/SecLists $USER_HOME/SecLists 2>/dev/null || true
-  sudo -u "$USERNAME" ln -sf /usr/share/wordlists/rockyou.txt $USER_HOME/tools/wordlists/rockyou.txt 2>/dev/null || true
+  ln -sf $USER_HOME/tools/wordlists/SecLists $USER_HOME/SecLists 2>/dev/null || true
+  ln -sf /usr/share/wordlists/rockyou.txt $USER_HOME/tools/wordlists/rockyou.txt 2>/dev/null || true
   
   log_info "Wordlists setup complete"
 }
@@ -1218,7 +1156,7 @@ phase6_repos_setup() {
     local name=$(basename $url .git)
     if [ ! -d "$USER_HOME/tools/repos/$name" ]; then
       log_progress "Cloning $name..."
-      sudo -u "$USERNAME" git clone $url $USER_HOME/tools/repos/$name 2>&1 | tee -a /var/log/ctfbox-install.log || log_warn "Failed to clone $name"
+      git clone $url $USER_HOME/tools/repos/$name 2>&1 | tee -a /var/log/ctfbox-install.log || log_warn "Failed to clone $name"
     fi
   }
   
@@ -1241,15 +1179,13 @@ phase6_repos_setup() {
     clone_repo "https://github.com/LOLBAS-Project/LOLBAS.git"
   fi
   
-  # Create PEASS symlinks
   if [ -d "$USER_HOME/tools/repos/PEASS-ng" ]; then
-    sudo -u "$USERNAME" ln -sf $USER_HOME/tools/repos/PEASS-ng/linPEAS/linpeas.sh $USER_HOME/linpeas.sh 2>/dev/null || true
-    sudo -u "$USERNAME" ln -sf $USER_HOME/tools/repos/PEASS-ng/winPEAS/winPEASx64.exe $USER_HOME/winpeas.exe 2>/dev/null || true
+    ln -sf $USER_HOME/tools/repos/PEASS-ng/linPEAS/linpeas.sh $USER_HOME/linpeas.sh 2>/dev/null || true
+    ln -sf $USER_HOME/tools/repos/PEASS-ng/winPEAS/winPEASx64.exe $USER_HOME/winpeas.exe 2>/dev/null || true
   fi
   
-  # Create Penelope symlink
   if [ -d "$USER_HOME/tools/repos/penelope" ]; then
-    sudo -u "$USERNAME" ln -sf $USER_HOME/tools/repos/penelope/penelope.py $USER_HOME/penelope.py 2>/dev/null || true
+    ln -sf $USER_HOME/tools/repos/penelope/penelope.py $USER_HOME/penelope.py 2>/dev/null || true
   fi
   
   log_info "Repositories setup complete"
@@ -1261,12 +1197,11 @@ phase6_repos_setup() {
 phase7_firefox_extensions() {
   log_progress "Phase: Firefox Extensions"
   
-  # Find Firefox profile
   FIREFOX_PROFILE=$(find $USER_HOME/.mozilla/firefox -maxdepth 1 -type d -name "*.default*" 2>/dev/null | head -n 1)
   
   if [ -z "$FIREFOX_PROFILE" ]; then
-    log_warn "Firefox profile not found. Starting Firefox once to create profile..."
-    sudo -u "$USERNAME" timeout 5 firefox --headless 2>/dev/null || true
+    log_warn "Firefox profile not found. Attempting to create profile for $USERNAME..."
+    su - "$USERNAME" -c "timeout 5 firefox --headless" 2>/dev/null || true
     sleep 2
     FIREFOX_PROFILE=$(find $USER_HOME/.mozilla/firefox -maxdepth 1 -type d -name "*.default*" 2>/dev/null | head -n 1)
   fi
@@ -1275,7 +1210,6 @@ phase7_firefox_extensions() {
     log_info "Firefox profile found: $FIREFOX_PROFILE"
     mkdir -p "$FIREFOX_PROFILE/extensions"
     
-    # Download extensions
     log_progress "Installing Firefox extensions..."
     wget -q "https://addons.mozilla.org/firefox/downloads/latest/foxyproxy-standard/latest.xpi" \
       -O "$FIREFOX_PROFILE/extensions/foxyproxy@eric.h.jung.xpi" 2>/dev/null || log_warn "Failed to download FoxyProxy"
@@ -1305,7 +1239,6 @@ phase8_automation_setup() {
   
   mkdir -p $USER_HOME/scripts
   
-  # Create .zshrc with aliases
   log_progress "Configuring .zshrc..."
   cat > $USER_HOME/.zshrc << 'ZSH_EOF'
 # Path to oh-my-zsh
@@ -1432,7 +1365,6 @@ extract() {
 }
 ZSH_EOF
   
-  # Create update script
   log_progress "Creating update-tools script..."
   mkdir -p $USER_HOME/scripts
   cat > $USER_HOME/scripts/update-tools.sh << 'UPDATE_EOF'
@@ -1479,7 +1411,6 @@ UPDATE_EOF
   
   chmod +x $USER_HOME/scripts/update-tools.sh
   
-  # Create reset/cleanup script on Desktop
   log_progress "Creating system reset script for Desktop..."
   mkdir -p $USER_HOME/Desktop
   
@@ -1504,7 +1435,7 @@ cat << "EOF"
 ╔═══════════════════════════════════════════════════════════════╗
 ║                                                               ║
 ║                    CTF BOX RESET SCRIPT                       ║
-║              Restore System to Clean State                   ║
+║              Restore System to Clean State                    ║
 ║                                                               ║
 ╚═══════════════════════════════════════════════════════════════╝
 EOF
@@ -1536,12 +1467,10 @@ echo ""
 echo -e "${CYAN}[*] Starting system reset...${NC}"
 echo ""
 
-# Create archive directory
 ARCHIVE_DIR="$HOME/archives/$(date +%Y%m%d_%H%M%S)"
 mkdir -p "$ARCHIVE_DIR"
 echo -e "${GREEN}[+]${NC} Created archive directory: $ARCHIVE_DIR"
 
-# Archive engagements
 echo ""
 echo -e "${CYAN}[1/10] Archiving engagement data...${NC}"
 
@@ -1558,7 +1487,6 @@ else
   echo -e "${YELLOW}[*]${NC} No engagement data found"
 fi
 
-# Reset /etc/hosts
 echo ""
 echo -e "${CYAN}[2/10] Resetting /etc/hosts...${NC}"
 sudo cp /etc/hosts "$ARCHIVE_DIR/hosts.backup" 2>/dev/null
@@ -1572,7 +1500,6 @@ ff02::2 ip6-allrouters
 HOSTS_EOF"
 echo -e "${GREEN}[+]${NC} /etc/hosts reset to defaults"
 
-# Clear Kerberos
 echo ""
 echo -e "${CYAN}[3/10] Clearing Kerberos tickets...${NC}"
 kdestroy -A 2>/dev/null || true
@@ -1580,7 +1507,6 @@ sudo kdestroy -A 2>/dev/null || true
 rm -f /tmp/krb5cc_* 2>/dev/null || true
 echo -e "${GREEN}[+]${NC} Kerberos tickets cleared"
 
-# Clear history
 echo ""
 echo -e "${CYAN}[4/10] Clearing command history...${NC}"
 mkdir -p "$ARCHIVE_DIR/command_history"
@@ -1598,7 +1524,6 @@ fi
 history -c 2>/dev/null || true
 echo -e "${GREEN}[+]${NC} Command histories cleared"
 
-# Clear cached credentials
 echo ""
 echo -e "${CYAN}[5/10] Clearing cached credentials...${NC}"
 rm -rf "$HOME/.responder"/* 2>/dev/null || true
@@ -1606,7 +1531,6 @@ rm -rf "$HOME/.nxc"/* 2>/dev/null || true
 rm -rf "$HOME/.cme"/* 2>/dev/null || true
 echo -e "${GREEN}[+]${NC} Cached credentials cleared"
 
-# Clear SSH known hosts
 echo ""
 echo -e "${CYAN}[6/10] Clearing SSH known hosts...${NC}"
 if [ -f "$HOME/.ssh/known_hosts" ]; then
@@ -1615,7 +1539,6 @@ if [ -f "$HOME/.ssh/known_hosts" ]; then
   echo -e "${GREEN}[+]${NC} SSH known hosts cleared"
 fi
 
-# Reset proxychains
 echo ""
 echo -e "${CYAN}[7/10] Resetting proxychains...${NC}"
 if [ -f /etc/proxychains4.conf ]; then
@@ -1623,7 +1546,6 @@ if [ -f /etc/proxychains4.conf ]; then
   echo -e "${GREEN}[+]${NC} Proxychains config backed up"
 fi
 
-# Clear temporary files
 echo ""
 echo -e "${CYAN}[8/10] Clearing temporary files...${NC}"
 rm -rf /tmp/nmap* 2>/dev/null || true
@@ -1631,7 +1553,6 @@ rm -rf "$HOME/.cache/nuclei" 2>/dev/null || true
 rm -rf "$HOME/.local/share/Trash"/* 2>/dev/null || true
 echo -e "${GREEN}[+]${NC} Temporary files cleared"
 
-# Browser data (optional)
 echo ""
 echo -e "${CYAN}[9/10] Browser data cleanup...${NC}"
 read -p "Clear Firefox history and cookies? (y/n): " clear_browser
@@ -1645,18 +1566,16 @@ if [[ "$clear_browser" == "y" || "$clear_browser" == "Y" ]]; then
   fi
 fi
 
-# Final cleanup
 echo ""
 echo -e "${CYAN}[10/10] Final cleanup...${NC}"
 sync
 echo -e "${GREEN}[+]${NC} Cleanup complete"
 
-# Summary
 echo ""
 echo -e "${GREEN}"
 cat << "EOF"
 ╔═══════════════════════════════════════════════════════════════╗
-║                  [+] SYSTEM RESET COMPLETE!                    ║
+║                 [+] SYSTEM RESET COMPLETE!                    ║
 ╚═══════════════════════════════════════════════════════════════╝
 EOF
 echo -e "${NC}"
@@ -1686,17 +1605,13 @@ RESET_EOF
 # FINAL CLEANUP
 # ============================================
 phase_final_cleanup() {
-  log_progress "Phase: Final Cleanup & Ownership Fix"
+  log_progress "Phase: Final Cleanup"
   
   log_progress "Removing unnecessary packages..."
   DEBIAN_FRONTEND=noninteractive apt autoremove -y -qq 2>&1 | tee -a /var/log/ctfbox-install.log
   
   log_progress "Cleaning package cache..."
   DEBIAN_FRONTEND=noninteractive apt autoclean -y -qq 2>&1 | tee -a /var/log/ctfbox-install.log
-  
-  # Fix ownership of ALL files in user home
-  log_progress "Fixing ownership for all files in $USER_HOME..."
-  chown -R "$USERNAME":"$USERNAME" "$USER_HOME" 2>/dev/null || true
   
   log_info "Cleanup complete"
 }
@@ -1709,41 +1624,21 @@ show_completion_message() {
   echo -e "${GREEN}"
   cat << 'EOF'
 ╔═══════════════════════════════════════════════════════════════╗
-║                                                               ║
-║              [+] INSTALLATION COMPLETE!                        ║
-║                                                               ║
+║                      [+] INSTALLATION COMPLETE!               ║
 ╚═══════════════════════════════════════════════════════════════╝
 EOF
   echo -e "${NC}"
   
   echo ""
-  echo -e "${GREEN}User '${USERNAME}' created with full sudo privileges${NC}"
+  echo -e "${GREEN}New pentesting user '${USERNAME}' created with passwordless access and full sudo privileges${NC}"
   echo ""
   echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
   echo -e "${CYAN}NEXT STEPS:${NC}"
   echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
   echo ""
   echo "1. REBOOT the VM: ${YELLOW}sudo reboot${NC}"
-  echo "2. Log in as '${USERNAME}'"
-  echo "3. Run: ${YELLOW}~/scripts/update-tools.sh${NC} (to update everything)"
-  echo "4. Create an engagement: ${YELLOW}newengagement <name>${NC}"
-  echo ""
-  echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
-  echo -e "${CYAN}USEFUL COMMANDS:${NC}"
-  echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
-  echo ""
-  echo " * newengagement <name>  : Create new engagement folder"
-  echo " * quickscan <target>    : Quick nmap scan"
-  echo " * shell <port>          : Start Penelope reverse shell handler"
-  echo " * ll                    : Detailed file listing"
-  echo ""
-  echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
-  echo -e "${CYAN}IMPORTANT FILES ON DESKTOP:${NC}"
-  echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
-  echo ""
-  echo " * ${YELLOW}RESET_CTF_BOX.sh${NC}     : Reset system to clean state"
-  echo "                          Archives engagements, clears history,"
-  echo "                          resets /etc/hosts, clears Kerberos, etc."
+  echo "2. The system should auto-login to '${USERNAME}' (if configured), or you can log in without a password."
+  echo "3. Run: ${YELLOW}~/scripts/update-tools.sh${NC}"
   echo ""
   echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
   echo ""
@@ -1761,13 +1656,11 @@ EOF
 # MAIN EXECUTION
 # ============================================
 main() {
-  # Check if running as root
   if [ "$EUID" -ne 0 ]; then
     log_error "This script must be run as root (use sudo)"
     exit 1
   fi
   
-  # Parse command-line arguments
   while [[ $# -gt 0 ]]; do
     case $1 in
       --user=*)
@@ -1787,11 +1680,11 @@ main() {
         exit 0
         ;;
       --help|-h)
-        echo "CTF Box Installer v${SCRIPT_VERSION}"
+        echo "CTF Box Installer"
         echo "Usage: $0 [OPTIONS]"
         echo ""
         echo "Options:"
-        echo "  --user=<username>, -u <username>  Set username"
+        echo "  --user=<username>, -u <username>  Set target username"
         echo "  --full                            Run full installation (with confirmation)"
         echo "  --install-all                     Install everything immediately (no prompts)"
         echo "  --help, -h                        Show this help"
@@ -1806,7 +1699,6 @@ main() {
     esac
   done
   
-  # Set username from CLI if provided
   if [[ -n "$CLI_USERNAME" ]]; then
     if validate_username "$CLI_USERNAME"; then
       USERNAME="$CLI_USERNAME"
@@ -1818,10 +1710,8 @@ main() {
     fi
   fi
   
-  # Show welcome screen and start menu
   welcome_screen
   show_main_menu
 }
 
-# Run the installer
 main "$@"
