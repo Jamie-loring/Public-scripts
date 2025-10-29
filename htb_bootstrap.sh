@@ -812,25 +812,25 @@ phase1_system_setup() {
 }
 
 # ============================================
-# PHASE 2: USER SETUP (NO PASSWORD)
+# PHASE 2: USER SETUP (ENFORCING AUTO-LOGIN PRIORITY)
 # ============================================
 phase2_user_setup() {
   log_progress "Phase: User Account Creation & Configuration"
 
   export USER_HOME="/home/$USERNAME"
+  local ORIGINAL_USER="${SUDO_USER}"
 
-  # 1. Check/Create User
+  # 1. Check/Create New User
   if id "$USERNAME" &>/dev/null; then
     log_info "User '$USERNAME' already exists. Skipping creation."
   else
     log_warn "User '$USERNAME' does not exist. Creating new user..."
     
-    # Create user with home directory, set shell, and add to initial groups (sudo, docker)
     log_progress "Adding user and setting home directory..."
     useradd -m -s /bin/zsh -G sudo,docker "$USERNAME" 2>&1 | tee -a /var/log/ctfbox-install.log
 
-    # Set no password (empty string) to allow passwordless login/auto-login
     log_progress "Setting user to passwordless access..."
+    # Set no password (empty string)
     echo "$USERNAME:''" | chpasswd -e 2>&1 | tee -a /var/log/ctfbox-install.log
     
     log_info "User '$USERNAME' created successfully with no password."
@@ -838,12 +838,10 @@ phase2_user_setup() {
 
   # 2. Configure Permissions and Access
   
-  # Ensure user has sudo with NOPASSWD
   echo "$USERNAME ALL=(ALL) NOPASSWD:ALL" > /etc/sudoers.d/"$USERNAME"
   chmod 440 /etc/sudoers.d/"$USERNAME"
   log_info "Sudo NOPASSWD configured for $USERNAME."
 
-  # Ensure user is in docker group
   usermod -aG docker "$USERNAME" 2>/dev/null || true
 
   # 3. Handle Shell Configuration Files (Moving from temp)
@@ -860,47 +858,60 @@ phase2_user_setup() {
       fi
   fi
 
-  # Fix ownership of all user files
   log_progress "Setting proper ownership for $USER_HOME..."
   chown -R "$USERNAME":"$USERNAME" "$USER_HOME" 2>/dev/null || true
   
-  # Set Zsh as default shell for the user
   chsh -s $(which zsh) "$USERNAME" 2>/dev/null || true
 
-  # 4. Configure Auto-Login
+  # 4. Configure Auto-Login (PRIORITY ENFORCEMENT)
   
   echo ""
   read -p "Set $USERNAME as automatic login user? (y/n): " auto_login
   
   if [[ "$auto_login" == "y" || "$auto_login" == "Y" ]]; then
-      log_progress "Configuring automatic login for $USERNAME..."
+      log_progress "Configuring automatic login for $USERNAME, overriding old default..."
       
+      # LightDM configuration (Parrot often uses LightDM)
       if [ -d "/etc/lightdm" ]; then
           mkdir -p /etc/lightdm/lightdm.conf.d
+          # Force a config file to set the new user as the *only* autologin user.
           cat > /etc/lightdm/lightdm.conf.d/50-autologin.conf << LIGHTDM_EOF
 [Seat:*]
 autologin-user=$USERNAME
 autologin-user-timeout=0
+user-session=default
 LIGHTDM_EOF
-          log_info "LightDM auto-login configured"
+          log_info "LightDM auto-login configured for $USERNAME."
       fi
       
+      # GDM configuration (GNOME Display Manager)
       if [ -f "/etc/gdm3/custom.conf" ]; then
           if ! grep -q '^\[daemon\]' /etc/gdm3/custom.conf; then
               echo -e "\n[daemon]" | sudo tee -a /etc/gdm3/custom.conf >/dev/null
           fi
+          # Clear potentially conflicting entries and set new
+          sed -i '/AutomaticLoginEnable/d' /etc/gdm3/custom.conf
+          sed -i '/AutomaticLogin/d' /etc/gdm3/custom.conf
           sed -i '/^\[daemon\]/a AutomaticLoginEnable = true' /etc/gdm3/custom.conf 2>/dev/null || true
           sed -i "/^AutomaticLoginEnable/a AutomaticLogin = $USERNAME" /etc/gdm3/custom.conf 2>/dev/null || true
-          log_info "GDM3 auto-login configured"
+          log_info "GDM3 auto-login configured for $USERNAME."
       fi
       
+      # SDDM configuration (KDE)
       if [ -f "/etc/sddm.conf" ]; then
           if ! grep -q "\[Autologin\]" /etc/sddm.conf; then
               echo -e "\n[Autologin]" >> /etc/sddm.conf
           fi
           sed -i "/^\[Autologin\]/a User=$USERNAME" /etc/sddm.conf 2>/dev/null || true
           sed -i "/^\[Autologin\]/a Session=plasma" /etc/sddm.conf 2>/dev/null || true
-          log_info "SDDM auto-login configured"
+          log_info "SDDM auto-login configured for $USERNAME."
+      fi
+      
+      # Clear old user's session cache (major source of auto-login conflicts)
+      if [ -d "/home/$ORIGINAL_USER/.cache" ]; then
+          log_progress "Clearing original user's session cache to prevent automatic session resume."
+          rm -rf /home/"$ORIGINAL_USER"/.cache/sessions/* 2>/dev/null || true
+          chown -R "$ORIGINAL_USER":"$ORIGINAL_USER" /home/"$ORIGINAL_USER"/.cache 2>/dev/null || true
       fi
       
       log_info "Auto-login configured for $USERNAME (the new 'default' user)"
