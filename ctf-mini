@@ -270,17 +270,61 @@ else
     log_skip "Shell already set to zsh"
 fi
 
-# Auto-login configuration
-if [[ ! -f "/etc/lightdm/lightdm.conf.d/50-autologin.conf" ]] && \
-   [[ ! -f "/etc/gdm3/custom.conf.autologin" ]] && \
-   [[ ! -f "/etc/sddm.conf.d/autologin.conf" ]]; then
+# Disable old user auto-login if exists (common on Parrot OS default install)
+if [[ "$USERNAME" != "user" ]]; then
+    log_progress "Checking for existing auto-login configuration..."
     
+    # Check and fix LightDM
+    if [[ -f "/etc/lightdm/lightdm.conf.d/50-autologin.conf" ]]; then
+        if grep -q "autologin-user=user" /etc/lightdm/lightdm.conf.d/50-autologin.conf 2>/dev/null; then
+            log_info "Removing old 'user' auto-login from LightDM"
+            rm -f /etc/lightdm/lightdm.conf.d/50-autologin.conf
+        fi
+    fi
+    
+    # Check main lightdm.conf
+    if [[ -f "/etc/lightdm/lightdm.conf" ]]; then
+        if grep -q "autologin-user=user" /etc/lightdm/lightdm.conf 2>/dev/null; then
+            log_info "Disabling old 'user' auto-login in main LightDM config"
+            sed -i 's/^autologin-user=user/#autologin-user=user/' /etc/lightdm/lightdm.conf
+        fi
+    fi
+    
+    # Check and fix GDM3
+    if [[ -f "/etc/gdm3/custom.conf" ]]; then
+        if grep -q "AutomaticLogin = user" /etc/gdm3/custom.conf 2>/dev/null; then
+            log_info "Removing old 'user' auto-login from GDM3"
+            sed -i '/AutomaticLogin = user/d' /etc/gdm3/custom.conf
+            sed -i '/AutomaticLoginEnable = true/d' /etc/gdm3/custom.conf
+        fi
+    fi
+fi
+
+# Auto-login configuration
+AUTOLOGIN_CONFIGURED=false
+
+# Check if auto-login is already set for this user
+if [[ -f "/etc/lightdm/lightdm.conf.d/50-autologin.conf" ]]; then
+    if grep -q "autologin-user=$USERNAME" /etc/lightdm/lightdm.conf.d/50-autologin.conf 2>/dev/null; then
+        AUTOLOGIN_CONFIGURED=true
+    fi
+elif [[ -f "/etc/gdm3/custom.conf" ]]; then
+    if grep -q "AutomaticLogin = $USERNAME" /etc/gdm3/custom.conf 2>/dev/null; then
+        AUTOLOGIN_CONFIGURED=true
+    fi
+elif [[ -f "/etc/sddm.conf.d/autologin.conf" ]]; then
+    if grep -q "User=$USERNAME" /etc/sddm.conf.d/autologin.conf 2>/dev/null; then
+        AUTOLOGIN_CONFIGURED=true
+    fi
+fi
+
+if [[ "$AUTOLOGIN_CONFIGURED" == "false" ]]; then
     echo ""
-    read -p "Enable auto-login for $USERNAME? (y/n): " auto_login
+    read -p "Enable auto-login for $USERNAME (recommended for CTF VM)? (y/n): " auto_login
     if [[ "$auto_login" =~ ^[Yy]$ ]]; then
-        log_progress "Configuring auto-login..."
+        log_progress "Configuring auto-login for $USERNAME..."
         
-        # LightDM
+        # LightDM (most common on Parrot OS)
         if [[ -d "/etc/lightdm" ]]; then
             mkdir -p /etc/lightdm/lightdm.conf.d
             cat > /etc/lightdm/lightdm.conf.d/50-autologin.conf << EOF
@@ -289,18 +333,23 @@ autologin-user=$USERNAME
 autologin-user-timeout=0
 allow-guest=false
 EOF
-            log_info "LightDM auto-login configured"
+            log_info "LightDM auto-login configured for $USERNAME"
         fi
         
         # GDM3
         if [[ -f "/etc/gdm3/custom.conf" ]]; then
-            if ! grep -q "AutomaticLoginEnable.*true" /etc/gdm3/custom.conf; then
-                sed -i '/AutomaticLoginEnable/d' /etc/gdm3/custom.conf || true
-                sed -i '/AutomaticLogin=/d' /etc/gdm3/custom.conf || true
-                sed -i '/^\[daemon\]/a AutomaticLoginEnable = true' /etc/gdm3/custom.conf || true
-                sed -i "/^\[daemon\]/a AutomaticLogin = $USERNAME" /etc/gdm3/custom.conf || true
-                log_info "GDM3 auto-login configured"
+            # Remove old auto-login settings
+            sed -i '/AutomaticLoginEnable/d' /etc/gdm3/custom.conf 2>/dev/null || true
+            sed -i '/AutomaticLogin =/d' /etc/gdm3/custom.conf 2>/dev/null || true
+            
+            # Add new settings
+            if grep -q '^\[daemon\]' /etc/gdm3/custom.conf; then
+                sed -i "/^\[daemon\]/a AutomaticLoginEnable = true" /etc/gdm3/custom.conf
+                sed -i "/^\[daemon\]/a AutomaticLogin = $USERNAME" /etc/gdm3/custom.conf
+            else
+                echo -e "\n[daemon]\nAutomaticLoginEnable = true\nAutomaticLogin = $USERNAME" >> /etc/gdm3/custom.conf
             fi
+            log_info "GDM3 auto-login configured for $USERNAME"
         fi
         
         # SDDM
@@ -311,11 +360,15 @@ EOF
 User=$USERNAME
 Session=plasma.desktop
 EOF
-            log_info "SDDM auto-login configured"
+            log_info "SDDM auto-login configured for $USERNAME"
         fi
+        
+        log_info "Auto-login enabled - you'll boot directly into $USERNAME after reboot"
+    else
+        log_info "Auto-login skipped - manual login required"
     fi
 else
-    log_skip "Auto-login already configured"
+    log_skip "Auto-login already configured for $USERNAME"
 fi
 
 # Passwordless login group
@@ -978,10 +1031,15 @@ echo -e "${CYAN}VirtualBox:${NC} Copy-Paste + Drag & Drop + Shared Folder"
 echo -e "${CYAN}Reset:${NC} ~/Desktop/RESET_CTF_BOX.sh"
 echo -e "${CYAN}Update:${NC} ~/scripts/update-tools.sh"
 echo ""
+echo -e "${YELLOW}IMPORTANT:${NC} Reboot required to log in as ${GREEN}$USERNAME${NC}"
+echo ""
 read -p "Reboot now? (y/n): " reboot_choice
 if [[ "$reboot_choice" =~ ^[Yy]$ ]]; then
     echo -e "\n${YELLOW}Rebooting in 5 seconds...${NC}"
     sleep 5
     reboot
+else
+    echo -e "\n${YELLOW}Remember to log out and log back in as ${GREEN}$USERNAME${NC} for changes to take effect!"
+    echo -e "${CYAN}Or manually reboot with:${NC} sudo reboot"
 fi
 echo -e "${GREEN}Happy Hacking!${NC}\n"
