@@ -247,8 +247,75 @@ if ! id "$USERNAME" &>/dev/null; then
     useradd -m -s /bin/zsh -G sudo,docker "$USERNAME"
     passwd -d "$USERNAME" || true
     log_info "User '$USERNAME' created"
+    
+    # Copy Parrot OS default configuration from /etc/skel
+    log_info "Applying Parrot OS default configuration..."
+    if [[ -d "/etc/skel" ]]; then
+        cp -r /etc/skel/. "$USER_HOME/" 2>/dev/null || true
+        log_info "Copied Parrot default configs from /etc/skel"
+    fi
+    
+    # Restore Parrot wallpaper if it exists
+    if [[ -f "/usr/share/backgrounds/parrot/default.jpg" ]]; then
+        mkdir -p "$USER_HOME/.config"
+        # MATE Desktop wallpaper
+        mkdir -p "$USER_HOME/.config/dconf"
+        sudo -u "$USERNAME" bash << 'WALLPAPER_EOF'
+export DISPLAY=:0
+export DBUS_SESSION_BUS_ADDRESS="unix:path=/run/user/$(id -u)/bus"
+if command -v gsettings &>/dev/null; then
+    gsettings set org.mate.background picture-filename '/usr/share/backgrounds/parrot/default.jpg' 2>/dev/null || true
+fi
+WALLPAPER_EOF
+        log_info "Parrot wallpaper configured"
+    fi
+    
+    # Add terminal shortcut to MATE panel (Parrot default)
+    sudo -u "$USERNAME" bash << 'PANEL_EOF'
+export DISPLAY=:0
+export DBUS_SESSION_BUS_ADDRESS="unix:path=/run/user/$(id -u)/bus"
+if command -v gsettings &>/dev/null && command -v mate-session &>/dev/null; then
+    # Get existing panel objects
+    existing=$(gsettings get org.mate.panel general object-id-list 2>/dev/null || echo "[]")
+    
+    # Add terminal launcher if not present
+    if ! echo "$existing" | grep -q "terminal-launcher"; then
+        # Add terminal launcher to panel
+        gsettings set org.mate.panel.object:/org/mate/panel/objects/terminal-launcher/ launcher-location '/usr/share/applications/mate-terminal.desktop' 2>/dev/null || true
+        gsettings set org.mate.panel.object:/org/mate/panel/objects/terminal-launcher/ object-type 'launcher' 2>/dev/null || true
+        gsettings set org.mate.panel.object:/org/mate/panel/objects/terminal-launcher/ toplevel-id 'top' 2>/dev/null || true
+        gsettings set org.mate.panel.object:/org/mate/panel/objects/terminal-launcher/ position 100 2>/dev/null || true
+        
+        # Update object list
+        new_list=$(echo "$existing" | sed "s/\]/, 'terminal-launcher']/")
+        gsettings set org.mate.panel general object-id-list "$new_list" 2>/dev/null || true
+    fi
+fi
+PANEL_EOF
+    log_info "MATE panel terminal shortcut configured"
+    
 else
     log_skip "User '$USERNAME' already exists"
+    
+    # Even if user exists, ensure Parrot defaults are applied
+    if [[ ! -f "$USER_HOME/.config/parrot-configured" ]]; then
+        log_info "Applying Parrot defaults to existing user..."
+        
+        # Restore wallpaper
+        if [[ -f "/usr/share/backgrounds/parrot/default.jpg" ]]; then
+            sudo -u "$USERNAME" bash << 'WALLPAPER2_EOF'
+export DISPLAY=:0
+export DBUS_SESSION_BUS_ADDRESS="unix:path=/run/user/$(id -u)/bus"
+if command -v gsettings &>/dev/null; then
+    gsettings set org.mate.background picture-filename '/usr/share/backgrounds/parrot/default.jpg' 2>/dev/null || true
+fi
+WALLPAPER2_EOF
+        fi
+        
+        # Mark as configured
+        touch "$USER_HOME/.config/parrot-configured"
+        chown "$USERNAME":"$USERNAME" "$USER_HOME/.config/parrot-configured"
+    fi
 fi
 
 # Sudoers
@@ -1227,7 +1294,44 @@ else
     log_skip "FIREFOX_EXTENSIONS.txt already exists"
 fi
 
-chown "$USERNAME":"$USERNAME" "$USER_HOME/Desktop"/*.txt 2>/dev/null || true
+# RESTORE_PARROT_DEFAULTS.sh
+if [[ ! -f "$USER_HOME/Desktop/RESTORE_PARROT_DEFAULTS.sh" ]]; then
+    cat > "$USER_HOME/Desktop/RESTORE_PARROT_DEFAULTS.sh" << 'RESTORE_PARROT_EOF'
+#!/bin/bash
+# Restore Parrot OS Default Desktop Configuration
+
+echo "[+] Restoring Parrot OS defaults..."
+
+# Restore wallpaper
+if [[ -f "/usr/share/backgrounds/parrot/default.jpg" ]]; then
+    gsettings set org.mate.background picture-filename '/usr/share/backgrounds/parrot/default.jpg' 2>/dev/null
+    echo "[+] Wallpaper restored"
+fi
+
+# Restore MATE panel defaults
+if command -v mate-panel &>/dev/null; then
+    mate-panel --reset 2>/dev/null || true
+    echo "[+] MATE panel reset to defaults"
+fi
+
+# Reset to Parrot theme
+gsettings set org.mate.interface gtk-theme 'Parrot' 2>/dev/null || true
+gsettings set org.mate.interface icon-theme 'Papirus' 2>/dev/null || true
+echo "[+] Theme reset to Parrot defaults"
+
+# Restart panel
+killall mate-panel 2>/dev/null
+nohup mate-panel &>/dev/null &
+
+echo "[+] Done! Log out and back in if issues persist."
+RESTORE_PARROT_EOF
+    chmod +x "$USER_HOME/Desktop/RESTORE_PARROT_DEFAULTS.sh"
+    log_info "Created RESTORE_PARROT_DEFAULTS.sh"
+else
+    log_skip "RESTORE_PARROT_DEFAULTS.sh already exists"
+fi
+
+chown "$USERNAME":"$USERNAME" "$USER_HOME/Desktop"/*.txt "$USER_HOME/Desktop"/*.sh 2>/dev/null || true
 
 # ============================================
 # PHASE 10: FINAL CLEANUP
