@@ -3,8 +3,6 @@
 # This script is 100% free to modify and distrubute as you see fit, but you are not
 # allowed to charge for it. the tools are free and thus so should be this script.
 
-#run with - sudo bash ./startup.sh
-
 #!/bin/bash
 set -e
 # ============================================
@@ -49,15 +47,15 @@ clear
 echo -e "${CYAN}"
 cat << 'EOF'
 ╔═══════════════════════════════════════════════════════════════╗
-║     ██████╗████████╗███████╗    ██████╗  ██████╗ ██╗  ██╗     ║
-║    ██╔════╝╚══██╔══╝██╔════╝    ██╔══██╗██╔═══██╗╚██╗██╔╝     ║
-║    ██║         ██║  █████╗      ██████╔╝██║   ██║ ╚███╔╝      ║
-║    ██║         ██║  ██╔══╝      ██╔══██╗██║   ██║ ██╔██╗      ║
-║    ╚██████╗    ██║  ██║         ██████╔╝╚██████╔╝██╔╝ ██╗     ║
-║     ╚═════╝    ╚═╝  ╚═╝         ╚═════╝  ╚═════╝ ╚═╝  ╚═╝     ║
-║                                                               ║
-║            PENTESTING TOOLKIT INSTALLER                       ║
-║            A love letter to Pentesting by Jamie Loring        ║
+║     ██████╗████████╗███████╗    ██████╗  ██████╗ ██╗  ██╗     ║
+║    ██╔════╝╚══██╔══╝██╔════╝    ██╔══██╗██╔═══██╗╚██╗██╔╝     ║
+║    ██║         ██║  █████╗      ██████╔╝██║   ██║ ╚███╔╝      ║
+║    ██║         ██║  ██╔══╝      ██╔══██╗██║   ██║ ██╔██╗      ║
+║    ╚██████╗    ██║  ██║         ██████╔╝╚██████╔╝██╔╝ ██╗     ║
+║     ╚═════╝    ╚═╝  ╚═╝         ╚═════╝  ╚═════╝ ╚═╝  ╚═╝     ║
+║                                                               ║
+║            PENTESTING TOOLKIT INSTALLER                       ║
+║            A love letter to Pentesting by Jamie Loring        ║
 ╚═══════════════════════════════════════════════════════════════╝
 EOF
 echo -e "${NC}\n"
@@ -100,6 +98,7 @@ DEBIAN_FRONTEND=noninteractive apt install -y -qq \
     htop ncdu tree fonts-powerline silversearcher-ag \
     john john-data hashcat sqlmap \
     mingw-w64 mingw-w64-tools \
+    p7zip-full \
     2>&1 | tee -a /var/log/ctfbox-install.log || true
 
 # ============================================
@@ -229,7 +228,8 @@ pip3 install --break-system-packages impacket 2>&1 | tee -a /var/log/ctfbox-inst
 if ! command -v pipx &> /dev/null; then
     DEBIAN_FRONTEND=noninteractive apt install -y pipx || true
     pipx ensurepath || true
-    export PATH="$PATH:/root/.local/bin"
+    # Note: pipx is installed by root here, but later uses the user's path
+    export PATH="$PATH:/root/.local/bin" 
 fi
 pipx install git+https://github.com/Pennyw0rth/NetExec ldapdomaindump sprayhound RsaCtfTool 2>&1 | tee -a /var/log/ctfbox-install.log || log_warn "pipx install failed"
 pip3 install --break-system-packages \
@@ -238,28 +238,39 @@ pip3 install --break-system-packages \
     git-dumper roadrecon manspider mitmproxy pwntools ROPgadget \
     truffleHog 2>&1 | tee -a /var/log/ctfbox-install.log || true
 
-# Go tools
+# Go tools - MODIFIED TO RUN AS $USERNAME
 if command -v go &> /dev/null; then
     log_progress "Installing Go tools..."
-    export GOPATH="$USER_HOME/go"
-    mkdir -p "$GOPATH/bin"
-    bash -c "go install -v github.com/projectdiscovery/naabu/v2/cmd/naabu@latest && \
-        go install -v github.com/projectdiscovery/httpx/cmd/httpx@latest && \
-        go install -v github.com/projectdiscovery/nuclei/v3/cmd/nuclei@latest && \
-        go install -v github.com/projectdiscovery/subfinder/v2/cmd/subfinder@latest && \
-        go install -v github.com/projectdiscovery/katana/cmd/katana@latest && \
-        go install -v github.com/projectdiscovery/dnsx/cmd/dnsx@latest && \
-        go install -v github.com/ffuf/ffuf@latest && \
-        go install -v github.com/OJ/gobuster/v3@latest && \
-        go install -v github.com/ropnop/kerbrute@latest && \
-        go install -v github.com/jpillora/chisel@latest && \
-        go install -v github.com/epi052/feroxbuster@latest && \
-        go install -v github.com/bp0lr/gauplus@latest && \
-        go install -v github.com/ropnop/windapsearch@latest && \
-        go install -v github.com/garrettfoster13/pre2k@latest && \
-        go install -v github.com/nicocha30/ligolo-ng/cmd/proxy@latest && \
+
+    # Use sudo -u to run all Go commands as the non-root user for correct paths and permissions
+    sudo -u "$USERNAME" bash -c "
+        export GOPATH=\"$USER_HOME/go\"
+        mkdir -p \"\$GOPATH/bin\"
+        
+        # Ensure Go tools are in the user's PATH temporarily for this session
+        export PATH=\"\$PATH:\$GOPATH/bin\"
+
+        log_info 'Installing Go binaries as user $USERNAME...'
+        go install -v github.com/projectdiscovery/naabu/v2/cmd/naabu@latest
+        go install -v github.com/projectdiscovery/httpx/cmd/httpx@latest
+        go install -v github.com/projectdiscovery/nuclei/v3/cmd/nuclei@latest
+        go install -v github.com/projectdiscovery/subfinder/v2/cmd/subfinder@latest
+        go install -v github.com/projectdiscovery/katana/cmd/katana@latest
+        go install -v github.com/projectdiscovery/dnsx/cmd/dnsx@latest
+        go install -v github.com/ffuf/ffuf@latest
+        go install -v github.com/OJ/gobuster/v3@latest
+        go install -v github.com/ropnop/kerbrute@latest
+        go install -v github.com/jpillora/chisel@latest
+        go install -v github.com/epi052/feroxbuster@latest
+        go install -v github.com/bp0lr/gauplus@latest
+        go install -v github.com/ropnop/windapsearch@latest
+        go install -v github.com/garrettfoster13/pre2k@latest
+        go install -v github.com/nicocha30/ligolo-ng/cmd/proxy@latest
         go install -v github.com/nicocha30/ligolo-ng/cmd/agent@latest" \
         2>&1 | tee -a /var/log/ctfbox-install.log || true
+    
+    # Clean up the unnecessary Go path exports in the root shell environment
+    unset GOPATH
 fi
 
 # Ruby tools
@@ -640,15 +651,15 @@ Ruby: evil-winrm, one_gadget
 Windows: $USER_HOME/tools/windows/
 
 VirtualBox:
-  Copy-Paste: Ctrl+C/V (bidirectional)
-  Drag & Drop: Enabled
-  Shared Folder: /media/sf_ctf-tools → alias host
+  Copy-Paste: Ctrl+C/V (bidirectional)
+  Drag & Drop: Enabled
+  Shared Folder: /media/sf_ctf-tools → alias host
 
 Key Files:
-  ~/.zshrc
-  ~/scripts/update-tools.sh
-  ~/Desktop/RESET_CTF_BOX.sh
-  ~/tools/windows/runasCs.exe
+  ~/.zshrc
+  ~/scripts/update-tools.sh
+  ~/Desktop/RESET_CTF_BOX.sh
+  ~/tools/windows/runasCs.exe
 EOF
 
 chown "$USERNAME":"$USERNAME" "$USER_HOME/Desktop"/*.txt 2>/dev/null || true
@@ -668,7 +679,7 @@ clear
 echo -e "${GREEN}"
 cat << 'EOF'
 ╔═══════════════════════════════════════════════════════════════╗
-║                CTFBOX v3.5 — READY                            ║
+║                CTFBOX v3.5 — READY                            ║
 ╚═══════════════════════════════════════════════════════════════╝
 EOF
 echo -e "${NC}\n"
