@@ -3,6 +3,8 @@
 # This script is 100% free to modify and distrubute as you see fit, but you are not
 # allowed to charge for it. the tools are free and thus so should be this script.
 
+# run with sudo bash ./<script>.sh
+
 #!/bin/bash
 set -e
 # ============================================
