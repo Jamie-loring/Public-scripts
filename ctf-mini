@@ -594,6 +594,8 @@ chmod +x "$USER_HOME/Desktop/RESET_CTF_BOX.sh"
 # PHASE 9: DOCUMENTATION
 # ============================================
 log_progress "Phase 9: Creating Desktop Documentation"
+
+# COMMANDS.txt — no variables, safe with 'EOF'
 cat > "$USER_HOME/Desktop/COMMANDS.txt" << 'DOC_EOF'
 RUCKRAT CTFBOX v3.5 — QUICK COMMANDS
 -----------------------------------------
@@ -615,17 +617,18 @@ evil → evil-winrm -i target
 wl-dir → directory-list-2.3-medium.txt
 DOC_EOF
 
-cat > "$USER_HOME/Desktop/TOOL_LOCATIONS.txt" << 'LOC_EOF'
+# TOOL_LOCATIONS.txt — USES $USERNAME and $USER_HOME → must use unquoted EOF
+cat > "$USER_HOME/Desktop/TOOL_LOCATIONS.txt" << EOF
 RUCKRAT CTFBOX v3.5 — TOOL MAP
 -----------------------------------------
 USER: $USERNAME
 HOME: $USER_HOME
 GOPATH: $USER_HOME/go
 
-Go Tools: ~/go/bin/
+Go Tools: $USER_HOME/go/bin/
 Python: pipx + global
 Ruby: evil-winrm, one_gadget
-Windows: ~/tools/windows/
+Windows: $USER_HOME/tools/windows/
 
 VirtualBox:
   Copy-Paste: Ctrl+C/V (bidirectional)
@@ -637,7 +640,7 @@ Key Files:
   ~/scripts/update-tools.sh
   ~/Desktop/RESET_CTF_BOX.sh
   ~/tools/windows/runasCs.exe
-LOC_EOF
+EOF
 
 chown "$USERNAME":"$USERNAME" "$USER_HOME/Desktop"/*.txt 2>/dev/null || true
 
@@ -656,7 +659,7 @@ clear
 echo -e "${GREEN}"
 cat << 'EOF'
 ╔═══════════════════════════════════════════════════════════════╗
-║                CTFBOX v3.5 — READY               ║
+║               RUCKRAT CTFBOX v3.5 — READY               ║
 ╚═══════════════════════════════════════════════════════════════╝
 EOF
 echo -e "${NC}\n"
