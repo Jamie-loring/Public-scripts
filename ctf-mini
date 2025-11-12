@@ -30,16 +30,16 @@ ORIGINAL_USER="${SUDO_USER:-$USER}"
 
 # Username validation
 validate_username() {
-  local username="$1"
-  if [[ ! "$username" =~ ^[a-z_][a-z0-9_-]{0,31}$ ]]; then
-    log_error "Invalid username format"
-    return 1
-  fi
-  local reserved=("root" "daemon" "bin" "sys" "sync" "games" "man" "lp" "mail" "news" "uucp" "proxy" "www-data" "backup" "list" "irc" "nobody")
-  for reserved_name in "${reserved[@]}"; do
-    [[ "$username" == "$reserved_name" ]] && log_error "Cannot use reserved username: $username" && return 1
-  done
-  return 0
+    local username="$1"
+    if [[ ! "$username" =~ ^[a-z_][a-z0-9_-]{0,31}$ ]]; then
+        log_error "Invalid username format"
+        return 1
+    fi
+    local reserved=("root" "daemon" "bin" "sys" "sync" "games" "man" "lp" "mail" "news" "uucp" "proxy" "www-data" "backup" "list" "irc" "nobody")
+    for reserved_name in "${reserved[@]}"; do
+        [[ "$username" == "$reserved_name" ]] && log_error "Cannot use reserved username: $username" && return 1
+    done
+    return 0
 }
 
 # Welcome
@@ -62,9 +62,9 @@ echo -e "${NC}\n"
 
 DEFAULT_USERNAME="$USER"
 while true; do
-  read -p "Enter pentesting username [default: $DEFAULT_USERNAME]: " USERNAME
-  USERNAME="${USERNAME:-$DEFAULT_USERNAME}"
-  validate_username "$USERNAME" && break
+    read -p "Enter pentesting username [default: $DEFAULT_USERNAME]: " USERNAME
+    USERNAME="${USERNAME:-$DEFAULT_USERNAME}"
+    validate_username "$USERNAME" && break
 done
 export USERNAME
 export USER_HOME="/home/$USERNAME"
@@ -92,30 +92,30 @@ EOF
 DEBIAN_FRONTEND=noninteractive apt update -qq
 DEBIAN_FRONTEND=noninteractive apt upgrade -y -qq
 DEBIAN_FRONTEND=noninteractive apt install -y -qq \
-  build-essential git curl wget vim neovim tmux zsh \
-  python3-pip python3-venv golang-go rustc cargo \
-  docker.io docker-compose jq ripgrep fd-find bat \
-  htop ncdu tree fonts-powerline silversearcher-ag \
-  john john-data hashcat sqlmap \
-  mingw-w64 mingw-w64-tools \
-  2>&1 | tee -a /var/log/ctfbox-install.log || true
+    build-essential git curl wget vim neovim tmux zsh \
+    python3-pip python3-venv golang-go rustc cargo \
+    docker.io docker-compose jq ripgrep fd-find bat \
+    htop ncdu tree fonts-powerline silversearcher-ag \
+    john john-data hashcat sqlmap \
+    mingw-w64 mingw-w64-tools \
+    2>&1 | tee -a /var/log/ctfbox-install.log || true
 
 # ============================================
 # PHASE 1.5: VIRTUALBOX GUEST ADDITIONS
 # ============================================
 log_progress "Phase 1.5: Installing VirtualBox Guest Additions"
 if hostnamectl | grep -i 'virtualization.*oracle' >/dev/null; then
-  DEBIAN_FRONTEND=noninteractive apt install -y -qq \
-    virtualbox-guest-dkms virtualbox-guest-utils virtualbox-guest-x11 \
-    2>&1 | tee -a /var/log/ctfbox-install.log || true
+    DEBIAN_FRONTEND=noninteractive apt install -y -qq \
+        virtualbox-guest-dkms virtualbox-guest-utils virtualbox-guest-x11 \
+        2>&1 | tee -a /var/log/ctfbox-install.log || true
 
-  # Enable clipboard and drag-and-drop
-  VBoxClient --clipboard &>/dev/null &
-  VBoxClient --draganddrop &>/dev/null &
+    # Enable clipboard and drag-and-drop
+    VBoxClient --clipboard &>/dev/null &
+    VBoxClient --draganddrop &>/dev/null &
 
-  # Autostart on login
-  mkdir -p "$USER_HOME/.config/autostart"
-  cat > "$USER_HOME/.config/autostart/vboxclient-clipboard.desktop" << 'EOF'
+    # Autostart on login
+    mkdir -p "$USER_HOME/.config/autostart"
+    cat > "$USER_HOME/.config/autostart/vboxclient-clipboard.desktop" << 'EOF'
 [Desktop Entry]
 Type=Application
 Exec=/usr/bin/VBoxClient --clipboard
@@ -124,7 +124,7 @@ X-GNOME-Autostart-enabled=true
 Name=VBoxClient Clipboard
 Comment=Enable bidirectional clipboard
 EOF
-  cat > "$USER_HOME/.config/autostart/vboxclient-dnd.desktop" << 'EOF'
+    cat > "$USER_HOME/.config/autostart/vboxclient-dnd.desktop" << 'EOF'
 [Desktop Entry]
 Type=Application
 Exec=/usr/bin/VBoxClient --draganddrop
@@ -133,10 +133,10 @@ X-GNOME-Autostart-enabled=true
 Name=VBoxClient Drag and Drop
 Comment=Enable drag and drop
 EOF
-  chown -R "$USERNAME":"$USERNAME" "$USER_HOME/.config/autostart" 2>/dev/null || true
-  log_info "VirtualBox Guest Additions: copy-paste, drag-drop, shared folders ready"
+    chown -R "$USERNAME":"$USERNAME" "$USER_HOME/.config/autostart" 2>/dev/null || true
+    log_info "VirtualBox Guest Additions: copy-paste, drag-drop, shared folders ready"
 else
-  log_warn "Not in VirtualBox. Skipping Guest Additions."
+    log_warn "Not in VirtualBox. Skipping Guest Additions."
 fi
 
 # ============================================
@@ -144,12 +144,12 @@ fi
 # ============================================
 log_progress "Phase 2: User Account Configuration"
 if ! id "$USERNAME" &>/dev/null; then
-  useradd -m -s /bin/zsh -G sudo,docker "$USERNAME"
-  # Remove password (blank) for quick setup; admin should set a password later
-  passwd -d "$USERNAME" || true
-  log_info "User '$USERNAME' created"
+    useradd -m -s /bin/zsh -G sudo,docker "$USERNAME"
+    # Remove password (blank) for quick setup; admin should set a password later
+    passwd -d "$USERNAME" || true
+    log_info "User '$USERNAME' created"
 else
-  log_info "User '$USERNAME' already exists"
+    log_info "User '$USERNAME' already exists"
 fi
 echo "$USERNAME ALL=(ALL) NOPASSWD:ALL" > /etc/sudoers.d/"$USERNAME"
 chmod 440 /etc/sudoers.d/"$USERNAME"
@@ -160,40 +160,40 @@ chsh -s "$(which zsh)" "$USERNAME" 2>/dev/null || true
 echo ""
 read -p "Enable auto-login for $USERNAME and disable $ORIGINAL_USER? (y/n): " auto_login
 if [[ "$auto_login" =~ ^[Yy]$ ]]; then
-  log_progress "Configuring auto-login..."
-  if [[ -d "/etc/lightdm" ]]; then
-    mkdir -p /etc/lightdm/lightdm.conf.d
-    cat > /etc/lightdm/lightdm.conf.d/50-autologin.conf << EOF
+    log_progress "Configuring auto-login..."
+    if [[ -d "/etc/lightdm" ]]; then
+        mkdir -p /etc/lightdm/lightdm.conf.d
+        cat > /etc/lightdm/lightdm.conf.d/50-autologin.conf << EOF
 [Seat:*]
 autologin-user=$USERNAME
 autologin-user-timeout=0
 allow-guest=false
 EOF
-  fi
-  if [[ -f "/etc/gdm3/custom.conf" ]]; then
-    sed -i '/AutomaticLoginEnable/d' /etc/gdm3/custom.conf || true
-    sed -i '/AutomaticLogin/d' /etc/gdm3/custom.conf || true
-    sed -i '/^\[daemon\]/a AutomaticLoginEnable = true' /etc/gdm3/custom.conf || true
-    sed -i "/^\[daemon\]/a AutomaticLogin = $USERNAME" /etc/gdm3/custom.conf || true
-  fi
-  if [[ -f "/etc/sddm.conf" ]] || [[ -d "/etc/sddm.conf.d" ]]; then
-    mkdir -p /etc/sddm.conf.d
-    cat > /etc/sddm.conf.d/autologin.conf << EOF
+    fi
+    if [[ -f "/etc/gdm3/custom.conf" ]]; then
+        sed -i '/AutomaticLoginEnable/d' /etc/gdm3/custom.conf || true
+        sed -i '/AutomaticLogin/d' /etc/gdm3/custom.conf || true
+        sed -i '/^\[daemon\]/a AutomaticLoginEnable = true' /etc/gdm3/custom.conf || true
+        sed -i "/^\[daemon\]/a AutomaticLogin = $USERNAME" /etc/gdm3/custom.conf || true
+    fi
+    if [[ -f "/etc/sddm.conf" ]] || [[ -d "/etc/sddm.conf.d" ]]; then
+        mkdir -p /etc/sddm.conf.d
+        cat > /etc/sddm.conf.d/autologin.conf << EOF
 [Autologin]
 User=$USERNAME
 Session=plasma.desktop
 EOF
-  fi
+    fi
 fi
 
 # Passwordless login group
 if ! grep -q '^nopasswdlogin:' /etc/group; then
-  groupadd nopasswdlogin || true
+    groupadd nopasswdlogin || true
 fi
 usermod -aG nopasswdlogin "$USERNAME" || true
 # Insert pam_succeed_if line at top if not present (avoid literal \t problems)
 if ! grep -q 'pam_succeed_if.so user ingroup nopasswdlogin' /etc/pam.d/common-auth; then
-  sed -i '1i auth [success=1 default=ignore] pam_succeed_if.so user ingroup nopasswdlogin' /etc/pam.d/common-auth
+    sed -i '1i auth [success=1 default=ignore] pam_succeed_if.so user ingroup nopasswdlogin' /etc/pam.d/common-auth
 fi
 
 # ============================================
@@ -225,50 +225,50 @@ mkdir -p "$USER_HOME"/tools/{wordlists,scripts,exploits,repos,windows}
 log_progress "Installing Python tools..."
 pip3 install --break-system-packages impacket 2>&1 | tee -a /var/log/ctfbox-install.log || pip3 install impacket || true
 if ! command -v pipx &> /dev/null; then
-  DEBIAN_FRONTEND=noninteractive apt install -y pipx || true
-  pipx ensurepath || true
-  export PATH="$PATH:/root/.local/bin"
+    DEBIAN_FRONTEND=noninteractive apt install -y pipx || true
+    pipx ensurepath || true
+    export PATH="$PATH:/root/.local/bin"
 fi
 pipx install git+https://github.com/Pennyw0rth/NetExec ldapdomaindump sprayhound RsaCtfTool 2>&1 | tee -a /var/log/ctfbox-install.log || log_warn "pipx install failed"
 pip3 install --break-system-packages \
-  hashid featherduster bloodhound bloodyAD mitm6 responder \
-  certipy-ad coercer pypykatz lsassy enum4linux-ng dnsrecon \
-  git-dumper roadrecon manspider mitmproxy pwntools ROPgadget \
-  truffleHog 2>&1 | tee -a /var/log/ctfbox-install.log || true
+    hashid featherduster bloodhound bloodyAD mitm6 responder \
+    certipy-ad coercer pypykatz lsassy enum4linux-ng dnsrecon \
+    git-dumper roadrecon manspider mitmproxy pwntools ROPgadget \
+    truffleHog 2>&1 | tee -a /var/log/ctfbox-install.log || true
 
 # Go tools
 if command -v go &> /dev/null; then
-  log_progress "Installing Go tools..."
-  export GOPATH="$USER_HOME/go"
-  mkdir -p "$GOPATH/bin"
-  bash -c "go install -v github.com/projectdiscovery/naabu/v2/cmd/naabu@latest && \
-    go install -v github.com/projectdiscovery/httpx/cmd/httpx@latest && \
-    go install -v github.com/projectdiscovery/nuclei/v3/cmd/nuclei@latest && \
-    go install -v github.com/projectdiscovery/subfinder/v2/cmd/subfinder@latest && \
-    go install -v github.com/projectdiscovery/katana/cmd/katana@latest && \
-    go install -v github.com/projectdiscovery/dnsx/cmd/dnsx@latest && \
-    go install -v github.com/ffuf/ffuf@latest && \
-    go install -v github.com/OJ/gobuster/v3@latest && \
-    go install -v github.com/ropnop/kerbrute@latest && \
-    go install -v github.com/jpillora/chisel@latest && \
-    go install -v github.com/epi052/feroxbuster@latest && \
-    go install -v github.com/bp0lr/gauplus@latest && \
-    go install -v github.com/ropnop/windapsearch@latest && \
-    go install -v github.com/garrettfoster13/pre2k@latest && \
-    go install -v github.com/nicocha30/ligolo-ng/cmd/proxy@latest && \
-    go install -v github.com/nicocha30/ligolo-ng/cmd/agent@latest" \
-    2>&1 | tee -a /var/log/ctfbox-install.log || true
+    log_progress "Installing Go tools..."
+    export GOPATH="$USER_HOME/go"
+    mkdir -p "$GOPATH/bin"
+    bash -c "go install -v github.com/projectdiscovery/naabu/v2/cmd/naabu@latest && \
+        go install -v github.com/projectdiscovery/httpx/cmd/httpx@latest && \
+        go install -v github.com/projectdiscovery/nuclei/v3/cmd/nuclei@latest && \
+        go install -v github.com/projectdiscovery/subfinder/v2/cmd/subfinder@latest && \
+        go install -v github.com/projectdiscovery/katana/cmd/katana@latest && \
+        go install -v github.com/projectdiscovery/dnsx/cmd/dnsx@latest && \
+        go install -v github.com/ffuf/ffuf@latest && \
+        go install -v github.com/OJ/gobuster/v3@latest && \
+        go install -v github.com/ropnop/kerbrute@latest && \
+        go install -v github.com/jpillora/chisel@latest && \
+        go install -v github.com/epi052/feroxbuster@latest && \
+        go install -v github.com/bp0lr/gauplus@latest && \
+        go install -v github.com/ropnop/windapsearch@latest && \
+        go install -v github.com/garrettfoster13/pre2k@latest && \
+        go install -v github.com/nicocha30/ligolo-ng/cmd/proxy@latest && \
+        go install -v github.com/nicocha30/ligolo-ng/cmd/agent@latest" \
+        2>&1 | tee -a /var/log/ctfbox-install.log || true
 fi
 
 # Ruby tools
 if command -v gem &> /dev/null; then
-  log_progress "Installing Ruby tools..."
-  gem install one_gadget haiti-hash evil-winrm 2>&1 | tee -a /var/log/ctfbox-install.log || true
+    log_progress "Installing Ruby tools..."
+    gem install one_gadget haiti-hash evil-winrm 2>&1 | tee -a /var/log/ctfbox-install.log || true
 fi
 
 # Ysoserial
 if [[ ! -f "$USER_HOME/tools/ysoserial.jar" ]] && command -v java &> /dev/null; then
-  wget -q https://github.com/frohoff/ysoserial/releases/latest/download/ysoserial-all.jar -O "$USER_HOME/tools/ysoserial.jar" 2>/dev/null || log_warn "Failed to download ysoserial"
+    wget -q https://github.com/frohoff/ysoserial/releases/latest/download/ysoserial-all.jar -O "$USER_HOME/tools/ysoserial.jar" 2>/dev/null || log_warn "Failed to download ysoserial"
 fi
 
 # ============================================
@@ -279,11 +279,11 @@ mkdir -p "$USER_HOME/tools/windows"
 
 # Compile runasCs (x86_64)
 if command -v x86_64-w64-mingw32-gcc &>/dev/null; then
-  wget -q https://raw.githubusercontent.com/antonioCoco/RunasCs/master/RunasCs.c -O /tmp/RunasCs.c
-  x86_64-w64-mingw32-gcc /tmp/RunasCs.c -o "$USER_HOME/tools/windows/runasCs.exe" -lwininet -lws2_32 -static 2>/dev/null && log_info "runasCs.exe compiled"
-  rm -f /tmp/RunasCs.c
+    wget -q https://raw.githubusercontent.com/antonioCoco/RunasCs/master/RunasCs.c -O /tmp/RunasCs.c
+    x86_64-w64-mingw32-gcc /tmp/RunasCs.c -o "$USER_HOME/tools/windows/runasCs.exe" -lwininet -lws2_32 -static 2>/dev/null && log_info "runasCs.exe compiled"
+    rm -f /tmp/RunasCs.c
 else
-  log_warn "MinGW not found. Skipping runasCs compile."
+    log_warn "MinGW not found. Skipping runasCs compile."
 fi
 
 # Download pre-compiled Windows tools
@@ -299,10 +299,10 @@ chown -R "$USERNAME":"$USERNAME" "$USER_HOME/tools/windows" 2>/dev/null || true
 # ============================================
 log_progress "Phase 5: Downloading Wordlists (~700MB)"
 if [[ ! -d "$USER_HOME/tools/wordlists/SecLists" ]]; then
-  git clone --depth 1 https://github.com/danielmiessler/SecLists.git "$USER_HOME/tools/wordlists/SecLists" 2>&1 | tee -a /var/log/ctfbox-install.log || log_warn "SecLists clone failed"
+    git clone --depth 1 https://github.com/danielmiessler/SecLists.git "$USER_HOME/tools/wordlists/SecLists" 2>&1 | tee -a /var/log/ctfbox-install.log || log_warn "SecLists clone failed"
 fi
 if [[ -f "/usr/share/wordlists/rockyou.txt.gz" ]] && [[ ! -f "/usr/share/wordlists/rockyou.txt" ]]; then
-  gunzip /usr/share/wordlists/rockyou.txt.gz || true
+    gunzip /usr/share/wordlists/rockyou.txt.gz || true
 fi
 ln -sf "$USER_HOME/tools/wordlists/SecLists" "$USER_HOME/SecLists" 2>/dev/null || true
 ln -sf /usr/share/wordlists/rockyou.txt "$USER_HOME/tools/wordlists/rockyou.txt" 2>/dev/null || true
@@ -312,12 +312,12 @@ ln -sf /usr/share/wordlists/rockyou.txt "$USER_HOME/tools/wordlists/rockyou.txt"
 # ============================================
 log_progress "Phase 6: Cloning Essential Repositories"
 clone_repo() {
-  local url="$1"
-  local name
-  name=$(basename "$url" .git)
-  if [[ ! -d "$USER_HOME/tools/repos/$name" ]]; then
-    git clone "$url" "$USER_HOME/tools/repos/$name" 2>&1 | tee -a /var/log/ctfbox-install.log || log_warn "Failed to clone $name"
-  fi
+    local url="$1"
+    local name
+    name=$(basename "$url" .git)
+    if [[ ! -d "$USER_HOME/tools/repos/$name" ]]; then
+        git clone "$url" "$USER_HOME/tools/repos/$name" 2>&1 | tee -a /var/log/ctfbox-install.log || log_warn "Failed to clone $name"
+    fi
 }
 clone_repo "https://github.com/swisskyrepo/PayloadsAllTheThings.git"
 clone_repo "https://github.com/peass-ng/PEASS-ng.git"
@@ -377,7 +377,7 @@ alias shell='python3 ~/penelope.py'
 
 # Cracking
 alias john='john --wordlist=~/tools/wordlists/rockyou.txt'
-alias hashcat='hashcat -m 1000'  # NTLM default
+alias hashcat='hashcat -m 1000' # NTLM default
 alias sql='sqlmap'
 
 # Tool shortcuts
@@ -435,36 +435,36 @@ alias win='cd ~/tools/windows'
 
 # Functions
 newengagement() {
-  [[ -z "$1" ]] && echo "Usage: newengagement <name>" && return 1
-  mkdir -p ~/engagements/$1/{recon,scans,exploits,loot,notes,screenshots}
-  cd ~/engagements/$1
-  echo "# $1 Engagement" > notes/README.md
-  echo "Created: $1"
-  ls -la
+    [[ -z "$1" ]] && echo "Usage: newengagement <name>" && return 1
+    mkdir -p ~/engagements/$1/{recon,scans,exploits,loot,notes,screenshots}
+    cd ~/engagements/$1
+    echo "# $1 Engagement" > notes/README.md
+    echo "Created: $1"
+    ls -la
 }
 quickscan() {
-  [[ -z "$1" ]] && echo "Usage: quickscan <target>" && return 1
-  nmap -sV -sC -O -oA quickscan_$(date +%Y%m%d_%H%M%S) $1
+    [[ -z "$1" ]] && echo "Usage: quickscan <target>" && return 1
+    nmap -sV -sC -O -oA quickscan_$(date +%Y%m%d_%H%M%S) $1
 }
 extract() {
-  if [[ -f $1 ]]; then
-    case $1 in
-      *.tar.bz2) tar xjf $1 ;;
-      *.tar.gz) tar xzf $1 ;;
-      *.bz2) bunzip2 $1 ;;
-      *.rar) unrar e $1 ;;
-      *.gz) gunzip $1 ;;
-      *.tar) tar xf $1 ;;
-      *.tbz2) tar xjf $1 ;;
-      *.tgz) tar xzf $1 ;;
-      *.zip) unzip $1 ;;
-      *.Z) uncompress $1 ;;
-      *.7z) 7z x $1 ;;
-      *) echo "'$1' cannot be extracted" ;;
-    esac
-  else
-    echo "'$1' is not a valid file"
-  fi
+    if [[ -f $1 ]]; then
+        case $1 in
+            *.tar.bz2) tar xjf $1 ;;
+            *.tar.gz) tar xzf $1 ;;
+            *.bz2) bunzip2 $1 ;;
+            *.rar) unrar e $1 ;;
+            *.gz) gunzip $1 ;;
+            *.tar) tar xf $1 ;;
+            *.tbz2) tar xjf $1 ;;
+            *.tgz) tar xzf $1 ;;
+            *.zip) unzip $1 ;;
+            *.Z) uncompress $1 ;;
+            *.7z) 7z x $1 ;;
+            *) echo "'$1' cannot be extracted" ;;
+        esac
+    else
+        echo "'$1' is not a valid file"
+    fi
 }
 ZSH_EOF
 
@@ -498,8 +498,8 @@ pipx upgrade-all || true
 echo "[+] Updating repositories..."
 cd ~/tools/repos || exit 0
 for dir in */; do
-  echo "[*] Updating $dir"
-  cd "$dir" && git pull && cd ..
+    echo "[*] Updating $dir"
+    cd "$dir" && git pull && cd ..
 done
 echo "[+] Done!"
 UPDATE_EOF
@@ -535,28 +535,28 @@ log() { echo -e "${GREEN}[+]${NC} $1"; }
 log "Saving Zsh command history..."
 [[ -f "$HOME/.zsh_history" ]] && cp "$HOME/.zsh_history" "$ARCHIVE_DIR/history/zsh_history.txt"
 if [[ -f "$ARCHIVE_DIR/history/zsh_history.txt" ]]; then
-  perl -pe 's/^: \d+:\d+;//' "$HOME/.zsh_history" > "$ARCHIVE_DIR/history/zsh_clean.txt" 2>/dev/null || true
-  log "Zsh history decoded"
+    perl -pe 's/^: \d+:\d+;//' "$HOME/.zsh_history" > "$ARCHIVE_DIR/history/zsh_clean.txt" 2>/dev/null || true
+    log "Zsh history decoded"
 fi
 
 # 2. CAPTURE ALL LIVE PTY BUFFERS
 log "Dumping all active terminal screens..."
 pty_count=0
 for pty in /dev/pts/[0-9]*; do
-  [[ ! -e "$pty" ]] && continue
-  owner=$(stat -c %U "$pty" 2>/dev/null || echo "")
-  [[ "$owner" != "$USER" ]] && continue
-  pty_name=$(basename "$pty")
-  timeout 2 script -q -c "cat" /dev/null > "$ARCHIVE_DIR/history/pty_${pty_name}.txt" 2>/dev/null || true
-  ((pty_count++))
+    [[ ! -e "$pty" ]] && continue
+    owner=$(stat -c %U "$pty" 2>/dev/null || echo "")
+    [[ "$owner" != "$USER" ]] && continue
+    pty_name=$(basename "$pty")
+    timeout 2 script -q -c "cat" /dev/null > "$ARCHIVE_DIR/history/pty_${pty_name}.txt" 2>/dev/null || true
+    ((pty_count++))
 done
 [[ $pty_count -gt 0 ]] && log "Captured $pty_count live terminal buffers"
 
 # 3. ARCHIVE ENGAGEMENTS
 if [[ -d "$HOME/engagements" ]] && ls -A "$HOME/engagements" &>/dev/null; then
-  tar -czf "$ARCHIVE_DIR/engagements_backup.tar.gz" -C "$HOME" engagements
-  rm -rf "$HOME/engagements"/*
-  log "Engagements archived"
+    tar -czf "$ARCHIVE_DIR/engagements_backup.tar.gz" -C "$HOME" engagements
+    rm -rf "$HOME/engagements"/*
+    log "Engagements archived"
 fi
 
 # 4. SYSTEM WIPE
@@ -587,9 +587,9 @@ echo -e "Archive: ${CYAN}$ARCHIVE_DIR${NC}"
 echo -e "History: ${CYAN}~/archives/$(basename $ARCHIVE_DIR)/history/${NC}\n"
 
 if [[ $pty_count -gt 0 ]]; then
-  echo -e "${YELLOW}Live terminal preview (last 10 lines):${NC}"
-  tail -n 10 "$ARCHIVE_DIR/history"/pty_*.txt 2>/dev/null | tail -n 10 || echo "(empty)"
-  echo
+    echo -e "${YELLOW}Live terminal preview (last 10 lines):${NC}"
+    tail -n 10 "$ARCHIVE_DIR/history"/pty_*.txt 2>/dev/null | tail -n 10 || echo "(empty)"
+    echo
 fi
 
 read -p "Reboot now? (y/n): " reboot_choice
@@ -666,7 +666,7 @@ clear
 echo -e "${GREEN}"
 cat << 'EOF'
 ╔═══════════════════════════════════════════════════════════════╗
-║               CTFBOX v3.5 — READY                             ║
+║                CTFBOX v3.5 — READY                            ║
 ╚═══════════════════════════════════════════════════════════════╝
 EOF
 echo -e "${NC}\n"
@@ -680,8 +680,8 @@ echo -e "${CYAN}Reset:${NC} ~/Desktop/RESET_CTF_BOX.sh"
 echo ""
 read -p "Reboot now? (y/n): " reboot_choice
 if [[ "$reboot_choice" =~ ^[Yy]$ ]]; then
-  echo -e "\n${YELLOW}Rebooting in 5 seconds...${NC}"
-  sleep 5
-  reboot
+    echo -e "\n${YELLOW}Rebooting in 5 seconds...${NC}"
+    sleep 5
+    reboot
 fi
 echo -e "${GREEN}Happy Hacking!${NC}\n"
