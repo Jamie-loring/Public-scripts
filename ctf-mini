@@ -71,6 +71,22 @@ read -p "Continue? (y/n): " confirm
 # PHASE 1: SYSTEM SETUP
 # ============================================
 log_progress "Phase 1: System Updates & Base Packages"
+
+# Disable interactive prompts
+export DEBIAN_FRONTEND=noninteractive
+export NEEDRESTART_MODE=a
+export NEEDRESTART_SUSPEND=1
+
+# Configure debconf to non-interactive
+echo 'debconf debconf/frontend select Noninteractive' | debconf-set-selections
+
+# Configure needrestart to auto-restart without prompting
+mkdir -p /etc/needrestart/conf.d
+cat > /etc/needrestart/conf.d/no-prompt.conf << 'EOF'
+$nrconf{restart} = 'a';
+$nrconf{kernelhints} = 0;
+EOF
+
 DEBIAN_FRONTEND=noninteractive apt update -qq
 DEBIAN_FRONTEND=noninteractive apt upgrade -y -qq
 
@@ -204,8 +220,11 @@ pip3 install --break-system-packages impacket 2>&1 | tee -a /var/log/ctfbox-inst
 
 if ! command -v pipx &> /dev/null; then
   apt install -y pipx
+  pipx ensurepath
+  # Update PATH immediately
+  export PATH="$PATH:/root/.local/bin"
+  eval "$(register-python-argcomplete pipx)"
 fi
-pipx ensurepath
 pipx install git+https://github.com/Pennyw0rth/NetExec 2>&1 | tee -a /var/log/ctfbox-install.log || log_warn "NetExec install failed"
 pipx install ldapdomaindump 2>&1 | tee -a /var/log/ctfbox-install.log || log_warn "ldapdomaindump install failed"
 pipx install sprayhound 2>&1 | tee -a /var/log/ctfbox-install.log || log_warn "sprayhound install failed"
