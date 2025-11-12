@@ -16,6 +16,10 @@ log_warn() { echo -e "${YELLOW}[!]${NC} $1"; }
 log_error() { echo -e "${RED}[-]${NC} $1"; }
 log_progress() { echo -e "${BLUE}[*]${NC} $1"; }
 
+# Capture original user
+ORIGINAL_USER="${SUDO_USER:-$USER}"
+[[ "$ORIGINAL_USER" == "root" ]] && ORIGINAL_USER=""
+
 # Username validation
 validate_username() {
   local username="$1"
@@ -98,8 +102,10 @@ chsh -s "$(which zsh)" "$USERNAME" 2>/dev/null || true
 
 # Auto-login configuration
 echo ""
-read -p "Enable auto-login for $USERNAME? (y/n): " auto_login
+read -p "Enable auto-login for $USERNAME and disable $ORIGINAL_USER? (y/n): " auto_login
 if [[ "$auto_login" =~ ^[Yy]$ ]]; then
+  log_progress "Configuring auto-login for $USERNAME..."
+  
   # LightDM
   if [[ -d "/etc/lightdm" ]]; then
     mkdir -p /etc/lightdm/lightdm.conf.d
@@ -107,19 +113,48 @@ if [[ "$auto_login" =~ ^[Yy]$ ]]; then
 [Seat:*]
 autologin-user=$USERNAME
 autologin-user-timeout=0
+user-session=default
 allow-guest=false
+autologin-guest=false
 EOF
     log_info "LightDM auto-login configured"
   fi
   
   # GDM3
   if [[ -f "/etc/gdm3/custom.conf" ]]; then
+    if ! grep -q '^\[daemon\]' /etc/gdm3/custom.conf; then
+      echo -e "\n[daemon]" >> /etc/gdm3/custom.conf
+    fi
     sed -i '/AutomaticLoginEnable/d' /etc/gdm3/custom.conf
     sed -i '/AutomaticLogin/d' /etc/gdm3/custom.conf
+    sed -i '/TimedLoginEnable/d' /etc/gdm3/custom.conf
+    sed -i '/TimedLogin/d' /etc/gdm3/custom.conf
+    sed -i '/TimedLoginDelay/d' /etc/gdm3/custom.conf
     sed -i '/^\[daemon\]/a AutomaticLoginEnable = true' /etc/gdm3/custom.conf
     sed -i "/^AutomaticLoginEnable/a AutomaticLogin = $USERNAME" /etc/gdm3/custom.conf
+    sed -i '/^\[daemon\]/a TimedLoginEnable = true' /etc/gdm3/custom.conf
+    sed -i "/^TimedLoginEnable/a TimedLogin = $USERNAME" /etc/gdm3/custom.conf
+    sed -i "/^TimedLogin = $USERNAME/a TimedLoginDelay = 0" /etc/gdm3/custom.conf
     log_info "GDM3 auto-login configured"
   fi
+  
+  # SDDM
+  if [[ -f "/etc/sddm.conf" ]] || [[ -d "/etc/sddm.conf.d" ]]; then
+    mkdir -p /etc/sddm.conf.d
+    cat > /etc/sddm.conf.d/autologin.conf << EOF
+[Autologin]
+User=$USERNAME
+Session=plasma.desktop
+EOF
+    log_info "SDDM auto-login configured"
+  fi
+  
+  # Clear old user's session cache
+  if [[ -n "$ORIGINAL_USER" ]] && [[ -d "/home/$ORIGINAL_USER/.cache" ]]; then
+    rm -rf /home/"$ORIGINAL_USER"/.cache/sessions/* 2>/dev/null || true
+  fi
+  
+  log_info "Auto-login configured for $USERNAME"
 fi
 
 # Passwordless login group
@@ -271,6 +306,42 @@ clone_repo "https://github.com/brightio/penelope.git"
 ln -sf "$USER_HOME/tools/repos/PEASS-ng/linPEAS/linpeas.sh" "$USER_HOME/linpeas.sh" 2>/dev/null || true
 ln -sf "$USER_HOME/tools/repos/PEASS-ng/winPEAS/winPEASx64.exe" "$USER_HOME/winpeas.exe" 2>/dev/null || true
 ln -sf "$USER_HOME/tools/repos/penelope/penelope.py" "$USER_HOME/penelope.py" 2>/dev/null || true
+
+# ============================================
+# PHASE 6.5: FIREFOX EXTENSIONS
+# ============================================
+log_progress "Phase 6.5: Installing Firefox Extensions"
+
+FIREFOX_PROFILE=$(find "$USER_HOME/.mozilla/firefox" -maxdepth 1 -type d -name "*.default*" 2>/dev/null | head -n 1)
+
+if [[ -z "$FIREFOX_PROFILE" ]]; then
+  log_warn "Firefox profile not found. Creating profile for $USERNAME..."
+  su - "$USERNAME" -c "timeout 5 firefox --headless" 2>/dev/null || true
+  sleep 2
+  FIREFOX_PROFILE=$(find "$USER_HOME/.mozilla/firefox" -maxdepth 1 -type d -name "*.default*" 2>/dev/null | head -n 1)
+fi
+
+if [[ -n "$FIREFOX_PROFILE" ]]; then
+  log_info "Firefox profile: $FIREFOX_PROFILE"
+  mkdir -p "$FIREFOX_PROFILE/extensions"
+  
+  wget -q "https://addons.mozilla.org/firefox/downloads/latest/foxyproxy-standard/latest.xpi" \
+    -O "$FIREFOX_PROFILE/extensions/foxyproxy@eric.h.jung.xpi" 2>/dev/null || log_warn "Failed: FoxyProxy"
+  
+  wget -q "https://addons.mozilla.org/firefox/downloads/latest/darkreader/latest.xpi" \
+    -O "$FIREFOX_PROFILE/extensions/addon@darkreader.org.xpi" 2>/dev/null || log_warn "Failed: Dark Reader"
+  
+  wget -q "https://addons.mozilla.org/firefox/downloads/latest/cookie-editor/latest.xpi" \
+    -O "$FIREFOX_PROFILE/extensions/{c5f15d22-8421-4a2f-9bed-e4e2c0b560e0}.xpi" 2>/dev/null || log_warn "Failed: Cookie-Editor"
+  
+  wget -q "https://addons.mozilla.org/firefox/downloads/latest/wappalyzer/latest.xpi" \
+    -O "$FIREFOX_PROFILE/extensions/wappalyzer@crunchlabs.com.xpi" 2>/dev/null || log_warn "Failed: Wappalyzer"
+  
+  chown -R "$USERNAME":"$USERNAME" "$FIREFOX_PROFILE" 2>/dev/null || true
+  log_info "Firefox extensions installed"
+else
+  log_warn "Could not create Firefox profile"
+fi
 
 # ============================================
 # PHASE 7: DOTFILES & SCRIPTS
@@ -653,6 +724,28 @@ TOOL_LOCATIONS_EOF
 chown "$USERNAME":"$USERNAME" "$USER_HOME/Desktop"/*.txt 2>/dev/null || true
 
 # ============================================
+# PHASE 8.5: DISABLE ORIGINAL USER
+# ============================================
+if [[ -n "$ORIGINAL_USER" ]] && [[ "$ORIGINAL_USER" != "$USERNAME" ]] && id "$ORIGINAL_USER" &>/dev/null; then
+  echo ""
+  read -p "Disable original user '$ORIGINAL_USER'? (y/n): " disable_old
+  if [[ "$disable_old" =~ ^[Yy]$ ]]; then
+    log_progress "Phase 8.5: Disabling Original User Account"
+    
+    log_progress "Locking password for $ORIGINAL_USER..."
+    usermod -L "$ORIGINAL_USER" 2>&1 | tee -a /var/log/ctfbox-install.log
+    
+    log_progress "Setting shell to /usr/sbin/nologin..."
+    usermod -s /usr/sbin/nologin "$ORIGINAL_USER" 2>&1 | tee -a /var/log/ctfbox-install.log
+    
+    log_progress "Removing from sudo group..."
+    deluser "$ORIGINAL_USER" sudo 2>/dev/null || true
+    
+    log_info "User '$ORIGINAL_USER' has been disabled"
+  fi
+fi
+
+# ============================================
 # FINAL CLEANUP
 # ============================================
 log_progress "Phase 9: Final Cleanup"
@@ -675,10 +768,14 @@ echo -e "${NC}\n"
 
 echo -e "${YELLOW}User:${NC} ${GREEN}$USERNAME${NC}"
 echo -e "${YELLOW}Home:${NC} ${GREEN}$USER_HOME${NC}"
+[[ -n "$ORIGINAL_USER" ]] && [[ "$ORIGINAL_USER" != "$USERNAME" ]] && echo -e "${YELLOW}Original User:${NC} ${RED}$ORIGINAL_USER (disabled)${NC}"
 echo ""
 echo -e "${CYAN}Documentation:${NC}"
 echo "  - Commands: ${CYAN}~/Desktop/COMMANDS.txt${NC}"
 echo "  - Locations: ${CYAN}~/Desktop/TOOL_LOCATIONS.txt${NC}"
+echo ""
+echo -e "${CYAN}Firefox Extensions:${NC}"
+echo "  - FoxyProxy, Dark Reader, Cookie-Editor, Wappalyzer"
 echo -e "${CYAN}Quick Start:${NC}"
 echo "  - Update tools: ${CYAN}~/scripts/update-tools.sh${NC}"
 echo "  - Reset system: ${CYAN}~/Desktop/RESET_CTF_BOX.sh${NC}"
