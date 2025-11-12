@@ -5,6 +5,10 @@
 
 #!/bin/bash
 set -e
+# ============================================
+# CTFBOX v3.5 — FULL INSTALLER
+# Debian + Zsh + p10k + VirtualBox Ready
+# ============================================
 
 # Colors
 RED='\033[0;31m'
@@ -43,15 +47,14 @@ clear
 echo -e "${CYAN}"
 cat << 'EOF'
 ╔═══════════════════════════════════════════════════════════════╗
-║     ██████╗████████╗███████╗    ██████╗  ██████╗ ██╗  ██╗     ║
-║    ██╔════╝╚══██╔══╝██╔════╝    ██╔══██╗██╔═══██╗╚██╗██╔╝     ║
-║    ██║         ██║  █████╗      ██████╔╝██║   ██║ ╚███╔╝      ║
-║    ██║         ██║  ██╔══╝      ██╔══██╗██║   ██║ ██╔██╗      ║
-║    ╚██████╗    ██║  ██║         ██████╔╝╚██████╔╝██╔╝ ██╗     ║
-║     ╚═════╝    ╚═╝  ╚═╝         ╚═════╝  ╚═════╝ ╚═╝  ╚═╝     ║
-║                                                               ║
-║            PENTESTING TOOLKIT INSTALLER                       ║
-║            A love letter to Pentesting by Jamie Loring        ║
+║ ██████╗████████╗███████╗ ██████╗ ██████╗ ██╗ ██╗ ║
+║ ██╔════╝╚══██╔══╝██╔════╝ ██╔══██╗██╔═══██╗╚██╗██╔╝ ║
+║ ██║ ██║ █████╗ ██████╔╝██║ ██║ ╚███╔╝ ║
+║ ██║ ██║ ██╔══╝ ██╔══██╗██║ ██║ ██╔██╗ ║
+║ ╚██████╗ ██║ ██║ ██████╔╝╚██████╔╝██╔╝ ██╗ ║
+║ ╚═════╝ ╚═╝ ╚═╝ ╚═════╝ ╚═════╝ ╚═╝ ╚═╝ ║
+║ ║
+║ CTFBOX v3.5 — VIRTUALBOX READY ║
 ╚═══════════════════════════════════════════════════════════════╝
 EOF
 echo -e "${NC}\n"
@@ -64,6 +67,7 @@ while true; do
 done
 export USERNAME
 export USER_HOME="/home/$USERNAME"
+mkdir -p "$USER_HOME"
 log_info "Username: ${GREEN}$USERNAME${NC}"
 echo ""
 log_warn "This will install EVERYTHING (takes 10-30 minutes)"
@@ -91,10 +95,9 @@ DEBIAN_FRONTEND=noninteractive apt install -y -qq \
   python3-pip python3-venv golang-go rustc cargo \
   docker.io docker-compose jq ripgrep fd-find bat \
   htop ncdu tree fonts-powerline silversearcher-ag \
-  perl timeout \
   john john-data hashcat sqlmap \
   mingw-w64 mingw-w64-tools \
-  2>&1 | tee -a /var/log/ctfbox-install.log
+  2>&1 | tee -a /var/log/ctfbox-install.log || true
 
 # ============================================
 # PHASE 1.5: VIRTUALBOX GUEST ADDITIONS
@@ -103,7 +106,7 @@ log_progress "Phase 1.5: Installing VirtualBox Guest Additions"
 if hostnamectl | grep -i 'virtualization.*oracle' >/dev/null; then
   DEBIAN_FRONTEND=noninteractive apt install -y -qq \
     virtualbox-guest-dkms virtualbox-guest-utils virtualbox-guest-x11 \
-    2>&1 | tee -a /var/log/ctfbox-install.log
+    2>&1 | tee -a /var/log/ctfbox-install.log || true
 
   # Enable clipboard and drag-and-drop
   VBoxClient --clipboard &>/dev/null &
@@ -141,7 +144,8 @@ fi
 log_progress "Phase 2: User Account Configuration"
 if ! id "$USERNAME" &>/dev/null; then
   useradd -m -s /bin/zsh -G sudo,docker "$USERNAME"
-  echo "$USERNAME:''" | chpasswd -e
+  # Remove password (blank) for quick setup; admin should set a password later
+  passwd -d "$USERNAME" || true
   log_info "User '$USERNAME' created"
 else
   log_info "User '$USERNAME' already exists"
@@ -166,10 +170,10 @@ allow-guest=false
 EOF
   fi
   if [[ -f "/etc/gdm3/custom.conf" ]]; then
-    sed -i '/AutomaticLoginEnable/d' /etc/gdm3/custom.conf
-    sed -i '/AutomaticLogin/d' /etc/gdm3/custom.conf
-    sed -i '/^\[daemon\]/a AutomaticLoginEnable = true' /etc/gdm3/custom.conf
-    sed -i "/^AutomaticLoginEnable/a AutomaticLogin = $USERNAME" /etc/gdm3/custom.conf
+    sed -i '/AutomaticLoginEnable/d' /etc/gdm3/custom.conf || true
+    sed -i '/AutomaticLogin/d' /etc/gdm3/custom.conf || true
+    sed -i '/^\[daemon\]/a AutomaticLoginEnable = true' /etc/gdm3/custom.conf || true
+    sed -i "/^\[daemon\]/a AutomaticLogin = $USERNAME" /etc/gdm3/custom.conf || true
   fi
   if [[ -f "/etc/sddm.conf" ]] || [[ -d "/etc/sddm.conf.d" ]]; then
     mkdir -p /etc/sddm.conf.d
@@ -183,11 +187,12 @@ fi
 
 # Passwordless login group
 if ! grep -q '^nopasswdlogin:' /etc/group; then
-  groupadd nopasswdlogin
+  groupadd nopasswdlogin || true
 fi
-usermod -aG nopasswdlogin "$USERNAME"
+usermod -aG nopasswdlogin "$USERNAME" || true
+# Insert pam_succeed_if line at top if not present (avoid literal \t problems)
 if ! grep -q 'pam_succeed_if.so user ingroup nopasswdlogin' /etc/pam.d/common-auth; then
-  sed -i '/^auth.*pam_deny.so/i auth\t[success=1 default=ignore]\tpam_succeed_if.so user ingroup nopasswdlogin' /etc/pam.d/common-auth
+  sed -i '1i auth [success=1 default=ignore] pam_succeed_if.so user ingroup nopasswdlogin' /etc/pam.d/common-auth
 fi
 
 # ============================================
@@ -198,7 +203,7 @@ TEMP_HOME="/tmp/user-setup-$USERNAME"
 rm -rf "$TEMP_HOME" 2>/dev/null || true
 mkdir -p "$TEMP_HOME"
 export HOME="$TEMP_HOME"
-sh -c "RUNZSH=no $(curl -fsSL https://raw.githubusercontent.com/ohmyzsh/ohmyzsh/master/tools/install.sh)" "" --unattended 2>&1 | tee -a /var/log/ctfbox-install.log
+sh -c "RUNZSH=no $(curl -fsSL https://raw.githubusercontent.com/ohmyzsh/ohmyzsh/master/tools/install.sh)" "" --unattended 2>&1 | tee -a /var/log/ctfbox-install.log || true
 export HOME="/root"
 git clone https://github.com/zsh-users/zsh-autosuggestions "${TEMP_HOME}/.oh-my-zsh/custom/plugins/zsh-autosuggestions" 2>/dev/null || true
 git clone https://github.com/zsh-users/zsh-syntax-highlighting.git "${TEMP_HOME}/.oh-my-zsh/custom/plugins/zsh-syntax-highlighting" 2>/dev/null || true
@@ -217,10 +222,10 @@ mkdir -p "$USER_HOME"/tools/{wordlists,scripts,exploits,repos,windows}
 
 # Python tools
 log_progress "Installing Python tools..."
-pip3 install --break-system-packages impacket 2>&1 | tee -a /var/log/ctfbox-install.log || pip3 install impacket
+pip3 install --break-system-packages impacket 2>&1 | tee -a /var/log/ctfbox-install.log || pip3 install impacket || true
 if ! command -v pipx &> /dev/null; then
-  apt install -y pipx
-  pipx ensurepath
+  DEBIAN_FRONTEND=noninteractive apt install -y pipx || true
+  pipx ensurepath || true
   export PATH="$PATH:/root/.local/bin"
 fi
 pipx install git+https://github.com/Pennyw0rth/NetExec ldapdomaindump sprayhound RsaCtfTool 2>&1 | tee -a /var/log/ctfbox-install.log || log_warn "pipx install failed"
@@ -296,7 +301,7 @@ if [[ ! -d "$USER_HOME/tools/wordlists/SecLists" ]]; then
   git clone --depth 1 https://github.com/danielmiessler/SecLists.git "$USER_HOME/tools/wordlists/SecLists" 2>&1 | tee -a /var/log/ctfbox-install.log || log_warn "SecLists clone failed"
 fi
 if [[ -f "/usr/share/wordlists/rockyou.txt.gz" ]] && [[ ! -f "/usr/share/wordlists/rockyou.txt" ]]; then
-  gunzip /usr/share/wordlists/rockyou.txt.gz
+  gunzip /usr/share/wordlists/rockyou.txt.gz || true
 fi
 ln -sf "$USER_HOME/tools/wordlists/SecLists" "$USER_HOME/SecLists" 2>/dev/null || true
 ln -sf /usr/share/wordlists/rockyou.txt "$USER_HOME/tools/wordlists/rockyou.txt" 2>/dev/null || true
@@ -307,7 +312,8 @@ ln -sf /usr/share/wordlists/rockyou.txt "$USER_HOME/tools/wordlists/rockyou.txt"
 log_progress "Phase 6: Cloning Essential Repositories"
 clone_repo() {
   local url="$1"
-  local name=$(basename "$url" .git)
+  local name
+  name=$(basename "$url" .git)
   if [[ ! -d "$USER_HOME/tools/repos/$name" ]]; then
     git clone "$url" "$USER_HOME/tools/repos/$name" 2>&1 | tee -a /var/log/ctfbox-install.log || log_warn "Failed to clone $name"
   fi
@@ -489,7 +495,7 @@ gem update one_gadget haiti-hash evil-winrm || true
 echo "[+] Updating pipx tools..."
 pipx upgrade-all || true
 echo "[+] Updating repositories..."
-cd ~/tools/repos
+cd ~/tools/repos || exit 0
 for dir in */; do
   echo "[*] Updating $dir"
   cd "$dir" && git pull && cd ..
@@ -512,7 +518,7 @@ YELLOW='\033[1;33m'
 CYAN='\033[0;36m'
 NC='\033[0m'
 
-echo -e "${CYAN}RUCKRAT RESET v3.3 — DEBIAN ZSH EDITION${NC}\n"
+echo -e "${CYAN}CTFBOX RESET v3.3 — DEBIAN ZSH EDITION${NC}\n"
 echo -e "${YELLOW}Captures:${NC} Zsh history + ALL live PTY buffers"
 echo -e "${YELLOW}Wipes:${NC} Creds, hosts, Kerberos, SSH"
 echo ""
@@ -597,7 +603,7 @@ log_progress "Phase 9: Creating Desktop Documentation"
 
 # COMMANDS.txt — no variables, safe with 'EOF'
 cat > "$USER_HOME/Desktop/COMMANDS.txt" << 'DOC_EOF'
-RUCKRAT CTFBOX v3.5 — QUICK COMMANDS
+CTFBOX v3.5 — QUICK COMMANDS
 -----------------------------------------
 newengagement <n> → Create engagement
 quickscan <ip> → Nmap quick
@@ -619,7 +625,7 @@ DOC_EOF
 
 # TOOL_LOCATIONS.txt — USES $USERNAME and $USER_HOME → must use unquoted EOF
 cat > "$USER_HOME/Desktop/TOOL_LOCATIONS.txt" << EOF
-RUCKRAT CTFBOX v3.5 — TOOL MAP
+CTFBOX v3.5 — TOOL MAP
 -----------------------------------------
 USER: $USERNAME
 HOME: $USER_HOME
@@ -659,7 +665,7 @@ clear
 echo -e "${GREEN}"
 cat << 'EOF'
 ╔═══════════════════════════════════════════════════════════════╗
-║               RUCKRAT CTFBOX v3.5 — READY               ║
+║               CTFBOX v3.5 — READY               ║
 ╚═══════════════════════════════════════════════════════════════╝
 EOF
 echo -e "${NC}\n"
@@ -677,4 +683,4 @@ if [[ "$reboot_choice" =~ ^[Yy]$ ]]; then
   sleep 5
   reboot
 fi
-echo -e "${GREEN}Happy Pentesting!.${NC}\n"
+echo -e "${GREEN}Happy Hacking!${NC}\n"
