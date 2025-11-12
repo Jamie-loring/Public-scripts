@@ -5,11 +5,6 @@
 
 #!/bin/bash
 set -e
-# ============================================
-# RUCKRAT CTFBOX v3.4 — FULL INSTALLER
-# Debian + Zsh + p10k + Field-Ready
-# "Mine. Not Kali. Not Parrot. MINE."
-# ============================================
 
 # Colors
 RED='\033[0;31m'
