@@ -228,8 +228,7 @@ pip3 install --break-system-packages impacket 2>&1 | tee -a /var/log/ctfbox-inst
 if ! command -v pipx &> /dev/null; then
     DEBIAN_FRONTEND=noninteractive apt install -y pipx || true
     pipx ensurepath || true
-    # Note: pipx is installed by root here, but later uses the user's path
-    export PATH="$PATH:/root/.local/bin" 
+    export PATH="$PATH:/root/.local/bin"
 fi
 pipx install git+https://github.com/Pennyw0rth/NetExec ldapdomaindump sprayhound RsaCtfTool 2>&1 | tee -a /var/log/ctfbox-install.log || log_warn "pipx install failed"
 pip3 install --break-system-packages \
@@ -238,7 +237,7 @@ pip3 install --break-system-packages \
     git-dumper roadrecon manspider mitmproxy pwntools ROPgadget \
     truffleHog 2>&1 | tee -a /var/log/ctfbox-install.log || true
 
-# Go tools - MODIFIED TO RUN AS $USERNAME
+# Go tools
 if command -v go &> /dev/null; then
     log_progress "Installing Go tools..."
 
@@ -269,7 +268,6 @@ if command -v go &> /dev/null; then
         go install -v github.com/nicocha30/ligolo-ng/cmd/agent@latest" \
         2>&1 | tee -a /var/log/ctfbox-install.log || true
     
-    # Clean up the unnecessary Go path exports in the root shell environment
     unset GOPATH
 fi
 
@@ -279,9 +277,10 @@ if command -v gem &> /dev/null; then
     gem install one_gadget haiti-hash evil-winrm 2>&1 | tee -a /var/log/ctfbox-install.log || true
 fi
 
-# Ysoserial
+# Ysoserial - FIX APPLIED: Added || true to prevent script exit on download failure
 if [[ ! -f "$USER_HOME/tools/ysoserial.jar" ]] && command -v java &> /dev/null; then
-    wget -q https://github.com/frohoff/ysoserial/releases/latest/download/ysoserial-all.jar -O "$USER_HOME/tools/ysoserial.jar" 2>/dev/null || log_warn "Failed to download ysoserial"
+    wget -q https://github.com/frohoff/ysoserial/releases/latest/download/ysoserial-all.jar \
+        -O "$USER_HOME/tools/ysoserial.jar" 2>/dev/null || log_warn "Failed to download ysoserial" || true
 fi
 
 # ============================================
