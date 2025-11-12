@@ -241,12 +241,3 @@ THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND.
 
 * This README and installer were created and maintained by Jamie Loring.
 * Downstream tooling and repository content are maintained by their original authors — please see each subrepo for their licenses and attribution.
-
----
-
-If you'd like:
-
-* A GitHub-flavored README with badges linked to GitHub Actions and release tags,
-* A separate `CONTRIBUTING.md`, `CODE_OF_CONDUCT.md`, or a `LICENSE` file in a specific formal license,
-
-I can add those as separate files.
