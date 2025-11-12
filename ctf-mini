@@ -418,6 +418,118 @@ else
 fi
 
 # ============================================
+# PHASE 3.5: DARK HACKER THEME
+# ============================================
+log_progress "Phase 3.5: Configuring Dark Pwnbox Theme"
+
+# Install dark themes if not present
+THEME_PACKAGES=("arc-theme" "papirus-icon-theme" "numix-gtk-theme" "materia-gtk-theme")
+for pkg in "${THEME_PACKAGES[@]}"; do
+    if ! package_installed "$pkg"; then
+        DEBIAN_FRONTEND=noninteractive apt install -y -qq "$pkg" 2>&1 | tee -a /var/log/ctfbox-install.log || true
+    fi
+done
+
+# Detect desktop environment and apply theme
+if command_exists gsettings && [[ -n "$DISPLAY" || -n "$WAYLAND_DISPLAY" ]]; then
+    log_info "Applying dark theme to desktop environment..."
+    
+    # Run as the target user
+    sudo -u "$USERNAME" bash << 'THEME_EOF'
+export DISPLAY=:0
+export DBUS_SESSION_BUS_ADDRESS="unix:path=/run/user/$(id -u)/bus"
+
+# MATE Desktop (Parrot OS default)
+if command -v mate-session &>/dev/null; then
+    gsettings set org.mate.interface gtk-theme 'Arc-Dark' 2>/dev/null || true
+    gsettings set org.mate.interface icon-theme 'Papirus-Dark' 2>/dev/null || true
+    gsettings set org.mate.Marco.general theme 'Arc-Dark' 2>/dev/null || true
+    gsettings set org.mate.background picture-filename '/usr/share/backgrounds/parrot/parrot-hacker.jpg' 2>/dev/null || true
+    echo "[+] MATE dark theme applied"
+fi
+
+# GNOME/GTK
+gsettings set org.gnome.desktop.interface gtk-theme 'Arc-Dark' 2>/dev/null || true
+gsettings set org.gnome.desktop.interface icon-theme 'Papirus-Dark' 2>/dev/null || true
+gsettings set org.gnome.desktop.interface color-scheme 'prefer-dark' 2>/dev/null || true
+
+# XFCE
+if command -v xfconf-query &>/dev/null; then
+    xfconf-query -c xsettings -p /Net/ThemeName -s "Arc-Dark" 2>/dev/null || true
+    xfconf-query -c xsettings -p /Net/IconThemeName -s "Papirus-Dark" 2>/dev/null || true
+    echo "[+] XFCE dark theme applied"
+fi
+THEME_EOF
+    
+    log_info "Desktop theme configured"
+else
+    log_warn "No display detected, skipping GUI theme configuration"
+fi
+
+# Configure terminal colors (works for MATE Terminal, GNOME Terminal, Terminator)
+log_info "Configuring terminal dark theme..."
+
+# Create dconf profile for dark terminal
+mkdir -p "$USER_HOME/.config/dconf"
+cat > "$USER_HOME/.config/mate-terminal-colors.dconf" << 'TERMINAL_EOF'
+[org/mate/terminal/profiles/default]
+background-color='#0C0C0C'
+foreground-color='#00FF00'
+palette='#0C0C0C:#C50F1F:#13A10E:#C19C00:#0037DA:#881798:#3A96DD:#CCCCCC:#767676:#E74856:#16C60C:#F9F1A5:#3B78FF:#B4009E:#61D6D6:#F2F2F2'
+use-theme-colors=false
+bold-color='#00FF00'
+cursor-color='#00FF00'
+visible-name='CTF-Dark'
+
+[org/mate/terminal/profiles/default/background]
+transparency-percent=10
+EOF
+
+# Apply terminal settings
+sudo -u "$USERNAME" bash << 'TERM_APPLY_EOF'
+if command -v dconf &>/dev/null; then
+    export DBUS_SESSION_BUS_ADDRESS="unix:path=/run/user/$(id -u)/bus"
+    dconf load /org/mate/terminal/ < "$HOME/.config/mate-terminal-colors.dconf" 2>/dev/null || true
+fi
+TERM_APPLY_EOF
+
+chown "$USERNAME":"$USERNAME" "$USER_HOME/.config/mate-terminal-colors.dconf" 2>/dev/null || true
+
+# Configure Terminator if installed
+if command_exists terminator; then
+    mkdir -p "$USER_HOME/.config/terminator"
+    cat > "$USER_HOME/.config/terminator/config" << 'TERMINATOR_EOF'
+[global_config]
+  suppress_multiple_term_dialog = True
+[keybindings]
+[profiles]
+  [[default]]
+    background_color = "#0c0c0c"
+    background_darkness = 0.9
+    background_type = transparent
+    cursor_color = "#00ff00"
+    foreground_color = "#00ff00"
+    palette = "#0c0c0c:#c50f1f:#13a10e:#c19c00:#0037da:#881798:#3a96dd:#cccccc:#767676:#e74856:#16c60c:#f9f1a5:#3b78ff:#b4009e:#61d6d6:#f2f2f2"
+    scrollback_infinite = True
+    use_system_font = False
+    font = Monospace 11
+[layouts]
+  [[default]]
+    [[[window0]]]
+      type = Window
+      parent = ""
+    [[[child1]]]
+      type = Terminal
+      parent = window0
+[plugins]
+TERMINATOR_EOF
+    chown "$USERNAME":"$USERNAME" "$USER_HOME/.config/terminator/config" 2>/dev/null || true
+    log_info "Terminator dark theme configured"
+fi
+
+log_info "Dark hacker theme applied! 🎨"
+
+# ============================================
 # PHASE 4: TOOLS INSTALLATION
 # ============================================
 log_progress "Phase 4: Installing Pentesting Tools"
@@ -664,8 +776,24 @@ export PATH=$PATH:$HOME/go/bin:$HOME/.local/bin
 export EDITOR=vim
 export GOPATH=$HOME/go
 
+# Terminal colors for dark theme
+export LS_COLORS='di=1;36:ln=1;35:so=1;32:pi=1;33:ex=1;31:bd=1;34:cd=1;34:su=0;41:sg=0;46:tw=0;42:ow=0;43'
+export GREP_COLOR='1;32'
+
 # Auto-update nuclei templates in background
 (nuclei -update-templates -silent &>/dev/null &)
+
+# Cool banner on new terminal
+if [[ -o interactive ]] && [[ -z "$TMUX" ]]; then
+    echo -e "\033[1;36m"
+    cat << 'BANNER'
+    ╔═══════════════════════════════════════╗
+    ║       CTF BOX v3.6 - READY           ║
+    ║    Type 'tools' to get started       ║
+    ╚═══════════════════════════════════════╝
+BANNER
+    echo -e "\033[0m"
+fi
 
 # System aliases
 alias ll='ls -lah'
@@ -1024,6 +1152,7 @@ echo -e "${CYAN}Features:${NC}"
 echo -e "  • Smart installation (skips existing)"
 echo -e "  • Resume capability"
 echo -e "  • Better error handling"
+echo -e "  • Dark Pwnbox-style theme 🎨"
 echo -e "${CYAN}Cracking:${NC} john, hashcat"
 echo -e "${CYAN}Web:${NC} sqlmap"
 echo -e "${CYAN}Windows:${NC} runasCs.exe, Rubeus, SharpHound"
@@ -1042,4 +1171,3 @@ else
     echo -e "\n${YELLOW}Remember to log out and log back in as ${GREEN}$USERNAME${NC} for changes to take effect!"
     echo -e "${CYAN}Or manually reboot with:${NC} sudo reboot"
 fi
-echo -e "${GREEN}Happy Hacking!${NC}\n"
