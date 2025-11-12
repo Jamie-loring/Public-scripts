@@ -492,12 +492,19 @@ log_progress "Phase 3.6: Installing Firefox Extensions"
 if command_exists firefox || command_exists firefox-esr; then
     log_info "Configuring Firefox for pentesting..."
     
-    # Create Firefox policy directory
-    mkdir -p /usr/lib/firefox/distribution
-    mkdir -p /usr/lib/firefox-esr/distribution
+    # Detect Firefox installation path
+    FIREFOX_PATH=""
+    if [[ -d "/usr/lib/firefox" ]]; then
+        FIREFOX_PATH="/usr/lib/firefox"
+    elif [[ -d "/usr/lib/firefox-esr" ]]; then
+        FIREFOX_PATH="/usr/lib/firefox-esr"
+    fi
     
-    # Firefox Enterprise Policies for Extensions
-    cat > /usr/lib/firefox/distribution/policies.json << 'FIREFOX_POLICY_EOF'
+    # Method 1: Enterprise Policies (system-wide)
+    if [[ -n "$FIREFOX_PATH" ]]; then
+        mkdir -p "$FIREFOX_PATH/distribution"
+        
+        cat > "$FIREFOX_PATH/distribution/policies.json" << EOF
 {
   "policies": {
     "ExtensionSettings": {
@@ -520,10 +527,6 @@ if command_exists firefox || command_exists firefox-esr; then
       "{3579f63b-d8ee-424f-bbb6-6d0ce3285e6a}": {
         "installation_mode": "force_installed",
         "install_url": "https://addons.mozilla.org/firefox/downloads/latest/user-agent-string-switcher/latest.xpi"
-      },
-      "hacktools@hacktools.com": {
-        "installation_mode": "force_installed",
-        "install_url": "https://addons.mozilla.org/firefox/downloads/latest/hacktools/latest.xpi"
       }
     },
     "Preferences": {
@@ -540,94 +543,126 @@ if command_exists firefox || command_exists firefox-esr; then
     },
     "DNSOverHTTPS": {
       "Enabled": false
-    },
-    "FirefoxHome": {
-      "Search": true,
-      "TopSites": false,
-      "Highlights": false,
-      "Pocket": false,
-      "Snippets": false
-    },
-    "UserMessaging": {
-      "WhatsNew": false,
-      "ExtensionRecommendations": false,
-      "FeatureRecommendations": false
     }
   }
 }
-FIREFOX_POLICY_EOF
-
-    # Copy to Firefox ESR as well
-    cp /usr/lib/firefox/distribution/policies.json /usr/lib/firefox-esr/distribution/policies.json 2>/dev/null || true
-    
-    log_info "Firefox policies configured"
-    
-    # Create user.js for additional Firefox hardening/pentesting configs
-    mkdir -p "$USER_HOME/.mozilla/firefox"
-    
-    # Find or create default profile
-    if [[ ! -f "$USER_HOME/.mozilla/firefox/profiles.ini" ]]; then
-        sudo -u "$USERNAME" timeout 5 firefox --headless --no-remote 2>/dev/null || true
-        sleep 2
+EOF
+        log_info "Firefox enterprise policies configured"
     fi
     
-    # Get the default profile directory
-    FIREFOX_PROFILE=$(grep -E "^Path=" "$USER_HOME/.mozilla/firefox/profiles.ini" 2>/dev/null | head -n1 | cut -d'=' -f2)
+    # Method 2: Download extensions to a staging area for manual install
+    mkdir -p "$USER_HOME/.firefox-extensions"
+    log_info "Downloading Firefox extensions..."
     
-    if [[ -n "$FIREFOX_PROFILE" ]]; then
-        PROFILE_PATH="$USER_HOME/.mozilla/firefox/$FIREFOX_PROFILE"
-        mkdir -p "$PROFILE_PATH"
-        
-        cat > "$PROFILE_PATH/user.js" << 'USER_JS_EOF'
-// CTF Box Firefox Configuration
+    declare -A EXTENSIONS=(
+        ["darkreader"]="https://addons.mozilla.org/firefox/downloads/latest/darkreader/latest.xpi"
+        ["cookie-editor"]="https://addons.mozilla.org/firefox/downloads/latest/cookie-editor/latest.xpi"
+        ["foxyproxy"]="https://addons.mozilla.org/firefox/downloads/latest/foxyproxy-standard/latest.xpi"
+        ["wappalyzer"]="https://addons.mozilla.org/firefox/downloads/latest/wappalyzer/latest.xpi"
+        ["user-agent-switcher"]="https://addons.mozilla.org/firefox/downloads/latest/user-agent-string-switcher/latest.xpi"
+        ["hacktools"]="https://addons.mozilla.org/firefox/downloads/latest/hacktools/latest.xpi"
+    )
+    
+    for ext_name in "${!EXTENSIONS[@]}"; do
+        ext_url="${EXTENSIONS[$ext_name]}"
+        if [[ ! -f "$USER_HOME/.firefox-extensions/${ext_name}.xpi" ]]; then
+            wget --timeout=15 --tries=2 -q "$ext_url" -O "$USER_HOME/.firefox-extensions/${ext_name}.xpi" 2>/dev/null && \
+                log_info "Downloaded: $ext_name" || \
+                log_warn "Failed to download: $ext_name"
+        else
+            log_skip "$ext_name already downloaded"
+        fi
+    done
+    
+    chown -R "$USERNAME":"$USERNAME" "$USER_HOME/.firefox-extensions" 2>/dev/null || true
+    
+    # Method 3: Create installation script for user
+    cat > "$USER_HOME/install-firefox-extensions.sh" << 'INSTALL_SCRIPT_EOF'
+#!/bin/bash
+# Firefox Extension Installer for CTF Box
+
+echo "[+] Firefox Extension Installer"
+echo ""
+
+if ! command -v firefox &>/dev/null && ! command -v firefox-esr &>/dev/null; then
+    echo "[-] Firefox not found!"
+    exit 1
+fi
+
+FIREFOX_CMD=$(command -v firefox || command -v firefox-esr)
+
+# Check if Firefox is running
+if pgrep -x "firefox" >/dev/null || pgrep -x "firefox-esr" >/dev/null; then
+    echo "[!] Firefox is running. Please close Firefox and run this script again."
+    exit 1
+fi
+
+echo "[*] Installing extensions from ~/.firefox-extensions/"
+
+# Install each extension
+for xpi in ~/.firefox-extensions/*.xpi; do
+    if [[ -f "$xpi" ]]; then
+        ext_name=$(basename "$xpi" .xpi)
+        echo "[*] Installing: $ext_name"
+        "$FIREFOX_CMD" "$xpi" &
+        sleep 3
+        pkill -f firefox
+    fi
+done
+
+echo ""
+echo "[+] Extensions installed! Launch Firefox to complete setup."
+echo "[!] You may need to approve/enable extensions on first launch."
+INSTALL_SCRIPT_EOF
+    
+    chmod +x "$USER_HOME/install-firefox-extensions.sh"
+    chown "$USERNAME":"$USERNAME" "$USER_HOME/install-firefox-extensions.sh"
+    log_info "Created install-firefox-extensions.sh"
+    
+    # Create user.js for Firefox preferences
+    mkdir -p "$USER_HOME/.mozilla/firefox"
+    
+    cat > "$USER_HOME/.mozilla/firefox/user.js.template" << 'USER_JS_EOF'
+// CTF Box Firefox Configuration - Copy this to your profile folder
+// Location: ~/.mozilla/firefox/XXXXXXXX.default/user.js
+
 // Disable auto-updates
 user_pref("app.update.auto", false);
 user_pref("app.update.enabled", false);
 
 // Dark theme
 user_pref("devtools.theme", "dark");
-user_pref("ui.systemUsesDarkTheme", 1);
 
 // Developer tools
 user_pref("devtools.debugger.remote-enabled", true);
 user_pref("devtools.chrome.enabled", true);
-user_pref("devtools.debugger.prompt-connection", false);
 
 // Security settings for pentesting
 user_pref("security.fileuri.strict_origin_policy", false);
-user_pref("security.csp.enable", false);
 user_pref("network.http.referer.XOriginPolicy", 0);
 
-// Disable DNS over HTTPS for pentesting
+// Disable DNS over HTTPS
 user_pref("network.trr.mode", 5);
 
 // Performance
 user_pref("browser.cache.disk.enable", false);
-user_pref("browser.sessionhistory.max_entries", 10);
 
-// Privacy (disable for pentesting)
+// Privacy (disabled for pentesting)
 user_pref("privacy.resistFingerprinting", false);
 user_pref("privacy.trackingprotection.enabled", false);
 
 // Downloads
 user_pref("browser.download.useDownloadDir", true);
-user_pref("browser.download.manager.showWhenStarting", false);
 
-// Disable annoying features
+// Disable warnings
 user_pref("browser.tabs.warnOnClose", false);
 user_pref("browser.warnOnQuit", false);
-user_pref("full-screen-api.warning.timeout", 0);
 USER_JS_EOF
-        
-        chown -R "$USERNAME":"$USERNAME" "$PROFILE_PATH" 2>/dev/null || true
-        log_info "Firefox user preferences configured"
-    else
-        log_warn "Could not detect Firefox profile, user.js will be created on first launch"
-    fi
     
     chown -R "$USERNAME":"$USERNAME" "$USER_HOME/.mozilla" 2>/dev/null || true
     
-    log_info "Firefox extensions installed: Dark Reader, Cookie Editor, FoxyProxy, Wappalyzer, HackTools, User-Agent Switcher"
+    log_info "Firefox extensions prepared"
+    log_warn "After reboot, run: ~/install-firefox-extensions.sh (or extensions will auto-install)"
 else
     log_warn "Firefox not found, skipping extension installation"
 fi
@@ -1191,6 +1226,9 @@ host → cd /media/sf_ctf-tools (VirtualBox shared folder)
 mitm-relay → mitm6 + ntlmrelayx combo
 evil → evil-winrm -i target
 wl-dir → directory-list-2.3-medium.txt
+
+FIREFOX:
+~/install-firefox-extensions.sh → Install Firefox addons
 DOC_EOF
     log_info "Created COMMANDS.txt"
 else
@@ -1233,39 +1271,46 @@ if [[ ! -f "$USER_HOME/Desktop/FIREFOX_EXTENSIONS.txt" ]]; then
 CTFBOX v3.6 — FIREFOX EXTENSIONS
 -----------------------------------------
 
-✅ INSTALLED EXTENSIONS:
+✅ EXTENSIONS TO BE INSTALLED:
 
-1. Dark Reader
-   - Auto dark mode for all websites
-   - Prevents eye strain during long sessions
-
-2. Cookie Editor
-   - View, edit, delete cookies
-   - Import/export cookies
-   - Essential for session hijacking tests
-
-3. FoxyProxy
-   - Quick proxy switching (Burp, ZAP, etc)
-   - Pattern-based routing
-   - Pre-configured for localhost:8080
-
-4. Wappalyzer
-   - Identify web technologies
-   - Detect frameworks, CMS, libraries
-   - Quick recon on target sites
-
-5. HackTools
-   - Built-in pentesting cheat sheets
-   - Reverse shells, payloads, encoders
-   - XSS, SQLi reference
-
-6. User-Agent Switcher
-   - Spoof browser identity
-   - Test mobile views
-   - Bypass user-agent filters
+1. Dark Reader - Auto dark mode for all websites
+2. Cookie Editor - View/edit/delete cookies
+3. FoxyProxy - Quick proxy switching (Burp/ZAP)
+4. Wappalyzer - Identify web technologies
+5. HackTools - Pentesting cheat sheets & payloads
+6. User-Agent Switcher - Spoof browser identity
 
 -----------------------------------------
-QUICK START:
+INSTALLATION:
+
+METHOD 1 (Automatic - First Launch):
+• Open Firefox after reboot
+• Extensions auto-install via enterprise policy
+• Wait 30 seconds for downloads
+• Approve extensions when prompted
+
+METHOD 2 (Manual - If Auto-Install Fails):
+• Close Firefox completely
+• Run: ~/install-firefox-extensions.sh
+• Launch Firefox
+• Approve each extension when prompted
+
+-----------------------------------------
+TROUBLESHOOTING:
+
+If extensions don't appear:
+1. Check ~/install-firefox-extensions.sh exists
+2. Run it with Firefox closed
+3. Check ~/.firefox-extensions/ for .xpi files
+4. Manually drag .xpi files into Firefox window
+
+Check if policy is active:
+• Open Firefox
+• Type: about:policies
+• Should show "ExtensionSettings" policy
+
+-----------------------------------------
+QUICK START (AFTER INSTALLATION):
 
 • FoxyProxy: Click icon → Add Burp (127.0.0.1:8080)
 • Cookie Editor: Right-click page → Inspect cookies
@@ -1282,12 +1327,12 @@ FIREFOX SETTINGS:
 • DNS-over-HTTPS: Disabled
 
 -----------------------------------------
-TIPS:
+FILE LOCATIONS:
 
-• All extensions load automatically
-• Dark Reader syncs with system theme
-• FoxyProxy patterns saved per-profile
-• Extensions update automatically
+• Policy: /usr/lib/firefox/distribution/policies.json
+• Extensions: ~/.firefox-extensions/*.xpi
+• Installer: ~/install-firefox-extensions.sh
+• Config: ~/.mozilla/firefox/user.js.template
 FIREFOX_DOC_EOF
     log_info "Created FIREFOX_EXTENSIONS.txt"
 else
@@ -1361,6 +1406,7 @@ echo -e "  • Better error handling"
 echo -e "${CYAN}Firefox Extensions:${NC}"
 echo -e "  • Dark Reader, Cookie Editor, FoxyProxy"
 echo -e "  • Wappalyzer, HackTools, User-Agent Switcher"
+echo -e "  • Run: ${GREEN}~/install-firefox-extensions.sh${NC} if not auto-installed"
 echo -e "${CYAN}Cracking:${NC} john, hashcat"
 echo -e "${CYAN}Web:${NC} sqlmap"
 echo -e "${CYAN}Windows:${NC} runasCs.exe, Rubeus, SharpHound"
@@ -1369,6 +1415,7 @@ echo -e "${CYAN}Reset:${NC} ~/Desktop/RESET_CTF_BOX.sh"
 echo -e "${CYAN}Update:${NC} ~/scripts/update-tools.sh"
 echo ""
 echo -e "${YELLOW}IMPORTANT:${NC} Reboot required to log in as ${GREEN}$USERNAME${NC}"
+echo -e "${YELLOW}After reboot:${NC} Open Firefox, extensions auto-install (or run script)"
 echo ""
 read -p "Reboot now? (y/n): " reboot_choice
 if [[ "$reboot_choice" =~ ^[Yy]$ ]]; then
