@@ -3,6 +3,11 @@
 # This script is 100% free of charge and free to modify and distrubute as you see fit, but you are not
 # allowed to charge for it. the tools are free and thus so should be this script.
 
+# oracle vbox drivers still need installed via ISO on mounted image. unless you
+# can fork this repo and get it to work. I haven't figured it out.
+
+# last updated 112/12/2025
+
 # run with sudo bash ./<script>.sh
 
 #!/bin/bash
