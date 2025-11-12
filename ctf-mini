@@ -97,6 +97,45 @@ DEBIAN_FRONTEND=noninteractive apt install -y -qq \
   2>&1 | tee -a /var/log/ctfbox-install.log
 
 # ============================================
+# PHASE 1.5: VIRTUALBOX GUEST ADDITIONS
+# ============================================
+log_progress "Phase 1.5: Installing VirtualBox Guest Additions"
+if hostnamectl | grep -i 'virtualization.*oracle' >/dev/null; then
+  DEBIAN_FRONTEND=noninteractive apt install -y -qq \
+    virtualbox-guest-dkms virtualbox-guest-utils virtualbox-guest-x11 \
+    2>&1 | tee -a /var/log/ctfbox-install.log
+
+  # Enable clipboard and drag-and-drop
+  VBoxClient --clipboard &>/dev/null &
+  VBoxClient --draganddrop &>/dev/null &
+
+  # Autostart on login
+  mkdir -p "$USER_HOME/.config/autostart"
+  cat > "$USER_HOME/.config/autostart/vboxclient-clipboard.desktop" << 'EOF'
+[Desktop Entry]
+Type=Application
+Exec=/usr/bin/VBoxClient --clipboard
+Hidden=false
+X-GNOME-Autostart-enabled=true
+Name=VBoxClient Clipboard
+Comment=Enable bidirectional clipboard
+EOF
+  cat > "$USER_HOME/.config/autostart/vboxclient-dnd.desktop" << 'EOF'
+[Desktop Entry]
+Type=Application
+Exec=/usr/bin/VBoxClient --draganddrop
+Hidden=false
+X-GNOME-Autostart-enabled=true
+Name=VBoxClient Drag and Drop
+Comment=Enable drag and drop
+EOF
+  chown -R "$USERNAME":"$USERNAME" "$USER_HOME/.config/autostart" 2>/dev/null || true
+  log_info "VirtualBox Guest Additions: copy-paste, drag-drop, shared folders ready"
+else
+  log_warn "Not in VirtualBox. Skipping Guest Additions."
+fi
+
+# ============================================
 # PHASE 2: USER SETUP
 # ============================================
 log_progress "Phase 2: User Account Configuration"
@@ -233,12 +272,12 @@ log_progress "Phase 4.5: Compiling & Downloading runasCs + Win Binaries"
 mkdir -p "$USER_HOME/tools/windows"
 
 # Compile runasCs (x86_64)
-if ! command -v x86_64-w64-mingw32-gcc &>/dev/null; then
-  log_warn "MinGW not found. Skipping runasCs compile."
-else
+if command -v x86_64-w64-mingw32-gcc &>/dev/null; then
   wget -q https://raw.githubusercontent.com/antonioCoco/RunasCs/master/RunasCs.c -O /tmp/RunasCs.c
   x86_64-w64-mingw32-gcc /tmp/RunasCs.c -o "$USER_HOME/tools/windows/runasCs.exe" -lwininet -lws2_32 -static 2>/dev/null && log_info "runasCs.exe compiled"
   rm -f /tmp/RunasCs.c
+else
+  log_warn "MinGW not found. Skipping runasCs compile."
 fi
 
 # Download pre-compiled Windows tools
@@ -382,6 +421,10 @@ alias wordlists='cd ~/tools/wordlists'
 alias scripts='cd ~/tools/scripts'
 alias engagements='cd ~/engagements'
 alias win='cd ~/tools/windows'
+
+# VM Tools
+[[ -d "/media/sf_ctf-tools" ]] && alias host='cd /media/sf_ctf-tools'
+[[ -d "/media/ctf-tools" ]] && alias host='cd /media/ctf-tools'
 
 # Functions
 newengagement() {
@@ -552,7 +595,7 @@ chmod +x "$USER_HOME/Desktop/RESET_CTF_BOX.sh"
 # ============================================
 log_progress "Phase 9: Creating Desktop Documentation"
 cat > "$USER_HOME/Desktop/COMMANDS.txt" << 'DOC_EOF'
-RUCKRAT CTFBOX v3.4 — QUICK COMMANDS
+RUCKRAT CTFBOX v3.5 — QUICK COMMANDS
 -----------------------------------------
 newengagement <n> → Create engagement
 quickscan <ip> → Nmap quick
@@ -565,6 +608,7 @@ hashcat → GPU NTLM cracking
 sql → sqlmap -u URL
 runas → wine ~/tools/windows/runasCs.exe
 win → cd ~/tools/windows
+host → cd /media/sf_ctf-tools (VirtualBox shared folder)
 
 mitm-relay → mitm6 + ntlmrelayx combo
 evil → evil-winrm -i target
@@ -572,7 +616,7 @@ wl-dir → directory-list-2.3-medium.txt
 DOC_EOF
 
 cat > "$USER_HOME/Desktop/TOOL_LOCATIONS.txt" << 'LOC_EOF'
-RUCKRAT CTFBOX v3.4 — TOOL MAP
+RUCKRAT CTFBOX v3.5 — TOOL MAP
 -----------------------------------------
 USER: $USERNAME
 HOME: $USER_HOME
@@ -582,6 +626,11 @@ Go Tools: ~/go/bin/
 Python: pipx + global
 Ruby: evil-winrm, one_gadget
 Windows: ~/tools/windows/
+
+VirtualBox:
+  Copy-Paste: Ctrl+C/V (bidirectional)
+  Drag & Drop: Enabled
+  Shared Folder: /media/sf_ctf-tools → alias host
 
 Key Files:
   ~/.zshrc
@@ -607,7 +656,7 @@ clear
 echo -e "${GREEN}"
 cat << 'EOF'
 ╔═══════════════════════════════════════════════════════════════╗
-║               RUCKRAT CTFBOX v3.4 — READY               ║
+║                CTFBOX v3.5 — READY               ║
 ╚═══════════════════════════════════════════════════════════════╝
 EOF
 echo -e "${NC}\n"
@@ -616,6 +665,7 @@ echo -e "${YELLOW}Home:${NC} ${GREEN}$USER_HOME${NC}"
 echo -e "${CYAN}Cracking:${NC} john, hashcat"
 echo -e "${CYAN}Web:${NC} sqlmap"
 echo -e "${CYAN}Windows:${NC} runasCs.exe, Rubeus, SharpHound"
+echo -e "${CYAN}VirtualBox:${NC} Copy-Paste + Drag & Drop + Shared Folder"
 echo -e "${CYAN}Reset:${NC} ~/Desktop/RESET_CTF_BOX.sh"
 echo ""
 read -p "Reboot now? (y/n): " reboot_choice
@@ -624,4 +674,4 @@ if [[ "$reboot_choice" =~ ^[Yy]$ ]]; then
   sleep 5
   reboot
 fi
-echo -e "${GREEN}Happy Hacking! MINE. NOT KALI. NOT PARROT. MINE.${NC}\n"
+echo -e "${GREEN}Happy Pentesting!.${NC}\n"
