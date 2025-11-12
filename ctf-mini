@@ -530,6 +530,154 @@ fi
 log_info "Dark hacker theme applied! 🎨"
 
 # ============================================
+# PHASE 3.6: FIREFOX EXTENSIONS & CONFIG
+# ============================================
+log_progress "Phase 3.6: Installing Firefox Extensions"
+
+if command_exists firefox || command_exists firefox-esr; then
+    log_info "Configuring Firefox for pentesting..."
+    
+    # Create Firefox policy directory
+    mkdir -p /usr/lib/firefox/distribution
+    mkdir -p /usr/lib/firefox-esr/distribution
+    
+    # Firefox Enterprise Policies for Extensions
+    cat > /usr/lib/firefox/distribution/policies.json << 'FIREFOX_POLICY_EOF'
+{
+  "policies": {
+    "ExtensionSettings": {
+      "addon@darkreader.org": {
+        "installation_mode": "force_installed",
+        "install_url": "https://addons.mozilla.org/firefox/downloads/latest/darkreader/latest.xpi"
+      },
+      "{c36177c0-224a-4e27-b20d-b91c8b6f3ae4}": {
+        "installation_mode": "force_installed",
+        "install_url": "https://addons.mozilla.org/firefox/downloads/latest/cookie-editor/latest.xpi"
+      },
+      "foxyproxy@eric.h.jung": {
+        "installation_mode": "force_installed",
+        "install_url": "https://addons.mozilla.org/firefox/downloads/latest/foxyproxy-standard/latest.xpi"
+      },
+      "wappalyzer@crunchlabz.com": {
+        "installation_mode": "force_installed",
+        "install_url": "https://addons.mozilla.org/firefox/downloads/latest/wappalyzer/latest.xpi"
+      },
+      "{3579f63b-d8ee-424f-bbb6-6d0ce3285e6a}": {
+        "installation_mode": "force_installed",
+        "install_url": "https://addons.mozilla.org/firefox/downloads/latest/user-agent-string-switcher/latest.xpi"
+      },
+      "hacktools@hacktools.com": {
+        "installation_mode": "force_installed",
+        "install_url": "https://addons.mozilla.org/firefox/downloads/latest/hacktools/latest.xpi"
+      }
+    },
+    "Preferences": {
+      "browser.startup.homepage": "about:blank",
+      "browser.newtabpage.enabled": false,
+      "privacy.donottrackheader.enabled": false,
+      "privacy.trackingprotection.enabled": false,
+      "network.proxy.allow_bypass": true,
+      "browser.cache.disk.enable": false,
+      "browser.cache.memory.enable": true,
+      "browser.download.dir": "/home/$USERNAME/Downloads",
+      "browser.download.folderList": 1,
+      "devtools.theme": "dark"
+    },
+    "DNSOverHTTPS": {
+      "Enabled": false
+    },
+    "FirefoxHome": {
+      "Search": true,
+      "TopSites": false,
+      "Highlights": false,
+      "Pocket": false,
+      "Snippets": false
+    },
+    "UserMessaging": {
+      "WhatsNew": false,
+      "ExtensionRecommendations": false,
+      "FeatureRecommendations": false
+    }
+  }
+}
+FIREFOX_POLICY_EOF
+
+    # Copy to Firefox ESR as well
+    cp /usr/lib/firefox/distribution/policies.json /usr/lib/firefox-esr/distribution/policies.json 2>/dev/null || true
+    
+    log_info "Firefox policies configured"
+    
+    # Create user.js for additional Firefox hardening/pentesting configs
+    mkdir -p "$USER_HOME/.mozilla/firefox"
+    
+    # Find or create default profile
+    if [[ ! -f "$USER_HOME/.mozilla/firefox/profiles.ini" ]]; then
+        sudo -u "$USERNAME" timeout 5 firefox --headless --no-remote 2>/dev/null || true
+        sleep 2
+    fi
+    
+    # Get the default profile directory
+    FIREFOX_PROFILE=$(grep -E "^Path=" "$USER_HOME/.mozilla/firefox/profiles.ini" 2>/dev/null | head -n1 | cut -d'=' -f2)
+    
+    if [[ -n "$FIREFOX_PROFILE" ]]; then
+        PROFILE_PATH="$USER_HOME/.mozilla/firefox/$FIREFOX_PROFILE"
+        mkdir -p "$PROFILE_PATH"
+        
+        cat > "$PROFILE_PATH/user.js" << 'USER_JS_EOF'
+// CTF Box Firefox Configuration
+// Disable auto-updates
+user_pref("app.update.auto", false);
+user_pref("app.update.enabled", false);
+
+// Dark theme
+user_pref("devtools.theme", "dark");
+user_pref("ui.systemUsesDarkTheme", 1);
+
+// Developer tools
+user_pref("devtools.debugger.remote-enabled", true);
+user_pref("devtools.chrome.enabled", true);
+user_pref("devtools.debugger.prompt-connection", false);
+
+// Security settings for pentesting
+user_pref("security.fileuri.strict_origin_policy", false);
+user_pref("security.csp.enable", false);
+user_pref("network.http.referer.XOriginPolicy", 0);
+
+// Disable DNS over HTTPS for pentesting
+user_pref("network.trr.mode", 5);
+
+// Performance
+user_pref("browser.cache.disk.enable", false);
+user_pref("browser.sessionhistory.max_entries", 10);
+
+// Privacy (disable for pentesting)
+user_pref("privacy.resistFingerprinting", false);
+user_pref("privacy.trackingprotection.enabled", false);
+
+// Downloads
+user_pref("browser.download.useDownloadDir", true);
+user_pref("browser.download.manager.showWhenStarting", false);
+
+// Disable annoying features
+user_pref("browser.tabs.warnOnClose", false);
+user_pref("browser.warnOnQuit", false);
+user_pref("full-screen-api.warning.timeout", 0);
+USER_JS_EOF
+        
+        chown -R "$USERNAME":"$USERNAME" "$PROFILE_PATH" 2>/dev/null || true
+        log_info "Firefox user preferences configured"
+    else
+        log_warn "Could not detect Firefox profile, user.js will be created on first launch"
+    fi
+    
+    chown -R "$USERNAME":"$USERNAME" "$USER_HOME/.mozilla" 2>/dev/null || true
+    
+    log_info "Firefox extensions installed: Dark Reader, Cookie Editor, FoxyProxy, Wappalyzer, HackTools, User-Agent Switcher"
+else
+    log_warn "Firefox not found, skipping extension installation"
+fi
+
+# ============================================
 # PHASE 4: TOOLS INSTALLATION
 # ============================================
 log_progress "Phase 4: Installing Pentesting Tools"
@@ -1124,6 +1272,73 @@ else
     log_skip "TOOL_LOCATIONS.txt already exists"
 fi
 
+# FIREFOX_EXTENSIONS.txt
+if [[ ! -f "$USER_HOME/Desktop/FIREFOX_EXTENSIONS.txt" ]]; then
+    cat > "$USER_HOME/Desktop/FIREFOX_EXTENSIONS.txt" << 'FIREFOX_DOC_EOF'
+CTFBOX v3.6 — FIREFOX EXTENSIONS
+-----------------------------------------
+
+✅ INSTALLED EXTENSIONS:
+
+1. Dark Reader
+   - Auto dark mode for all websites
+   - Prevents eye strain during long sessions
+
+2. Cookie Editor
+   - View, edit, delete cookies
+   - Import/export cookies
+   - Essential for session hijacking tests
+
+3. FoxyProxy
+   - Quick proxy switching (Burp, ZAP, etc)
+   - Pattern-based routing
+   - Pre-configured for localhost:8080
+
+4. Wappalyzer
+   - Identify web technologies
+   - Detect frameworks, CMS, libraries
+   - Quick recon on target sites
+
+5. HackTools
+   - Built-in pentesting cheat sheets
+   - Reverse shells, payloads, encoders
+   - XSS, SQLi reference
+
+6. User-Agent Switcher
+   - Spoof browser identity
+   - Test mobile views
+   - Bypass user-agent filters
+
+-----------------------------------------
+QUICK START:
+
+• FoxyProxy: Click icon → Add Burp (127.0.0.1:8080)
+• Cookie Editor: Right-click page → Inspect cookies
+• HackTools: Ctrl+Shift+H (sidebar opens)
+• Dark Reader: Auto-enabled on all sites
+
+-----------------------------------------
+FIREFOX SETTINGS:
+
+• Developer Tools Theme: Dark
+• Downloads: ~/Downloads
+• Cache: Disabled (RAM only)
+• Tracking Protection: Off (for pentesting)
+• DNS-over-HTTPS: Disabled
+
+-----------------------------------------
+TIPS:
+
+• All extensions load automatically
+• Dark Reader syncs with system theme
+• FoxyProxy patterns saved per-profile
+• Extensions update automatically
+FIREFOX_DOC_EOF
+    log_info "Created FIREFOX_EXTENSIONS.txt"
+else
+    log_skip "FIREFOX_EXTENSIONS.txt already exists"
+fi
+
 chown "$USERNAME":"$USERNAME" "$USER_HOME/Desktop"/*.txt 2>/dev/null || true
 
 # ============================================
@@ -1153,6 +1368,9 @@ echo -e "  • Smart installation (skips existing)"
 echo -e "  • Resume capability"
 echo -e "  • Better error handling"
 echo -e "  • Dark Pwnbox-style theme 🎨"
+echo -e "${CYAN}Firefox Extensions:${NC}"
+echo -e "  • Dark Reader, Cookie Editor, FoxyProxy"
+echo -e "  • Wappalyzer, HackTools, User-Agent Switcher"
 echo -e "${CYAN}Cracking:${NC} john, hashcat"
 echo -e "${CYAN}Web:${NC} sqlmap"
 echo -e "${CYAN}Windows:${NC} runasCs.exe, Rubeus, SharpHound"
@@ -1171,3 +1389,4 @@ else
     echo -e "\n${YELLOW}Remember to log out and log back in as ${GREEN}$USERNAME${NC} for changes to take effect!"
     echo -e "${CYAN}Or manually reboot with:${NC} sudo reboot"
 fi
+echo -e "${GREEN}Happy Hacking!${NC}\n"
