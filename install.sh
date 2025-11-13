@@ -1,4 +1,4 @@
-#!/bin/bash
+a#!/bin/bash
 # ============================================
 # PROJECT SHELLSHOCK v1.01 (FIXED)
 # Automated Pentesting Environment Bootstrap
