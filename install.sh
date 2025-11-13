@@ -1,17 +1,15 @@
 #!/bin/bash
 # ============================================
-# PROJECT SHELLSHOCK v1.04 (MAX STABILITY)
+# PROJECT SHELLSHOCK v1.05 (Final Test Build)
 # Automated Pentesting Environment Bootstrap
 # Debian/Ubuntu/Parrot Compatible
 # Author: Jamie Loring
 # Last updated: 2025-11-13
 # ============================================
 # FIXES:
-# - Go Tools: Confirmed correct paths for windapsearch; removed unstable pre2k.
-# - Win Binaries: Switched RunasCs to GitHub API ZIP lookup for reliable download.
-# - Win Binaries: Switched SharpHound to rely on APT installation path.
-# - Win Binaries: Switched Seatbelt to build-from-source (requires dotnet).
-# - Foundation: Useradd, NTP, Go Toolchain are stable.
+# - Python PATH Conflict: Moved Responder and Certipy-ad to isolated PIPX installs.
+# - Go Toolchain: Confirmed clean install and corrected problematic module paths.
+# - Foundational Fixes: Useradd, NTP, Go Toolchain are stable.
 # ============================================
 # DISCLAIMER: This tool is for authorized testing only.
 # Request permission before use. Stay legal.
@@ -139,7 +137,7 @@ cat << 'EOF'
 ║    ╚██████╗  ██║  ██║        ██████╔╝╚██████╔╝██╔╝ ██╗     ║
 ║     ╚═════╝  ╚═╝  ╚═╝        ╚═════╝  ╚═════╝ ╚═╝  ╚═╝     ║
 ║                                                             ║
-║              Project ShellShock 1.03                        ║
+║              Project ShellShock 1.05                        ║
 ║              A love letter to Pentesting by Jamie Loring    ║
 ║                                                             ║
 ╚═══════════════════════════════════════════════════════════════╝
@@ -770,7 +768,7 @@ PROFILES_INI_EOF
         # Step 4: Create user.js preferences file
         log_info "Configuring Firefox preferences..."
         cat > "$PROFILE_DIR/user.js" << USERJS_EOF
-// ShellShock v1.03 - Firefox Configuration for Pentesting
+// ShellShock v1.05 - Firefox Configuration for Pentesting
 
 // Disable automatic updates
 user_pref("app.update.auto", false);
@@ -873,9 +871,11 @@ if ! command_exists pipx; then
     export PATH="$PATH:/root/.local/bin:$USER_HOME/.local/bin"
 fi
 
-# Python packages via pip3
+# Python packages via pip3 (System-wide)
+log_info "Installing system-wide Python dependencies..."
+# NOTE: Responder/Certipy-ad REMOVED from this list and MOVED to PIPX
 PIP_TOOLS=(
-    "impacket" "hashid" "bloodhound" "bloodyAD" "mitm6" "responder" "certipy-ad"
+    "impacket" "hashid" "bloodhound" "bloodyAD" "mitm6" 
     "coercer" "pypykatz" "lsassy" "enum4linux-ng" "dnsrecon" "git-dumper"
     "roadrecon" "manspider" "mitmproxy" "pwntools" "ROPgadget" "truffleHog"
 )
@@ -888,20 +888,24 @@ for tool in "${PIP_TOOLS[@]}"; do
     fi
 done
 
-# Pipx tools
-log_progress "Installing pipx-isolated tools as $USERNAME..."
+# Pipx tools (User-isolated)
+log_progress "Installing pipx-isolated tools as $USERNAME (Includes Responder/Certipy)..."
 
 PIPX_TOOLS=(
     "git+https://github.com/Pennyw0rth/NetExec"
     "ldapdomaindump"
     "sprayhound"
     "RsaCtfTool"
+    "Responder" # <-- MOVED HERE
+    "certipy-ad" # <-- MOVED HERE
 )
 
 for tool in "${PIPX_TOOLS[@]}"; do
     tool_name=$(basename "$tool" | cut -d'@' -f1 | sed 's/git+https:\/\/github.com\///' | cut -d'/' -f2 | awk '{print tolower($0)}')
+    # Check for installation skipping by checking the environment, not just the path
     if ! sudo -u "$USERNAME" pipx list 2>/dev/null | grep -qi "$tool_name"; then
         log_info "Installing $tool_name..."
+        # NOTE: We use sudo -u jamie to install into jamie's home/.local/bin
         sudo -u "$USERNAME" bash -c "export PATH=\$PATH:\$HOME/.local/bin; pipx install '$tool'" 2>&1 | tee -a /var/log/shellshock-install.log || log_warn "Failed to install $tool_name via pipx"
     else
         log_skip "$tool_name already installed"
@@ -1178,7 +1182,7 @@ if [[ ! -f "$USER_HOME/.zshrc" ]] || ! grep -q "ShellShock v1.01" "$USER_HOME/.z
     log_info "Creating .zshrc configuration..."
     cat > "$USER_HOME/.zshrc" << 'ZSHRC_EOF'
 # ============================================
-# ShellShock v1.03 - Zsh Configuration (NTP/SSL Fixed)
+# ShellShock v1.05 - Zsh Configuration (NTP/SSL Fixed)
 # ============================================
 
 export ZSH="$HOME/.oh-my-zsh"
@@ -1216,7 +1220,7 @@ if [[ -o interactive ]] && [[ -z "$TMUX" ]]; then
     echo -e "\033[1;36m"
     cat << 'BANNER'
     ╔════════════════════════════════════════════════════════╗
-    ║           SHELLSHOCK v1.03 - LOCKED & LOADED           ║
+    ║           SHELLSHOCK v1.05 - LOCKED & LOADED           ║
     ║                                                        ║
     ║ Quick:     tools | repos | win | update | timesync     ║
     ║ Engage:    newengagement <name>                        ║
@@ -1408,7 +1412,7 @@ if [[ ! -f "$USER_HOME/scripts/update-tools.sh" ]]; then
     cat > "$USER_HOME/scripts/update-tools.sh" << 'UPDATE_SCRIPT_EOF'
 #!/bin/bash
 set -euo pipefail
-# ShellShock v1.03 - Tool Update Script
+# ShellShock v1.05 - Tool Update Script
 
 RED='\033[0;31m'
 GREEN='\033[0;32m'
@@ -1429,8 +1433,9 @@ log_info "Updating system packages..."
 sudo apt update && sudo apt upgrade -y || log_warn "System update partially failed"
 
 log_info "Updating Python tools (pip3 system-wide)..."
+# NOTE: Responder/Certipy-ad are now managed by PIPX below
 pip3 install -U --break-system-packages \
-    impacket bloodhound bloodyAD certipy-ad \
+    impacket bloodhound bloodyAD \
     pypykatz lsassy pwntools ROPgadget truffleHog || log_warn "pip3 update partially failed"
 
 log_info "Updating pipx tools..."
@@ -1827,7 +1832,7 @@ log_progress "Phase 10: Creating Desktop Documentation"
 if [[ ! -f "$USER_HOME/Desktop/COMMANDS.txt" ]]; then
     cat > "$USER_HOME/Desktop/COMMANDS.txt" << 'COMMANDS_DOC_EOF'
 ╔═══════════════════════════════════════════════════════════════╗
-║             SHELLSHOCK v1.03 — COMMAND REFERENCE              ║
+║             SHELLSHOCK v1.05 — COMMAND REFERENCE              ║
 ╚═══════════════════════════════════════════════════════════════╝
 
 ══════════════════════════════════════════════════════════════
@@ -2021,7 +2026,7 @@ clear
 echo -e "${GREEN}"
 cat << 'COMPLETION_BANNER'
 ╔═══════════════════════════════════════════════════════════════╗
-║             SHELLSHOCK v1.03 — INSTALLATION COMPLETE          ║
+║             SHELLSHOCK v1.05 — INSTALLATION COMPLETE          ║
 ╚═══════════════════════════════════════════════════════════════╝
 COMPLETION_BANNER
 echo -e "${NC}\n"
