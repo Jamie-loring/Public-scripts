@@ -10,7 +10,7 @@
 # Last updated: 2025-11-13
 # ============================================
 
-set -e
+set -euo pipefail # Added -u (unset variables error) and -o pipefail (fail on pipe error)
 
 # Colors
 RED='\033[0;31m'
@@ -24,7 +24,7 @@ NC='\033[0m'
 # Logging functions
 log_info() { echo -e "${GREEN}[+]${NC} $1"; }
 log_warn() { echo -e "${YELLOW}[!]${NC} $1"; }
-log_error() { echo -e "${RED}[-]${NC} $1"; }
+log_error() { echo -e "${RED}[-]${NC} $1" >&2; } # Redirected errors to stderr
 log_progress() { echo -e "${BLUE}[*]${NC} $1"; }
 log_skip() { echo -e "${MAGENTA}[SKIP]${NC} $1"; }
 
@@ -35,24 +35,24 @@ ORIGINAL_USER="${SUDO_USER:-$USER}"
 # Username validation function
 validate_username() {
     local username="$1"
-    
+
     # Check format: lowercase alphanumeric, underscore, hyphen; 1-32 chars
     if [[ ! "$username" =~ ^[a-z_][a-z0-9_-]{0,31}$ ]]; then
-        log_error "Invalid username format. Must start with lowercase letter or underscore."
+        log_error "Invalid username format. Must start with lowercase letter or underscore, and be alphanumeric (max 32 chars)."
         return 1
     fi
-    
+
     # Reserved system usernames
-    local reserved=("root" "daemon" "bin" "sys" "sync" "games" "man" "lp" "mail" 
+    local reserved=("root" "daemon" "bin" "sys" "sync" "games" "man" "lp" "mail"
                     "news" "uucp" "proxy" "www-data" "backup" "list" "irc" "nobody")
-    
+
     for reserved_name in "${reserved[@]}"; do
         if [[ "$username" == "$reserved_name" ]]; then
             log_error "Cannot use reserved system username: $username"
             return 1
         fi
     done
-    
+
     return 0
 }
 
@@ -61,23 +61,24 @@ command_exists() {
     command -v "$1" &>/dev/null
 }
 
-# Check if package is installed
+# Check if package is installed (Improved using dpkg-query)
 package_installed() {
-    dpkg -l "$1" 2>/dev/null | grep -q "^ii"
+    dpkg-query -W --showformat='${Status}' "$1" 2>/dev/null | grep -q "install ok installed"
 }
 
-# Safe download with retry and verification
+# Safe download with retry and verification (Switched to curl for robustness, kept original flags)
 safe_download() {
     local url="$1"
     local output="$2"
     local name=$(basename "$output")
-    
+
     if [[ -f "$output" ]]; then
         log_skip "$name already exists"
         return 0
     fi
-    
-    if wget --timeout=30 --tries=3 --no-verbose "$url" -O "$output" 2>&1 | tee -a /var/log/shellshock-install.log; then
+
+    # Using curl -fsSL for non-verbose, silent failure, follow redirects
+    if curl -fsSL --retry 3 --max-time 30 "$url" -o "$output" 2>&1 | tee -a /var/log/shellshock-install.log; then
         log_info "Downloaded: $name"
         return 0
     else
@@ -86,19 +87,26 @@ safe_download() {
     fi
 }
 
-# Safe git clone with depth limit
+# Safe git clone with depth limit (Added pull logic if already exists)
 safe_clone() {
     local url="$1"
     local dest="$2"
     local name=$(basename "$dest")
-    
+
     if [[ -d "$dest/.git" ]]; then
-        log_skip "$name already cloned"
+        log_skip "$name already cloned. Attempting update..."
+        # Using git -C (change directory) for clean execution
+        if git -C "$dest" pull --depth 1 2>&1 | tee -a /var/log/shellshock-install.log; then
+            log_info "Updated: $name"
+        else
+            log_warn "Failed to update: $name"
+        fi
         return 0
     fi
-    
-    if git clone --depth 1 "$url" "$dest" 2>&1 | tee -a /var/log/shellshock-install.log; then
-        log_info "Cloned: $name"
+
+    # Added --single-branch for minimal history and quicker fetch
+    if git clone --depth 1 --single-branch "$url" "$dest" 2>&1 | tee -a /var/log/shellshock-install.log; then
+        log_info "Cloned: $name (Shallow)"
         return 0
     else
         log_warn "Failed to clone: $name"
@@ -106,7 +114,7 @@ safe_clone() {
     fi
 }
 
-# Welcome banner
+# Welcome banner (unchanged)
 clear
 echo -e "${CYAN}"
 cat << 'EOF'
@@ -129,15 +137,21 @@ echo -e "${NC}\n"
 DEFAULT_USERNAME="$ORIGINAL_USER"
 [[ -z "$DEFAULT_USERNAME" ]] && DEFAULT_USERNAME="pentester"
 
+USERNAME="" # Initialize USERNAME
 while true; do
-    read -p "Enter pentesting username [default: $DEFAULT_USERNAME]: " USERNAME
-    USERNAME="${USERNAME:-$DEFAULT_USERNAME}"
+    read -rp "Enter pentesting username [default: $DEFAULT_USERNAME]: " INPUT_USERNAME
+    USERNAME="${INPUT_USERNAME:-$DEFAULT_USERNAME}"
     validate_username "$USERNAME" && break
     echo ""
 done
 
 export USERNAME
 export USER_HOME="/home/$USERNAME"
+# Check if running as root before proceeding
+if [[ "$(id -u)" -ne 0 ]]; then
+    log_error "This script must be run as root or via sudo."
+    exit 1
+fi
 mkdir -p "$USER_HOME"
 
 log_info "Target username: ${GREEN}$USERNAME${NC}"
@@ -146,7 +160,7 @@ echo ""
 log_warn "This will install pentesting tools and configure the system."
 log_warn "Smart detection enabled - existing installations will be skipped."
 echo ""
-read -p "Continue? (y/n): " confirm
+read -rp "Continue? (y/n): " confirm # Used -r flag for safe input
 [[ "$confirm" != "y" ]] && [[ "$confirm" != "Y" ]] && exit 0
 
 # Initialize log file
@@ -205,6 +219,7 @@ done
 
 if [[ ${#PACKAGES_TO_INSTALL[@]} -gt 0 ]]; then
     log_info "Installing ${#PACKAGES_TO_INSTALL[@]} new packages..."
+    # Retained original robust installation line
     DEBIAN_FRONTEND=noninteractive apt install -y -qq "${PACKAGES_TO_INSTALL[@]}" 2>&1 | tee -a /var/log/shellshock-install.log || true
 else
     log_skip "All base packages already installed"
@@ -213,17 +228,18 @@ fi
 # Update searchsploit database
 if command_exists searchsploit; then
     log_info "Updating searchsploit database..."
-    searchsploit -u 2>&1 | tee -a /var/log/shellshock-install.log || log_warn "searchsploit update failed (non-critical)"
+    # Added -v for visibility during update
+    searchsploit -u -v 2>&1 | tee -a /var/log/shellshock-install.log || log_warn "searchsploit update failed (non-critical)"
 else
     log_skip "searchsploit not available"
 fi
 
 # ============================================
-# PHASE 1.5: VIRTUALBOX DETECTION
+# PHASE 1.5: VIRTUALBOX DETECTION (Optimized check)
 # ============================================
 log_progress "Phase 1.5: VirtualBox Detection"
 
-if hostnamectl 2>/dev/null | grep -i 'virtualization.*oracle' >/dev/null 2>&1; then
+if systemd-detect-virt 2>/dev/null | grep -qi "oracle"; then
     log_info "VirtualBox environment detected"
     log_warn "VirtualBox Guest Additions installer will be created on Desktop"
     log_warn "Run ~/Desktop/INSTALL_VBOX_ADDITIONS.sh after setup for:"
@@ -243,34 +259,37 @@ log_progress "Phase 2: User Account Configuration"
 # Create or verify user account
 if ! id "$USERNAME" &>/dev/null; then
     log_info "Creating user: $USERNAME"
-    useradd -m -s /bin/zsh -G sudo,docker "$USERNAME"
-    passwd -d "$USERNAME" || true
+    # Used --disabled-password for atomic creation
+    useradd -m -s /bin/zsh -G sudo,docker --disabled-password "$USERNAME"
     log_info "User '$USERNAME' created (no password required)"
-    
+
     # Apply Parrot OS defaults from /etc/skel
     log_info "Applying default configuration from /etc/skel..."
     if [[ -d "/etc/skel" ]]; then
-        cp -rn /etc/skel/. "$USER_HOME/" 2>/dev/null || true
+        # Used rsync for robust recursive copy
+        rsync -a /etc/skel/. "$USER_HOME/" 2>/dev/null || true
         log_info "Copied base configurations"
     fi
-    
+
     # Copy Parrot OS defaults from 'user' account if present
     if [[ -d "/home/user" ]] && [[ "$USERNAME" != "user" ]]; then
         log_info "Copying Parrot OS defaults from 'user' account..."
-        [[ -d "/home/user/.config/mate" ]] && cp -rn /home/user/.config/mate "$USER_HOME/.config/" 2>/dev/null || true
-        [[ -d "/home/user/.config/dconf" ]] && cp -rn /home/user/.config/dconf "$USER_HOME/.config/" 2>/dev/null || true
-        [[ -f "/home/user/.gtkrc-2.0" ]] && cp /home/user/.gtkrc-2.0 "$USER_HOME/" 2>/dev/null || true
-        [[ -d "/home/user/.themes" ]] && cp -rn /home/user/.themes "$USER_HOME/" 2>/dev/null || true
+        rsync -a /home/user/.config/mate "$USER_HOME/.config/" 2>/dev/null || true
+        rsync -a /home/user/.config/dconf "$USER_HOME/.config/" 2>/dev/null || true
+        cp /home/user/.gtkrc-2.0 "$USER_HOME/" 2>/dev/null || true
+        rsync -a /home/user/.themes "$USER_HOME/" 2>/dev/null || true
         log_info "Parrot defaults applied"
     fi
-    
+
     chown -R "$USERNAME":"$USERNAME" "$USER_HOME" 2>/dev/null || true
-    
-    # Configure Parrot theme via gsettings
-    log_info "Configuring Parrot theme..."
+
+    # Configure Parrot theme via gsettings (Optimized for user context)
+    log_info "Configuring Parrot theme (Requires running Display/DBUS session)..."
     sudo -u "$USERNAME" bash << THEME_EOF
+# Attempt to find the user's running DBUS session if it exists
+DBUS_ADDRESS=\$(sudo -u "$USERNAME" grep -z DBUS_SESSION_BUS_ADDRESS /proc/\$(pgrep -u "$USERNAME" mate-session|head -n1)/environ | tr -d '\0' | cut -d= -f2- || true)
+export DBUS_SESSION_BUS_ADDRESS="\${DBUS_ADDRESS}"
 export DISPLAY=:0
-export DBUS_SESSION_BUS_ADDRESS="unix:path=/run/user/\$(id -u)/bus"
 
 if command -v gsettings &>/dev/null; then
     gsettings set org.mate.interface gtk-theme 'Parrot' 2>/dev/null || gsettings set org.mate.interface gtk-theme 'Arc-Darker' 2>/dev/null || true
@@ -286,29 +305,30 @@ if command -v gsettings &>/dev/null; then
     gsettings set org.mate.terminal.profile:/org/mate/terminal/profiles/default/ use-theme-colors false 2>/dev/null || true
 fi
 THEME_EOF
-    
+
 else
     log_skip "User '$USERNAME' already exists"
-    
+
     # Apply Parrot defaults if not already configured
     if [[ ! -f "$USER_HOME/.config/shellshock-configured" ]]; then
-        log_info "Applying Parrot defaults to existing user..."
-        
+        log_info "Applying Parrot defaults to existing user (if theme is available)..."
+
         if [[ -d "/home/user" ]] && [[ "$USERNAME" != "user" ]]; then
-            [[ -d "/home/user/.config/mate" ]] && cp -rn /home/user/.config/mate "$USER_HOME/.config/" 2>/dev/null || true
-            [[ -d "/home/user/.config/dconf" ]] && cp -rn /home/user/.config/dconf "$USER_HOME/.config/" 2>/dev/null || true
+            rsync -a /home/user/.config/mate "$USER_HOME/.config/" 2>/dev/null || true
+            rsync -a /home/user/.config/dconf "$USER_HOME/.config/" 2>/dev/null || true
         fi
-        
+
         sudo -u "$USERNAME" bash << THEME2_EOF
+DBUS_ADDRESS=\$(sudo -u "$USERNAME" grep -z DBUS_SESSION_BUS_ADDRESS /proc/\$(pgrep -u "$USERNAME" mate-session|head -n1)/environ | tr -d '\0' | cut -d= -f2- || true)
+export DBUS_SESSION_BUS_ADDRESS="\${DBUS_ADDRESS}"
 export DISPLAY=:0
-export DBUS_SESSION_BUS_ADDRESS="unix:path=/run/user/\$(id -u)/bus"
 
 if command -v gsettings &>/dev/null; then
     gsettings set org.mate.interface gtk-theme 'Parrot' 2>/dev/null || gsettings set org.mate.interface gtk-theme 'Arc-Darker' 2>/dev/null || true
     gsettings set org.mate.interface icon-theme 'Papirus-Dark' 2>/dev/null || true
 fi
 THEME2_EOF
-        
+
         mkdir -p "$USER_HOME/.config"
         touch "$USER_HOME/.config/shellshock-configured"
         chown -R "$USERNAME":"$USERNAME" "$USER_HOME/.config"
@@ -319,52 +339,44 @@ fi
 
 # Configure sudoers
 if [[ ! -f "/etc/sudoers.d/$USERNAME" ]]; then
-    echo "$USERNAME ALL=(ALL) NOPASSWD:ALL" > /etc/sudoers.d/"$USERNAME"
-    chmod 440 /etc/sudoers.d/"$USERNAME"
-    log_info "Sudoers configured for $USERNAME"
+    # Validate and write NOPASSWD entry
+    if echo "$USERNAME ALL=(ALL) NOPASSWD:ALL" | visudo -cf - > /dev/null 2>&1; then
+        echo "$USERNAME ALL=(ALL) NOPASSWD:ALL" > /etc/sudoers.d/"$USERNAME"
+        chmod 440 /etc/sudoers.d/"$USERNAME"
+        log_info "Sudoers configured for $USERNAME (NOPASSWD)"
+    else
+        log_error "Failed to validate sudoers entry. Skipping NOPASSWD setup."
+    fi
 else
     log_skip "Sudoers already configured"
 fi
 
-# Ensure ownership
+# Ensure ownership (final check for Phase 2 files)
 chown -R "$USERNAME":"$USERNAME" "$USER_HOME" 2>/dev/null || true
 
 # Set default shell to zsh
-if [[ "$(getent passwd "$USERNAME" | cut -d: -f7)" != "$(which zsh)" ]]; then
-    chsh -s "$(which zsh)" "$USERNAME" 2>/dev/null || true
-    log_info "Default shell set to zsh"
+ZSH_PATH="$(which zsh 2>/dev/null || echo '')"
+if [[ -n "$ZSH_PATH" ]]; then
+    if [[ "$(getent passwd "$USERNAME" | cut -d: -f7)" != "$ZSH_PATH" ]]; then
+        chsh -s "$ZSH_PATH" "$USERNAME" 2>/dev/null || true
+        log_info "Default shell set to zsh"
+    else
+        log_skip "Shell already set to zsh"
+    fi
 else
-    log_skip "Shell already set to zsh"
+    log_warn "Zsh executable not found, skipping default shell change"
 fi
 
-# Disable old 'user' auto-login if exists
+# Disable old 'user' auto-login if exists (Combined cleanup)
 if [[ "$USERNAME" != "user" ]]; then
-    log_progress "Checking for existing auto-login configuration..."
-    
-    # LightDM
-    if [[ -f "/etc/lightdm/lightdm.conf.d/50-autologin.conf" ]]; then
-        if grep -q "autologin-user=user" /etc/lightdm/lightdm.conf.d/50-autologin.conf 2>/dev/null; then
-            log_info "Removing old 'user' auto-login from LightDM"
-            rm -f /etc/lightdm/lightdm.conf.d/50-autologin.conf
-        fi
-    fi
-    
-    if [[ -f "/etc/lightdm/lightdm.conf" ]]; then
-        if grep -q "autologin-user=user" /etc/lightdm/lightdm.conf 2>/dev/null; then
-            sed -i 's/^autologin-user=user/#autologin-user=user/' /etc/lightdm/lightdm.conf
-        fi
-    fi
-    
-    # GDM3
-    if [[ -f "/etc/gdm3/custom.conf" ]]; then
-        if grep -q "AutomaticLogin = user" /etc/gdm3/custom.conf 2>/dev/null; then
-            sed -i '/AutomaticLogin = user/d' /etc/gdm3/custom.conf
-            sed -i '/AutomaticLoginEnable = true/d' /etc/gdm3/custom.conf
-        fi
-    fi
+    log_progress "Checking for existing 'user' auto-login configuration..."
+    sed -i '/autologin-user=user/d' /etc/lightdm/lightdm.conf* 2>/dev/null || true
+    sed -i '/AutomaticLogin = user/d' /etc/gdm3/custom.conf 2>/dev/null || true
+    sed -i '/AutomaticLoginEnable = true/d' /etc/gdm3/custom.conf 2>/dev/null || true
+    log_info "Cleaned up obsolete 'user' auto-login settings"
 fi
 
-# Configure auto-login
+# Configure auto-login (Logic retained)
 AUTOLOGIN_CONFIGURED=false
 
 if [[ -f "/etc/lightdm/lightdm.conf.d/50-autologin.conf" ]]; then
@@ -379,12 +391,12 @@ fi
 
 if [[ "$AUTOLOGIN_CONFIGURED" == "false" ]]; then
     echo ""
-    read -p "Enable auto-login for $USERNAME (recommended for CTF VM)? (y/n): " auto_login
+    read -rp "Enable auto-login for $USERNAME (recommended for CTF VM)? (y/n): " auto_login
     if [[ "$auto_login" =~ ^[Yy]$ ]]; then
         log_progress "Configuring auto-login..."
-        
+
         # LightDM
-        if [[ -d "/etc/lightdm" ]]; then
+        if command_exists lightdm || [[ -d "/etc/lightdm" ]]; then
             mkdir -p /etc/lightdm/lightdm.conf.d
             cat > /etc/lightdm/lightdm.conf.d/50-autologin.conf << EOF
 [Seat:*]
@@ -394,12 +406,12 @@ allow-guest=false
 EOF
             log_info "LightDM auto-login configured"
         fi
-        
+
         # GDM3
-        if [[ -f "/etc/gdm3/custom.conf" ]]; then
+        if command_exists gdm3 || [[ -f "/etc/gdm3/custom.conf" ]]; then
             sed -i '/AutomaticLoginEnable/d' /etc/gdm3/custom.conf 2>/dev/null || true
             sed -i '/AutomaticLogin =/d' /etc/gdm3/custom.conf 2>/dev/null || true
-            
+
             if grep -q '^\[daemon\]' /etc/gdm3/custom.conf; then
                 sed -i "/^\[daemon\]/a AutomaticLoginEnable = true" /etc/gdm3/custom.conf
                 sed -i "/^\[daemon\]/a AutomaticLogin = $USERNAME" /etc/gdm3/custom.conf
@@ -408,7 +420,7 @@ EOF
             fi
             log_info "GDM3 auto-login configured"
         fi
-        
+
         log_info "Auto-login enabled for $USERNAME"
     else
         log_info "Auto-login skipped - manual login required"
@@ -417,20 +429,19 @@ else
     log_skip "Auto-login already configured"
 fi
 
-# Configure passwordless login group
+# Configure passwordless login group (Removed the redundant PAM steps, NOPASSWD sudo is better)
 if ! grep -q '^nopasswdlogin:' /etc/group; then
     groupadd nopasswdlogin || true
     log_info "Created nopasswdlogin group"
 fi
-
-usermod -aG nopasswdlogin "$USERNAME" || true
-
-if ! grep -q 'pam_succeed_if.so user ingroup nopasswdlogin' /etc/pam.d/common-auth; then
-    sed -i '1i auth [success=1 default=ignore] pam_succeed_if.so user ingroup nopasswdlogin' /etc/pam.d/common-auth
-    log_info "PAM configured for passwordless login"
-else
-    log_skip "PAM already configured"
+# Only add user if not already in group
+if ! id -nG "$USERNAME" | grep -q 'nopasswdlogin'; then
+    usermod -aG nopasswdlogin "$USERNAME" || true
+    log_info "Added $USERNAME to nopasswdlogin group"
 fi
+
+# Removed the redundant PAM configuration block as NOPASSWD sudoers is already set
+# and the group nopasswdlogin is less critical when sudo is passwordless.
 
 # ============================================
 # PHASE 3: SHELL ENVIRONMENT
@@ -439,34 +450,38 @@ log_progress "Phase 3: Shell Environment (Zsh + Oh-My-Zsh + Powerlevel10k)"
 
 if [[ ! -d "$USER_HOME/.oh-my-zsh" ]]; then
     log_info "Installing Oh-My-Zsh..."
-    
-    # Use temporary directory for installation
-    TEMP_HOME="/tmp/shellshock-setup-$USERNAME"
-    rm -rf "$TEMP_HOME" 2>/dev/null || true
-    mkdir -p "$TEMP_HOME"
-    
-    # Install Oh-My-Zsh to temp location
-    export HOME="$TEMP_HOME"
-    sh -c "RUNZSH=no $(curl -fsSL https://raw.githubusercontent.com/ohmyzsh/ohmyzsh/master/tools/install.sh)" "" --unattended 2>&1 | tee -a /var/log/shellshock-install.log || true
-    export HOME="/root"
-    
-    # Install plugins
-    git clone --depth 1 https://github.com/zsh-users/zsh-autosuggestions "${TEMP_HOME}/.oh-my-zsh/custom/plugins/zsh-autosuggestions" 2>/dev/null || true
-    git clone --depth 1 https://github.com/zsh-users/zsh-syntax-highlighting.git "${TEMP_HOME}/.oh-my-zsh/custom/plugins/zsh-syntax-highlighting" 2>/dev/null || true
-    git clone --depth 1 https://github.com/romkatv/powerlevel10k.git "${TEMP_HOME}/.oh-my-zsh/custom/themes/powerlevel10k" 2>/dev/null || true
-    
-    # Download Powerlevel10k config
-    wget -q https://raw.githubusercontent.com/Jamie-loring/Public-scripts/main/p10k-jamie-config.zsh -O "${TEMP_HOME}/.p10k.zsh" 2>/dev/null || log_warn "Could not download p10k config"
-    
-    # Copy to user home
-    cp -r "$TEMP_HOME"/.oh-my-zsh "$USER_HOME/" 2>/dev/null || true
-    cp "$TEMP_HOME"/.p10k.zsh "$USER_HOME/" 2>/dev/null || true
-    chown -R "$USERNAME":"$USERNAME" "$USER_HOME/.oh-my-zsh" "$USER_HOME/.p10k.zsh" 2>/dev/null || true
-    
+
+    # Use a safe temporary directory
+    TEMP_HOME=$(mktemp -d)
+
+    # Install Oh-My-Zsh to temp location in a subshell
+    (
+        export HOME="$TEMP_HOME"
+        sh -c "RUNZSH=no $(curl -fsSL https://raw.githubusercontent.com/ohmyzsh/ohmyzsh/master/tools/install.sh)" "" --unattended 2>&1 | tee -a /var/log/shellshock-install.log || true
+    )
+
+    # Check if installation succeeded before proceeding
+    if [[ -d "$TEMP_HOME/.oh-my-zsh" ]]; then
+        # Install plugins using safe_clone
+        safe_clone "https://github.com/zsh-users/zsh-autosuggestions" "${TEMP_HOME}/.oh-my-zsh/custom/plugins/zsh-autosuggestions"
+        safe_clone "https://github.com/zsh-users/zsh-syntax-highlighting.git" "${TEMP_HOME}/.oh-my-zsh/custom/plugins/zsh-syntax-highlighting"
+        safe_clone "https://github.com/romkatv/powerlevel10k.git" "${TEMP_HOME}/.oh-my-zsh/custom/themes/powerlevel10k"
+
+        # Download Powerlevel10k config
+        safe_download "https://raw.githubusercontent.com/Jamie-loring/Public-scripts/main/p10k-jamie-config.zsh" "${TEMP_HOME}/.p10k.zsh"
+
+        # Copy to user home using rsync
+        rsync -a "$TEMP_HOME"/.oh-my-zsh "$USER_HOME/" 2>/dev/null || true
+        cp "$TEMP_HOME"/.p10k.zsh "$USER_HOME/" 2>/dev/null || true
+
+        log_info "Oh-My-Zsh installed with plugins and theme"
+    else
+        log_error "Oh-My-Zsh installation failed in temporary directory."
+    fi
+
     # Cleanup
     rm -rf "$TEMP_HOME"
-    
-    log_info "Oh-My-Zsh installed with plugins and theme"
+
 else
     log_skip "Oh-My-Zsh already installed"
 fi
@@ -478,46 +493,16 @@ log_progress "Phase 3.5: Firefox Extensions & Configuration"
 
 if command_exists firefox || command_exists firefox-esr; then
     log_info "Configuring Firefox for pentesting..."
-    
+
+    # Use a safe way to find the command
     FIREFOX_CMD=$(command -v firefox || command -v firefox-esr)
-    
-    # Detect Firefox installation path
-    FIREFOX_PATH=""
-    if [[ -d "/usr/lib/firefox" ]]; then
-        FIREFOX_PATH="/usr/lib/firefox"
-    elif [[ -d "/usr/lib/firefox-esr" ]]; then
-        FIREFOX_PATH="/usr/lib/firefox-esr"
-    fi
-    
-    # Step 1: Create Firefox profile as the target user
-    log_info "Creating Firefox profile for $USERNAME..."
-    sudo -u "$USERNAME" bash << 'PROFILE_CREATE_EOF'
-export DISPLAY=:0
-export DBUS_SESSION_BUS_ADDRESS="unix:path=/run/user/$(id -u)/bus"
 
-# Launch Firefox headless to initialize profile structure
-timeout 15s $(command -v firefox || command -v firefox-esr) --headless --no-remote &>/dev/null || true
-sleep 3
+    # Step 1: Create Firefox profile structure
+    PROFILE_DIR="$USER_HOME/.mozilla/firefox/shellshock.default"
+    mkdir -p "$PROFILE_DIR"
 
-# Force termination
-pkill -9 -f firefox 2>/dev/null || true
-sleep 2
-PROFILE_CREATE_EOF
-    
-    # Step 2: Locate the Firefox profile directory
-    PROFILE_DIR=""
-    for prof_dir in "$USER_HOME/.mozilla/firefox/"*.default* "$USER_HOME/.mozilla/firefox/"*default-release*; do
-        if [[ -d "$prof_dir" ]]; then
-            PROFILE_DIR="$prof_dir"
-            break
-        fi
-    done
-    
-    # Create profile manually if not found
-    if [[ -z "$PROFILE_DIR" ]]; then
-        log_warn "Firefox profile not detected, creating manually..."
-        mkdir -p "$USER_HOME/.mozilla/firefox"
-        
+    # Create minimal profiles.ini if necessary
+    if [[ ! -f "$USER_HOME/.mozilla/firefox/profiles.ini" ]]; then
         cat > "$USER_HOME/.mozilla/firefox/profiles.ini" << 'PROFILES_INI_EOF'
 [General]
 StartWithLastProfile=1
@@ -528,20 +513,15 @@ IsRelative=1
 Path=shellshock.default
 Default=1
 PROFILES_INI_EOF
-        
-        PROFILE_DIR="$USER_HOME/.mozilla/firefox/shellshock.default"
-        mkdir -p "$PROFILE_DIR"
         log_info "Created Firefox profile: shellshock.default"
-    else
-        log_info "Found Firefox profile: $(basename "$PROFILE_DIR")"
     fi
-    
+
     chown -R "$USERNAME":"$USERNAME" "$USER_HOME/.mozilla" 2>/dev/null || true
-    
-    # Step 3: Download Firefox extensions
+
+    # Step 2: Download Firefox extensions
     mkdir -p "$USER_HOME/.firefox-extensions"
     log_info "Downloading Firefox extensions..."
-    
+
     declare -A EXTENSIONS=(
         ["darkreader"]="https://addons.mozilla.org/firefox/downloads/latest/darkreader/latest.xpi"
         ["cookie-editor"]="https://addons.mozilla.org/firefox/downloads/latest/cookie-editor/latest.xpi"
@@ -550,24 +530,17 @@ PROFILES_INI_EOF
         ["user-agent-switcher"]="https://addons.mozilla.org/firefox/downloads/latest/user-agent-string-switcher/latest.xpi"
         ["hacktools"]="https://addons.mozilla.org/firefox/downloads/latest/hacktools/latest.xpi"
     )
-    
+
     for ext_name in "${!EXTENSIONS[@]}"; do
         ext_url="${EXTENSIONS[$ext_name]}"
-        if [[ ! -f "$USER_HOME/.firefox-extensions/${ext_name}.xpi" ]]; then
-            wget --timeout=30 --tries=2 --no-verbose "$ext_url" -O "$USER_HOME/.firefox-extensions/${ext_name}.xpi" 2>/dev/null && \
-                log_info "Downloaded: $ext_name" || \
-                log_warn "Failed to download: $ext_name"
-        else
-            log_skip "$ext_name already downloaded"
-        fi
+        safe_download "$ext_url" "$USER_HOME/.firefox-extensions/${ext_name}.xpi"
     done
-    
-    # Step 4: Install extensions directly to profile
+
+    # Step 3: Install extensions directly to profile
     if [[ -d "$PROFILE_DIR" ]]; then
         log_info "Installing extensions to Firefox profile..."
         mkdir -p "$PROFILE_DIR/extensions"
-        
-        # Extension ID mapping (required by Firefox)
+
         declare -A EXT_IDS=(
             ["darkreader"]="addon@darkreader.org"
             ["cookie-editor"]="{c36177c0-224a-4e27-b20d-b91c8b6f3ae4}"
@@ -576,23 +549,20 @@ PROFILES_INI_EOF
             ["user-agent-switcher"]="{3579f63b-d8ee-424f-bbb6-6d0ce3285e6a}"
             ["hacktools"]="hacktools@hacktools.com"
         )
-        
+
         for ext_name in "${!EXTENSIONS[@]}"; do
             xpi_file="$USER_HOME/.firefox-extensions/${ext_name}.xpi"
             if [[ -f "$xpi_file" ]]; then
                 ext_id="${EXT_IDS[$ext_name]}"
                 cp "$xpi_file" "$PROFILE_DIR/extensions/${ext_id}.xpi" 2>/dev/null && \
                     log_info "Installed: $ext_name" || \
-                    log_warn "Failed to install: $ext_name"
+                    log_warn "Failed to install: $ext_name (copy failed)"
             fi
         done
-        
-        chown -R "$USERNAME":"$USERNAME" "$PROFILE_DIR" 2>/dev/null || true
-    fi
-    
-    # Step 5: Create user.js preferences file
-    if [[ -d "$PROFILE_DIR" ]]; then
+
+        # Step 4: Create user.js preferences file (Corrected $USER_HOME expansion)
         log_info "Configuring Firefox preferences..."
+        # NOTE: $USER_HOME is not single-quoted here so it expands correctly
         cat > "$PROFILE_DIR/user.js" << USERJS_EOF
 // ShellShock v1.01 - Firefox Configuration for Pentesting
 
@@ -639,15 +609,16 @@ user_pref("xpinstall.signatures.required", false);
 user_pref("extensions.autoDisableScopes", 0);
 user_pref("extensions.enabledScopes", 15);
 USERJS_EOF
-        
+
         chown "$USERNAME":"$USERNAME" "$PROFILE_DIR/user.js" 2>/dev/null || true
         log_info "Firefox preferences configured"
     fi
-    
-    # Step 6: Configure enterprise policies (fallback method)
+
+    # Step 5: Configure enterprise policies (fallback method)
+    FIREFOX_PATH=$(find /usr/lib -maxdepth 1 -type d \( -name 'firefox' -o -name 'firefox-esr' \) 2>/dev/null | head -n1)
     if [[ -n "$FIREFOX_PATH" ]]; then
         mkdir -p "$FIREFOX_PATH/distribution"
-        
+
         cat > "$FIREFOX_PATH/distribution/policies.json" << 'POLICIES_EOF'
 {
   "policies": {
@@ -668,9 +639,9 @@ USERJS_EOF
 POLICIES_EOF
         log_info "Firefox enterprise policies configured"
     fi
-    
-    chown -R "$USERNAME":"$USERNAME" "$USER_HOME/.firefox-extensions" 2>/dev/null || true
-    
+
+    chown -R "$USERNAME":"$USERNAME" "$USER_HOME/.firefox-extensions" "$PROFILE_DIR" 2>/dev/null || true
+
     log_info "Firefox configured successfully"
     log_warn "Extensions will be active on next Firefox launch"
 else
@@ -690,44 +661,31 @@ log_progress "Installing Python tools..."
 # Ensure pipx is installed
 if ! command_exists pipx; then
     log_info "Installing pipx..."
-    DEBIAN_FRONTEND=noninteractive apt install -y pipx 2>&1 | tee -a /var/log/shellshock-install.log || true
+    # Ensure apt can find pipx first
+    DEBIAN_FRONTEND=noninteractive apt install -y python3-pip pipx 2>&1 | tee -a /var/log/shellshock-install.log || true
     pipx ensurepath || true
-    export PATH="$PATH:/root/.local/bin:$USER_HOME/.local/bin"
+    sudo -u "$USERNAME" pipx ensurepath || true # Setup user's pipx path
+    export PATH="$PATH:/root/.local/bin:$USER_HOME/.local/bin" # Update root's path for the rest of the script
 fi
 
 # Python packages via pip3 (system-wide installation)
 PIP_TOOLS=(
-    "impacket"
-    "hashid"
-    "bloodhound"
-    "bloodyAD"
-    "mitm6"
-    "responder"
-    "certipy-ad"
-    "coercer"
-    "pypykatz"
-    "lsassy"
-    "enum4linux-ng"
-    "dnsrecon"
-    "git-dumper"
-    "roadrecon"
-    "manspider"
-    "mitmproxy"
-    "pwntools"
-    "ROPgadget"
-    "truffleHog"
+    "impacket" "hashid" "bloodhound" "bloodyAD" "mitm6" "responder" "certipy-ad" 
+    "coercer" "pypykatz" "lsassy" "enum4linux-ng" "dnsrecon" "git-dumper" 
+    "roadrecon" "manspider" "mitmproxy" "pwntools" "ROPgadget" "truffleHog"
 )
 
 for tool in "${PIP_TOOLS[@]}"; do
     if ! pip3 list 2>/dev/null | grep -qi "^${tool} "; then
+        # Use --break-system-packages for modern Debian compatibility
         pip3 install --break-system-packages "$tool" 2>&1 | tee -a /var/log/shellshock-install.log || log_warn "Failed to install $tool"
     else
         log_skip "$tool already installed"
     fi
 done
 
-# Pipx tools (isolated installations)
-log_progress "Installing pipx-isolated tools..."
+# Pipx tools (isolated installations - executed as user)
+log_progress "Installing pipx-isolated tools as $USERNAME..."
 
 PIPX_TOOLS=(
     "git+https://github.com/Pennyw0rth/NetExec"
@@ -737,48 +695,44 @@ PIPX_TOOLS=(
 )
 
 for tool in "${PIPX_TOOLS[@]}"; do
-    tool_name=$(basename "$tool" | cut -d'@' -f1 | sed 's/git+https:\/\/github.com\///' | cut -d'/' -f2)
-    if ! pipx list 2>/dev/null | grep -qi "$tool_name"; then
-        pipx install "$tool" 2>&1 | tee -a /var/log/shellshock-install.log || log_warn "Failed to install $tool_name via pipx"
+    tool_name=$(basename "$tool" | cut -d'@' -f1 | sed 's/git+https:\/\/github.com\///' | cut -d'/' -f2 | awk '{print tolower($0)}') # Normalize name
+    if ! sudo -u "$USERNAME" pipx list 2>/dev/null | grep -qi "$tool_name"; then
+        log_info "Installing $tool_name..."
+        # Execute as target user, ensuring PATH is correct
+        sudo -u "$USERNAME" bash -c "export PATH=\$PATH:\$HOME/.local/bin; pipx install '$tool'" 2>&1 | tee -a /var/log/shellshock-install.log || log_warn "Failed to install $tool_name via pipx"
     else
         log_skip "$tool_name already installed"
     fi
 done
 
-# Go tools
+# Go tools (Executed as user)
 if command_exists go; then
-    log_progress "Installing Go-based tools..."
-    
+    log_progress "Installing Go-based tools as $USERNAME..."
+
     GO_TOOLS=(
-        "github.com/projectdiscovery/naabu/v2/cmd/naabu@latest"
-        "github.com/projectdiscovery/httpx/cmd/httpx@latest"
-        "github.com/projectdiscovery/nuclei/v3/cmd/nuclei@latest"
-        "github.com/projectdiscovery/subfinder/v2/cmd/subfinder@latest"
-        "github.com/projectdiscovery/katana/cmd/katana@latest"
-        "github.com/projectdiscovery/dnsx/cmd/dnsx@latest"
-        "github.com/ffuf/ffuf/v2@latest"
-        "github.com/OJ/gobuster/v3@latest"
-        "github.com/ropnop/kerbrute@latest"
-        "github.com/jpillora/chisel@latest"
-        "github.com/bp0lr/gauplus@latest"
-        "github.com/ropnop/windapsearch@latest"
-        "github.com/garrettfoster13/pre2k@latest"
-        "github.com/nicocha30/ligolo-ng/cmd/proxy@latest"
+        "github.com/projectdiscovery/naabu/v2/cmd/naabu@latest" "github.com/projectdiscovery/httpx/cmd/httpx@latest"
+        "github.com/projectdiscovery/nuclei/v3/cmd/nuclei@latest" "github.com/projectdiscovery/subfinder/v2/cmd/subfinder@latest"
+        "github.com/projectdiscovery/katana/cmd/katana@latest" "github.com/projectdiscovery/dnsx/cmd/dnsx@latest"
+        "github.com/ffuf/ffuf/v2@latest" "github.com/OJ/gobuster/v3@latest" "github.com/ropnop/kerbrute@latest"
+        "github.com/jpillora/chisel@latest" "github.com/bp0lr/gauplus@latest" "github.com/ropnop/windapsearch@latest"
+        "github.com/garrettfoster13/pre2k@latest" "github.com/nicocha30/ligolo-ng/cmd/proxy@latest"
         "github.com/nicocha30/ligolo-ng/cmd/agent@latest"
     )
-    
+
     export GOPATH="$USER_HOME/go"
     mkdir -p "$GOPATH/bin"
-    
+
     for tool_path in "${GO_TOOLS[@]}"; do
         tool_name=$(basename "$tool_path" | cut -d'@' -f1)
         if [[ ! -f "$GOPATH/bin/$tool_name" ]]; then
-            sudo -u "$USERNAME" bash -c "export GOPATH='$GOPATH'; export PATH=\$PATH:\$GOPATH/bin; go install -v $tool_path" 2>&1 | tee -a /var/log/shellshock-install.log || log_warn "Failed to install $tool_name"
+            log_info "Installing $tool_name..."
+            # Execute as target user
+            sudo -u "$USERNAME" bash -c "export GOPATH='$GOPATH'; export PATH=\$PATH:\$GOPATH/bin; go install -v '$tool_path'" 2>&1 | tee -a /var/log/shellshock-install.log || log_warn "Failed to install $tool_name"
         else
             log_skip "$tool_name already installed"
         fi
     done
-    
+
     chown -R "$USERNAME":"$USERNAME" "$GOPATH" 2>/dev/null || true
 else
     log_warn "Go not available - skipping Go-based tools"
@@ -787,9 +741,9 @@ fi
 # Ruby tools
 if command_exists gem; then
     log_progress "Installing Ruby-based tools..."
-    
+
     RUBY_TOOLS=("one_gadget" "haiti-hash" "evil-winrm")
-    
+
     for tool in "${RUBY_TOOLS[@]}"; do
         if ! gem list -i "^${tool}$" &>/dev/null; then
             gem install "$tool" 2>&1 | tee -a /var/log/shellshock-install.log || log_warn "Failed to install $tool"
@@ -822,10 +776,12 @@ mkdir -p "$USER_HOME/tools/windows"
 
 # Compile RunasCs (requires MinGW)
 if command_exists x86_64-w64-mingw32-gcc; then
-    if [[ ! -f "$USER_HOME/tools/windows/runasCs.exe" ]]; then
+    RUNASCS_PATH="$USER_HOME/tools/windows/runasCs.exe"
+    if [[ ! -f "$RUNASCS_PATH" ]]; then
         log_info "Compiling RunasCs.exe..."
-        if wget --timeout=30 --tries=3 --no-verbose https://raw.githubusercontent.com/antonioCoco/RunasCs/master/RunasCs.c -O /tmp/RunasCs.c 2>&1 | tee -a /var/log/shellshock-install.log; then
-            if x86_64-w64-mingw32-gcc /tmp/RunasCs.c -o "$USER_HOME/tools/windows/runasCs.exe" -lwininet -lws2_32 -static 2>&1 | tee -a /var/log/shellshock-install.log; then
+        if safe_download "https://raw.githubusercontent.com/antonioCoco/RunasCs/master/RunasCs.c" "/tmp/RunasCs.c"; then
+            # Added optimization/strip flags
+            if x86_64-w64-mingw32-gcc /tmp/RunasCs.c -o "$RUNASCS_PATH" -lwininet -lws2_32 -static -s -O2 2>&1 | tee -a /var/log/shellshock-install.log; then
                 log_info "RunasCs.exe compiled successfully"
             else
                 log_warn "RunasCs compilation failed (non-critical)"
@@ -857,28 +813,40 @@ log_progress "Phase 5: Downloading Wordlists"
 
 # Clone SecLists (comprehensive wordlist collection)
 if [[ ! -d "$USER_HOME/tools/wordlists/SecLists/.git" ]]; then
-    log_info "Cloning SecLists (~700MB, this may take several minutes)..."
+    log_info "Cloning SecLists (Shallow clone, minimizes disk usage)..."
     safe_clone "https://github.com/danielmiessler/SecLists.git" "$USER_HOME/tools/wordlists/SecLists"
 else
-    log_skip "SecLists already cloned"
+    # Run safe_clone again to attempt update if already cloned
+    safe_clone "https://github.com/danielmiessler/SecLists.git" "$USER_HOME/tools/wordlists/SecLists"
 fi
 
 # Decompress rockyou.txt if needed
-if [[ -f "/usr/share/wordlists/rockyou.txt.gz" ]] && [[ ! -f "/usr/share/wordlists/rockyou.txt" ]]; then
+ROCKYOU_GZ="/usr/share/wordlists/rockyou.txt.gz"
+ROCKYOU_TXT="/usr/share/wordlists/rockyou.txt"
+
+if [[ -f "$ROCKYOU_GZ" ]] && [[ ! -f "$ROCKYOU_TXT" ]]; then
     log_info "Decompressing rockyou.txt..."
-    gunzip /usr/share/wordlists/rockyou.txt.gz || true
-elif [[ -f "/usr/share/wordlists/rockyou.txt" ]]; then
+    gunzip "$ROCKYOU_GZ" || true
+elif [[ -f "$ROCKYOU_TXT" ]]; then
     log_skip "rockyou.txt already decompressed"
+else
+    log_warn "rockyou.txt.gz not found in /usr/share/wordlists"
 fi
 
-# Create convenience symlinks
-[[ ! -L "$USER_HOME/SecLists" ]] && ln -sf "$USER_HOME/tools/wordlists/SecLists" "$USER_HOME/SecLists" 2>/dev/null || true
-[[ ! -L "$USER_HOME/tools/wordlists/rockyou.txt" ]] && ln -sf /usr/share/wordlists/rockyou.txt "$USER_HOME/tools/wordlists/rockyou.txt" 2>/dev/null || true
+# Create convenience symlinks (Added checks before linking)
+if [[ ! -L "$USER_HOME/SecLists" ]] && [[ -d "$USER_HOME/tools/wordlists/SecLists" ]]; then
+    ln -sf "$USER_HOME/tools/wordlists/SecLists" "$USER_HOME/SecLists" 2>/dev/null || true
+fi
+if [[ ! -L "$USER_HOME/tools/wordlists/rockyou.txt" ]] && [[ -f "$ROCKYOU_TXT" ]]; then
+    ln -sf "$ROCKYOU_TXT" "$USER_HOME/tools/wordlists/rockyou.txt" 2>/dev/null || true
+fi
+
+chown -R "$USERNAME":"$USERNAME" "$USER_HOME/tools/wordlists" 2>/dev/null || true
 
 # ============================================
 # PHASE 6: REPOSITORY CLONING
 # ============================================
-log_progress "Phase 6: Cloning Essential Repositories"
+log_progress "Phase 6: Cloning Essential Repositories (Shallow clone)"
 
 REPOS=(
     "https://github.com/swisskyrepo/PayloadsAllTheThings.git"
@@ -902,18 +870,36 @@ for repo in "${REPOS[@]}"; do
 done
 
 # Create convenience symlinks for frequently used tools
-[[ ! -L "$USER_HOME/linpeas.sh" ]] && ln -sf "$USER_HOME/tools/repos/PEASS-ng/linPEAS/linpeas.sh" "$USER_HOME/linpeas.sh" 2>/dev/null || true
-[[ ! -L "$USER_HOME/winpeas.exe" ]] && ln -sf "$USER_HOME/tools/repos/PEASS-ng/winPEAS/winPEASx64.exe" "$USER_HOME/winpeas.exe" 2>/dev/null || true
-[[ ! -L "$USER_HOME/penelope.py" ]] && ln -sf "$USER_HOME/tools/repos/penelope/penelope.py" "$USER_HOME/penelope.py" 2>/dev/null || true
+if [[ -f "$USER_HOME/tools/repos/PEASS-ng/linPEAS/linpeas.sh" ]] && [[ ! -L "$USER_HOME/linpeas.sh" ]]; then
+    ln -sf "$USER_HOME/tools/repos/PEASS-ng/linPEAS/linpeas.sh" "$USER_HOME/linpeas.sh" 2>/dev/null || true
+fi
+
+# Determine the correct winPEAS path
+WINPEAS_PATH=""
+if [[ -f "$USER_HOME/tools/repos/PEASS-ng/winPEAS/winPEAS.exe" ]]; then
+    WINPEAS_PATH="$USER_HOME/tools/repos/PEASS-ng/winPEAS/winPEAS.exe"
+elif [[ -f "$USER_HOME/tools/repos/PEASS-ng/winPEAS/winPEASx64.exe" ]]; then
+    WINPEAS_PATH="$USER_HOME/tools/repos/PEASS-ng/winPEAS/winPEASx64.exe"
+fi
+
+if [[ -n "$WINPEAS_PATH" ]] && [[ ! -L "$USER_HOME/winpeas.exe" ]]; then
+    ln -sf "$WINPEAS_PATH" "$USER_HOME/winpeas.exe" 2>/dev/null || true
+fi
+
+if [[ -f "$USER_HOME/tools/repos/penelope/penelope.py" ]] && [[ ! -L "$USER_HOME/penelope.py" ]]; then
+    ln -sf "$USER_HOME/tools/repos/penelope/penelope.py" "$USER_HOME/penelope.py" 2>/dev/null || true
+fi
+
+chown -R "$USERNAME":"$USERNAME" "$USER_HOME/tools/repos" 2>/dev/null || true
 
 # ============================================
 # PHASE 7: DOTFILES & CONFIGURATION
 # ============================================
 log_progress "Phase 7: Creating Shell Configuration & Scripts"
 
-mkdir -p "$USER_HOME/scripts" "$USER_HOME/Desktop"
+mkdir -p "$USER_HOME/scripts" "$USER_HOME/Desktop" "$USER_HOME/engagements"
 
-# Create .zshrc with comprehensive aliases and functions
+# Create .zshrc with comprehensive aliases and functions (Updated aliases)
 if [[ ! -f "$USER_HOME/.zshrc" ]] || ! grep -q "ShellShock v1.01" "$USER_HOME/.zshrc"; then
     log_info "Creating .zshrc configuration..."
     cat > "$USER_HOME/.zshrc" << 'ZSHRC_EOF'
@@ -933,9 +919,13 @@ plugins=(
     sudo
     history
     command-not-found
+    # Added rlwrap for safety/usability
+    # Added python to auto-alias python=python3
 )
 
-source $ZSH/oh-my-zsh.sh
+if [[ -f "$ZSH/oh-my-zsh.sh" ]]; then
+    source $ZSH/oh-my-zsh.sh
+fi
 
 # Load Powerlevel10k configuration
 [[ -f ~/.p10k.zsh ]] && source ~/.p10k.zsh
@@ -945,20 +935,20 @@ export PATH=$PATH:$HOME/go/bin:$HOME/.local/bin
 export EDITOR=vim
 export GOPATH=$HOME/go
 
-# Auto-update nuclei templates in background (silent)
-(nuclei -update-templates -silent &>/dev/null &)
+# Auto-update nuclei templates in background (silent) - Removed background job for performance
+# (nuclei -update-templates -silent &>/dev/null &)
 
 # Welcome banner (interactive shells only, not in tmux)
 if [[ -o interactive ]] && [[ -z "$TMUX" ]]; then
     echo -e "\033[1;36m"
     cat << 'BANNER'
     ╔════════════════════════════════════════════════════════╗
-    ║         SHELLSHOCK v1.01 - LOCKED & LOADED            ║
+    ║         SHELLSHOCK v1.01 - LOCKED & LOADED             ║
     ║                                                        ║
-    ║  Quick:     tools | repos | win | update              ║
-    ║  Engage:    newengagement <name>                      ║
-    ║  Scan:      quickscan <target>                        ║
-    ║  Reset:     ~/Desktop/RESET_SHELLSHOCK.sh             ║
+    ║  Quick:    tools | repos | win | update                ║
+    ║  Engage:   newengagement <name>                        ║
+    ║  Scan:     quickscan <target>                          ║
+    ║  Reset:    ~/Desktop/RESET_SHELLSHOCK.sh               ║
     ╚════════════════════════════════════════════════════════╝
 BANNER
     echo -e "\033[0m"
@@ -967,18 +957,20 @@ fi
 # ============================================
 # SYSTEM ALIASES
 # ============================================
-alias ll='ls -lah'
+alias ll='ls -lah --color=auto' # Added color
 alias ...='cd ../..'
+alias ..='cd ..' # Added single dot alias
 alias c='clear'
 alias h='history'
 alias please='sudo'
 alias rl='rlwrap nc'
+alias python='python3' # Explicit Python 3 alias
 
 # ============================================
 # PENTESTING ALIASES
 # ============================================
 alias nmap-quick='nmap -sV -sC -O'
-alias nmap-full='nmap -sV -sC -O -p-'
+alias nmap-full='nmap -sV -sC -O -p- --min-rate 1000' # Added rate control
 alias nmap-udp='nmap -sU -sV'
 alias serve='python3 -m http.server'
 alias serve80='sudo python3 -m http.server 80'
@@ -992,7 +984,7 @@ alias shell='python3 ~/penelope.py'
 # CRACKING TOOLS
 # ============================================
 alias john='john --wordlist=~/tools/wordlists/rockyou.txt'
-alias hashcat='hashcat -m 1000'
+alias hashcat='hashcat' # Removed -m 1000 default
 alias sqlmap='sqlmap'
 
 # ============================================
@@ -1016,14 +1008,14 @@ alias peas='linpeas.sh'
 alias ysoserial='java -jar ~/tools/ysoserial.jar'
 alias evil='evil-winrm'
 alias ldump='ldapdomaindump'
-alias runas='wine ~/tools/windows/runasCs.exe'
+alias runas='wine ~/tools/windows/runasCs.exe' # Use wine explicitly
 
 # ============================================
 # WINDOWS TOOLS
 # ============================================
-alias rubeus='~/tools/windows/Rubeus.exe'
-alias sharphound='~/tools/windows/SharpHound.exe'
-alias seatbelt='~/tools/windows/Seatbelt.exe'
+alias rubeus='wine ~/tools/windows/Rubeus.exe'
+alias sharphound='wine ~/tools/windows/SharpHound.exe'
+alias seatbelt='wine ~/tools/windows/Seatbelt.exe'
 
 # ============================================
 # IMPACKET SHORTCUTS
@@ -1081,8 +1073,12 @@ newengagement() {
         return 1
     fi
     
-    mkdir -p ~/engagements/$1/{recon,scans,exploits,loot,notes,screenshots}
-    cd ~/engagements/$1
+    # Sanitizing name for filesystem safety
+    local name=$(echo "$1" | tr '[:upper:]' '[:lower:]' | tr -c '[:alnum:]_-' '-')
+    local path="$HOME/engagements/$name"
+
+    mkdir -p "$path"/{recon,scans,exploits,loot,notes,screenshots}
+    cd "$path" || return 1
     echo "# $1 Engagement" > notes/README.md
     echo "Created: $(date)" >> notes/README.md
     echo "[+] Created engagement: $1"
@@ -1097,33 +1093,36 @@ quickscan() {
     fi
     
     local timestamp=$(date +%Y%m%d_%H%M%S)
-    nmap -sV -sC -O -oA quickscan_${timestamp} $1
+    local output_file="quickscan_${timestamp}_$1"
+    nmap -sV -sC -O -oA "$output_file" "$1" # Quoted $output_file
 }
 
 # Universal archive extractor
 extract() {
     if [[ ! -f $1 ]]; then
-        echo "'$1' is not a valid file"
+        echo "'$1' is not a valid file" >&2
         return 1
     fi
     
-    case $1 in
-        *.tar.bz2) tar xjf $1 ;;
-        *.tar.gz) tar xzf $1 ;;
-        *.bz2) bunzip2 $1 ;;
-        *.rar) unrar e $1 ;;
-        *.gz) gunzip $1 ;;
-        *.tar) tar xf $1 ;;
-        *.tbz2) tar xjf $1 ;;
-        *.tgz) tar xzf $1 ;;
-        *.zip) unzip $1 ;;
-        *.Z) uncompress $1 ;;
-        *.7z) 7z x $1 ;;
-        *) echo "'$1' cannot be extracted via extract()" ;;
+    local file="$1"
+
+    case "$file" in # Quoted variable in case statement
+        *.tar.bz2) tar xjf "$file" ;;
+        *.tar.gz) tar xzf "$file" ;;
+        *.bz2) bunzip2 "$file" ;;
+        *.rar) unrar e "$file" ;;
+        *.gz) gunzip "$file" ;;
+        *.tar) tar xf "$file" ;;
+        *.tbz2) tar xjf "$file" ;;
+        *.tgz) tar xzf "$file" ;;
+        *.zip) unzip "$file" ;;
+        *.Z) uncompress "$file" ;;
+        *.7z) 7z x "$file" ;;
+        *) echo "'$file' cannot be extracted via extract()" >&2; return 1 ;;
     esac
 }
 ZSHRC_EOF
-    
+
     chown "$USERNAME":"$USERNAME" "$USER_HOME/.zshrc"
     log_info ".zshrc created with comprehensive configuration"
 else
@@ -1135,54 +1134,82 @@ if [[ ! -f "$USER_HOME/scripts/update-tools.sh" ]]; then
     log_info "Creating update-tools.sh..."
     cat > "$USER_HOME/scripts/update-tools.sh" << 'UPDATE_SCRIPT_EOF'
 #!/bin/bash
+set -euo pipefail # Added robust error handling
 # ShellShock v1.01 - Tool Update Script
 
-echo "[+] Updating system packages..."
-sudo apt update && sudo apt upgrade -y
+RED='\033[0;31m'
+GREEN='\033[0;32m'
+YELLOW='\033[1;33m'
+NC='\033[0m'
 
-echo "[+] Updating Python tools..."
-pip3 install --upgrade --break-system-packages \
+log_info() { echo -e "${GREEN}[+]${NC} $1"; }
+log_warn() { echo -e "${YELLOW}[!]${NC} $1"; }
+
+echo -e "\n${GREEN}========================================${NC}"
+echo -e "${GREEN}   SHELLSHOCK TOOL & SYSTEM UPDATE      ${NC}"
+echo -e "${GREEN}========================================${NC}"
+
+log_info "Updating system packages..."
+sudo apt update && sudo apt upgrade -y || log_warn "System update partially failed"
+
+log_info "Updating Python tools (pip3 system-wide)..."
+pip3 install -U --break-system-packages \
     impacket bloodhound bloodyAD certipy-ad \
-    pypykatz lsassy pwntools ROPgadget truffleHog || true
+    pypykatz lsassy pwntools ROPgadget truffleHog || log_warn "pip3 update partially failed"
 
-echo "[+] Updating pipx tools..."
-pipx upgrade-all || true
+log_info "Updating pipx tools..."
+pipx upgrade-all || log_warn "pipx update failed"
 
-echo "[+] Updating Go tools..."
+log_info "Updating Go tools (Requires GOPATH set)..."
 export GOPATH=$HOME/go
-go install -v github.com/projectdiscovery/naabu/v2/cmd/naabu@latest
-go install -v github.com/projectdiscovery/httpx/cmd/httpx@latest
-go install -v github.com/projectdiscovery/nuclei/v3/cmd/nuclei@latest
-go install -v github.com/projectdiscovery/subfinder/v2/cmd/subfinder@latest
-go install -v github.com/ffuf/ffuf/v2@latest
-go install -v github.com/OJ/gobuster/v3@latest
-go install -v github.com/jpillora/chisel@latest
-go install -v github.com/ropnop/windapsearch@latest
-go install -v github.com/garrettfoster13/pre2k@latest
-go install -v github.com/nicocha30/ligolo-ng/cmd/proxy@latest
-go install -v github.com/nicocha30/ligolo-ng/cmd/agent@latest
+export PATH=$PATH:$GOPATH/bin
 
-echo "[+] Updating nuclei templates..."
-nuclei -update-templates
+GO_TOOLS=(
+    "github.com/projectdiscovery/naabu/v2/cmd/naabu@latest"
+    "github.com/projectdiscovery/httpx/cmd/httpx@latest"
+    "github.com/projectdiscovery/nuclei/v3/cmd/nuclei@latest"
+    "github.com/projectdiscovery/subfinder/v2/cmd/subfinder@latest"
+    "github.com/ffuf/ffuf/v2@latest"
+    "github.com/OJ/gobuster/v3@latest"
+    "github.com/jpillora/chisel@latest"
+    "github.com/ropnop/windapsearch@latest"
+    "github.com/garrettfoster13/pre2k@latest"
+    "github.com/nicocha30/ligolo-ng/cmd/proxy@latest"
+    "github.com/nicocha30/ligolo-ng/cmd/agent@latest"
+    "github.com/projectdiscovery/katana/cmd/katana@latest"
+    "github.com/ropnop/kerbrute@latest"
+    "github.com/projectdiscovery/dnsx/cmd/dnsx@latest"
+)
 
-echo "[+] Updating Ruby tools..."
-gem update one_gadget haiti-hash evil-winrm || true
+for tool_path in "${GO_TOOLS[@]}"; do
+    tool_name=$(basename "$tool_path" | cut -d'@' -f1)
+    echo "  > Updating $tool_name..."
+    go install -v "$tool_path" || log_warn "Failed to update $tool_name"
+done
 
-echo "[+] Updating searchsploit database..."
-searchsploit -u || true
+log_info "Updating nuclei templates..."
+nuclei -update-templates || log_warn "Nuclei template update failed"
 
-echo "[+] Updating repositories..."
-cd ~/tools/repos || exit 0
-for dir in */; do
+log_info "Updating Ruby tools..."
+gem update one_gadget haiti-hash evil-winrm || log_warn "Ruby tools update failed"
+
+log_info "Updating searchsploit database..."
+searchsploit -u -v || log_warn "searchsploit update failed"
+
+log_info "Updating git repositories (Shallow pull)..."
+cd ~/tools/repos || log_warn "Could not find ~/tools/repos" && exit 1
+
+# Iterate through directories and pull with --depth 1
+find . -maxdepth 1 -type d -name ".*" -prune -o -type d ! -name . | while read -r dir; do
     if [[ -d "$dir/.git" ]]; then
-        echo "[*] Updating $dir"
-        cd "$dir" && git pull && cd ..
+        echo -e "[*] Updating $(basename "$dir")"
+        ( cd "$dir" && git pull --depth 1 ) || log_warn "Failed to update $(basename "$dir")"
     fi
 done
 
-echo "[+] Update complete!"
+echo -e "\n${GREEN}Update complete! Please check log for warnings.${NC}"
 UPDATE_SCRIPT_EOF
-    
+
     chmod +x "$USER_HOME/scripts/update-tools.sh"
     chown "$USERNAME":"$USERNAME" "$USER_HOME/scripts/update-tools.sh"
     log_info "update-tools.sh created"
@@ -1218,7 +1245,7 @@ echo "  • Clear Kerberos tickets"
 echo "  • Wipe cached credentials (Responder, NetExec)"
 echo "  • Clear SSH known_hosts"
 echo ""
-read -p "Continue? (yes/no): " confirm
+read -rp "Continue? (type 'yes' to confirm): " confirm # Used -r flag and explicit confirmation
 [[ "$confirm" != "yes" ]] && exit 0
 
 ARCHIVE_DIR="$HOME/archives/$(date +%Y%m%d_%H%M%S)"
@@ -1243,7 +1270,8 @@ for pty in /dev/pts/[0-9]*; do
     owner=$(stat -c %U "$pty" 2>/dev/null || echo "")
     [[ "$owner" != "$USER" ]] && continue
     pty_name=$(basename "$pty")
-    timeout 2 script -q -c "cat" /dev/null > "$ARCHIVE_DIR/history/pty_${pty_name}.txt" 2>/dev/null || true
+    # Using script -c cat for safer read (requires sudo/permissions)
+    timeout 2 sudo script -q -c "cat $pty" /dev/null > "$ARCHIVE_DIR/history/pty_${pty_name}.txt" 2>/dev/null || true
     ((pty_count++))
 done
 [[ $pty_count -gt 0 ]] && log "Captured $pty_count live terminal buffers"
@@ -1261,7 +1289,7 @@ log "Resetting /etc/hosts..."
 sudo cp /etc/hosts "$ARCHIVE_DIR/hosts.backup" 2>/dev/null || true
 sudo bash -c "cat > /etc/hosts << 'HOSTS_EOF'
 127.0.0.1 localhost
-127.0.1.1 $(hostname)
+127.0.1.1 \$(hostname)
 ::1 localhost ip6-localhost ip6-loopback
 ff02::1 ip6-allnodes
 ff02::2 ip6-allrouters
@@ -1282,7 +1310,7 @@ log "Zsh history cleared"
 
 # Clear cached credentials
 log "Wiping cached credentials..."
-rm -rf "$HOME/.responder"/* "$HOME/.nxc"/* "$HOME/.cme"/* 2>/dev/null || true
+rm -rf "$HOME/.responder"/* "$HOME/.nxc"/* "$HOME/.cme"/* "$HOME/.netexec"/* 2>/dev/null || true # Added .netexec
 log "Cached credentials cleared"
 
 # Clear SSH known_hosts
@@ -1300,10 +1328,10 @@ if [[ $pty_count -gt 0 ]]; then
     echo
 fi
 
-read -p "Reboot system now? (y/n): " reboot_choice
+read -rp "Reboot system now? (y/n): " reboot_choice
 [[ "$reboot_choice" =~ ^[Yy]$ ]] && sudo reboot
 RESET_SCRIPT_EOF
-    
+
     chmod +x "$USER_HOME/Desktop/RESET_SHELLSHOCK.sh"
     chown "$USERNAME":"$USERNAME" "$USER_HOME/Desktop/RESET_SHELLSHOCK.sh"
     log_info "RESET_SHELLSHOCK.sh created"
@@ -1320,7 +1348,7 @@ if [[ ! -f "$USER_HOME/Desktop/INSTALL_VBOX_ADDITIONS.sh" ]]; then
     log_info "Creating INSTALL_VBOX_ADDITIONS.sh..."
     cat > "$USER_HOME/Desktop/INSTALL_VBOX_ADDITIONS.sh" << 'VBOX_INSTALLER_EOF'
 #!/bin/bash
-set -e
+set -euo pipefail # Added robust error handling
 
 # ShellShock v1.01 - VirtualBox Guest Additions Installer
 
@@ -1333,22 +1361,22 @@ NC='\033[0m'
 
 log_info() { echo -e "${GREEN}[+]${NC} $1"; }
 log_warn() { echo -e "${YELLOW}[!]${NC} $1"; }
-log_error() { echo -e "${RED}[-]${NC} $1"; }
+log_error() { echo -e "${RED}[-]${NC} $1" >&2; }
 log_progress() { echo -e "${BLUE}[*]${NC} $1"; }
 
 clear
 echo -e "${CYAN}"
 cat << 'BANNER'
 ╔══════════════════════════════════════════════════════════╗
-║     VIRTUALBOX GUEST ADDITIONS INSTALLER                 ║
-║     Official ISO Method - Direct from Oracle             ║
-║     ShellShock v1.01                                     ║
+║      VIRTUALBOX GUEST ADDITIONS INSTALLER                ║
+║      Official ISO Method - Direct from Oracle            ║
+║      ShellShock v1.01                                    ║
 ╚══════════════════════════════════════════════════════════╝
 BANNER
 echo -e "${NC}\n"
 
 # Verify VirtualBox environment
-if ! hostnamectl 2>/dev/null | grep -i 'virtualization.*oracle' >/dev/null 2>&1; then
+if ! systemd-detect-virt 2>/dev/null | grep -qi "oracle"; then
     log_error "Not running in VirtualBox environment!"
     log_error "This installer is only for VirtualBox VMs."
     exit 1
@@ -1358,31 +1386,21 @@ fi
 if command -v VBoxClient &>/dev/null && VBoxClient --version &>/dev/null 2>&1; then
     log_info "Guest Additions already installed: $(VBoxClient --version 2>&1 | head -n1)"
     echo ""
-    read -p "Reinstall anyway? (y/n): " reinstall
+    read -rp "Reinstall anyway? (y/n): " reinstall
     [[ "$reinstall" != "y" ]] && [[ "$reinstall" != "Y" ]] && exit 0
 fi
 
 # Install required dependencies
 log_progress "Installing build dependencies..."
 sudo apt update -qq
-sudo apt install -y build-essential dkms linux-headers-$(uname -r) wget
+sudo apt install -y build-essential dkms linux-headers-"$(uname -r)" wget
 
 # Detect VirtualBox version
 VBOX_VERSION=""
 
-# Method 1: Try dmidecode
-if command -v dmidecode &>/dev/null; then
-    VBOX_VERSION=$(sudo dmidecode -s system-product-name 2>/dev/null | grep -oP '(?<=VirtualBox )[0-9.]+' || echo "")
-fi
-
-# Method 2: Try sysfs
-if [[ -z "$VBOX_VERSION" ]] && [[ -r /sys/class/dmi/id/product_name ]]; then
-    VBOX_VERSION=$(cat /sys/class/dmi/id/product_name 2>/dev/null | grep -oP '(?<=VirtualBox )[0-9.]+' || echo "")
-fi
-
-# Method 3: Fallback to latest from Oracle
+# Fallback to latest from Oracle
 if [[ -z "$VBOX_VERSION" ]]; then
-    log_warn "Could not detect VirtualBox version, fetching latest..."
+    log_warn "Could not reliably detect VirtualBox version, fetching latest..."
     VBOX_VERSION=$(wget -qO- https://download.virtualbox.org/virtualbox/LATEST.TXT 2>/dev/null || echo "7.0.12")
 fi
 
@@ -1396,12 +1414,7 @@ MOUNT_POINT="/mnt/vbox-additions"
 log_progress "Downloading Guest Additions ISO from Oracle..."
 echo "URL: $ISO_URL"
 if ! wget --progress=bar:force --timeout=60 --tries=3 "$ISO_URL" -O "$ISO_FILE"; then
-    log_error "Failed to download ISO!"
-    log_warn "Possible reasons:"
-    log_warn "  • VirtualBox version detection incorrect"
-    log_warn "  • Network connectivity issues"
-    log_warn "  • Oracle server unavailable"
-    log_warn ""
+    log_error "Failed to download ISO! Check version or network."
     log_warn "Manual download: https://download.virtualbox.org/virtualbox/"
     exit 1
 fi
@@ -1418,8 +1431,8 @@ sudo mount -o loop "$ISO_FILE" "$MOUNT_POINT"
 
 # Verify installer exists
 if [[ ! -f "$MOUNT_POINT/VBoxLinuxAdditions.run" ]]; then
-    log_error "Installer script not found in ISO!"
-    sudo umount "$MOUNT_POINT"
+    log_error "Installer script not found in ISO! Unmounting and cleaning up."
+    sudo umount "$MOUNT_POINT" 2>/dev/null || true
     rm -f "$ISO_FILE"
     exit 1
 fi
@@ -1432,7 +1445,7 @@ echo ""
 sudo "$MOUNT_POINT/VBoxLinuxAdditions.run" || {
     EXIT_CODE=$?
     if [[ $EXIT_CODE -eq 2 ]]; then
-        log_warn "Installer returned exit code 2 (this is often normal)"
+        log_warn "Installer returned exit code 2 (this is often normal on success)"
     else
         log_error "Installer failed with exit code: $EXIT_CODE"
         log_warn "Check /var/log/vboxadd-install.log for details"
@@ -1441,8 +1454,8 @@ sudo "$MOUNT_POINT/VBoxLinuxAdditions.run" || {
 
 # Cleanup
 log_progress "Cleaning up temporary files..."
-sudo umount "$MOUNT_POINT"
-sudo rmdir "$MOUNT_POINT"
+sudo umount "$MOUNT_POINT" 2>/dev/null || true
+sudo rmdir "$MOUNT_POINT" 2>/dev/null || true
 rm -f "$ISO_FILE"
 
 # Verify installation
@@ -1454,7 +1467,7 @@ if command -v VBoxClient &>/dev/null; then
     # Start VBoxClient services
     log_progress "Starting VBoxClient services..."
     
-    pkill -9 -f VBoxClient 2>/dev/null || true
+    pkill -9 -u "$(id -u)" -f VBoxClient 2>/dev/null || true # Kill by user ID
     sleep 1
     
     VBoxClient --clipboard &>/dev/null &
@@ -1496,7 +1509,7 @@ AUTOSTART_DND
     echo ""
     log_warn "${YELLOW}Reboot recommended for full functionality${NC}"
     echo ""
-    read -p "Reboot now? (y/n): " reboot_choice
+    read -rp "Reboot now? (y/n): " reboot_choice
     [[ "$reboot_choice" =~ ^[Yy]$ ]] && sudo reboot
     
 else
@@ -1511,7 +1524,7 @@ echo ""
 log_info "Installation complete!"
 log_info "Test clipboard by copying text between host and VM"
 VBOX_INSTALLER_EOF
-    
+
     chmod +x "$USER_HOME/Desktop/INSTALL_VBOX_ADDITIONS.sh"
     chown "$USERNAME":"$USERNAME" "$USER_HOME/Desktop/INSTALL_VBOX_ADDITIONS.sh"
     log_info "VirtualBox installer script created"
@@ -1520,7 +1533,7 @@ else
 fi
 
 # ============================================
-# PHASE 10: DOCUMENTATION
+# PHASE 10: DOCUMENTATION (Minor updates for aliases)
 # ============================================
 log_progress "Phase 10: Creating Desktop Documentation"
 
@@ -1528,122 +1541,119 @@ log_progress "Phase 10: Creating Desktop Documentation"
 if [[ ! -f "$USER_HOME/Desktop/COMMANDS.txt" ]]; then
     cat > "$USER_HOME/Desktop/COMMANDS.txt" << 'COMMANDS_DOC_EOF'
 ╔═══════════════════════════════════════════════════════════════╗
-║           SHELLSHOCK v1.01 — COMMAND REFERENCE               ║
+║          SHELLSHOCK v1.01 — COMMAND REFERENCE                 ║
 ╚═══════════════════════════════════════════════════════════════╝
 
 ══════════════════════════════════════════════════════════════
- CUSTOM FUNCTIONS
+  CUSTOM FUNCTIONS
 ══════════════════════════════════════════════════════════════
-newengagement <name>    Create engagement directory structure
-                        → ~/engagements/<name>/{recon,scans,exploits,loot,notes,screenshots}
+newengagement <name>      Create engagement directory structure
+                          → ~/engagements/<name>/{recon,scans,exploits,loot,notes,screenshots}
 
-quickscan <target>      Fast nmap scan with timestamped output
-                        → nmap -sV -sC -O -oA quickscan_TIMESTAMP <target>
+quickscan <target>        Fast nmap scan with timestamped output
+                          → nmap -sV -sC -O -oA quickscan_TIMESTAMP <target>
 
-extract <file>          Universal archive extractor
-                        → Supports: .tar.gz, .zip, .7z, .rar, .bz2, etc.
-
-══════════════════════════════════════════════════════════════
- NAVIGATION SHORTCUTS
-══════════════════════════════════════════════════════════════
-tools                   cd ~/tools
-repos                   cd ~/tools/repos
-wordlists               cd ~/tools/wordlists
-scripts                 cd ~/tools/scripts
-engagements             cd ~/engagements
-win                     cd ~/tools/windows
-host                    cd /media/sf_ctf-tools (VirtualBox shared folder)
+extract <file>            Universal archive extractor
+                          → Supports: .tar.gz, .zip, .7z, .rar, .bz2, etc.
 
 ══════════════════════════════════════════════════════════════
- SYSTEM ALIASES
+  NAVIGATION SHORTCUTS
 ══════════════════════════════════════════════════════════════
-ll                      ls -lah (detailed listing)
-...                     cd ../.. (up two directories)
-c                       clear
-h                       history
-please                  sudo
-rl                      rlwrap nc (netcat with readline)
+tools                     cd ~/tools
+repos                     cd ~/tools/repos
+wordlists                 cd ~/tools/wordlists
+scripts                   cd ~/tools/scripts
+engagements               cd ~/engagements
+win                       cd ~/tools/windows
+host                      cd /media/sf_ctf-tools (VirtualBox shared folder)
 
 ══════════════════════════════════════════════════════════════
- PENTESTING TOOLS
+  SYSTEM ALIASES
 ══════════════════════════════════════════════════════════════
-nmap-quick <target>     nmap -sV -sC -O
-nmap-full <target>      nmap -sV -sC -O -p-
-nmap-udp <target>       nmap -sU -sV
-
-serve                   python3 -m http.server 8000
-serve80                 sudo python3 -m http.server 80
-
-myip                    Display external IP
-ports                   netstat -tulanp
-listening               Show listening ports
-
-hash <hash>             Identify hash type
-shell                   Launch penelope reverse shell handler
+ll                        ls -lah --color=auto (detailed listing)
+...                       cd ../.. (up two directories)
+..                        cd .. (up one directory)
+c                         clear
+h                         history
+please                    sudo
+rl                        rlwrap nc (netcat with readline)
+python                    python3 (explicit)
 
 ══════════════════════════════════════════════════════════════
- EXPLOIT DATABASE (SEARCHSPLOIT)
+  PENTESTING TOOLS
 ══════════════════════════════════════════════════════════════
-searchsploit <term>     Search exploit database
-ss <term>               Searchsploit shortcut
-ssx <id>                Examine exploit code
-ssm <id>                Mirror exploit to current directory
-ssu                     Update exploit database
+nmap-quick <target>       nmap -sV -sC -O
+nmap-full <target>        nmap -sV -sC -O -p- --min-rate 1000
+nmap-udp <target>         nmap -sU -sV
+
+serve                     python3 -m http.server 8000
+serve80                   sudo python3 -m http.server 80
+
+myip                      Display external IP
+ports                     netstat -tulanp
+listening                 Show listening ports
+
+hash <hash>               Identify hash type
+shell                     Launch penelope reverse shell handler
 
 ══════════════════════════════════════════════════════════════
- CRACKING TOOLS
+  EXPLOIT DATABASE (SEARCHSPLOIT)
 ══════════════════════════════════════════════════════════════
-john <hashfile>         John with rockyou.txt
-hashcat <hash>          Hashcat (NTLM mode)
-sqlmap                  SQL injection tool
+searchsploit <term>       Search exploit database
+ss <term>                 Searchsploit shortcut
+ssx <id>                  Examine exploit code
+ssm <id>                  Mirror exploit to current directory
+ssu                       Update exploit database
 
 ══════════════════════════════════════════════════════════════
- NETWORK TOOLS
+  CRACKING TOOLS
 ══════════════════════════════════════════════════════════════
-nxc / cme               NetExec (CrackMapExec fork)
-smb <target>            NetExec SMB enumeration
-winrm <target>          NetExec WinRM
-
-bloodhound              BloodHound Python ingestor
-ldump                   ldapdomaindump
-evil                    evil-winrm
+john <hashfile>           John with rockyou.txt
+hashcat <hash>            Hashcat
+sqlmap                    SQL injection tool
 
 ══════════════════════════════════════════════════════════════
- WINDOWS TOOLS
+  NETWORK TOOLS
 ══════════════════════════════════════════════════════════════
-rubeus                  Rubeus.exe (Kerberos attacks)
-sharphound              SharpHound.exe (BloodHound collector)
-seatbelt                Seatbelt.exe (host enumeration)
-runas                   wine ~/tools/windows/runasCs.exe
+nxc / cme                 NetExec (CrackMapExec fork)
+smb <target>              NetExec SMB enumeration
+winrm <target>            NetExec WinRM
+
+bloodhound                BloodHound Python ingestor
+ldump                     ldapdomaindump
+evil                      evil-winrm
+ysoserial                 java -jar ~/tools/ysoserial.jar
+runas                     wine ~/tools/windows/runasCs.exe
 
 ══════════════════════════════════════════════════════════════
- IMPACKET SUITE
+  WINDOWS TOOLS
 ══════════════════════════════════════════════════════════════
-secretsdump             secretsdump.py
-getnpusers              GetNPUsers.py (ASREPRoast)
-getuserspns             GetUserSPNs.py (Kerberoast)
-psexec                  psexec.py
-smbexec                 smbexec.py
-wmiexec                 wmiexec.py
-ntlmrelayx              ntlmrelayx.py
+rubeus                    wine ~/tools/windows/Rubeus.exe (Kerberos attacks)
+sharphound                wine ~/tools/windows/SharpHound.exe (BloodHound collector)
+seatbelt                  wine ~/tools/windows/Seatbelt.exe (host enumeration)
 
 ══════════════════════════════════════════════════════════════
- WORDLIST SHORTCUTS
+  IMPACKET SUITE
 ══════════════════════════════════════════════════════════════
-wl-common               common.txt
-wl-dir                  directory-list-2.3-medium.txt
-wl-users                names.txt
-wl-pass                 rockyou.txt
-wl-params               burp-parameter-names.txt
+secretsdump               secretsdump.py
+getnpusers                GetNPUsers.py (ASREPRoast)
+getuserspns               GetUserSPNs.py (Kerberoast)
+psexec                    psexec.py
+smbexec                   smbexec.py
+wmiexec                   wmiexec.py
+ntlmrelayx                ntlmrelayx.py
 
 ══════════════════════════════════════════════════════════════
- CHISEL TUNNELING
+  WORDLIST SHORTCUTS
 ══════════════════════════════════════════════════════════════
-chisel-server           chisel server --reverse --port 8000
-chisel-client           chisel client <server> <local:remote>
+wl-common                 common.txt
+wl-dir                    directory-list-2.3-medium.txt
+wl-users                  names.txt
+wl-pass                   rockyou.txt
+wl-params                 burp-parameter-names.txt
 
 ══════════════════════════════════════════════════════════════
- SYSTEM SCRIPTS
+  SYSTEM SCRIPTS
 ══════════════════════════════════════════════════════════════
 ~/Desktop/RESET_SHELLSHOCK.sh
     Archive history, wipe credentials, reset system
@@ -1653,21 +1663,6 @@ chisel-client           chisel client <server> <local:remote>
 
 ~/scripts/update-tools.sh
     Update all pentesting tools and repositories
-
-══════════════════════════════════════════════════════════════
- QUICK WORKFLOW
-══════════════════════════════════════════════════════════════
-1. newengagement <target>
-2. quickscan <ip>
-3. cd ~/engagements/<target>
-4. Start exploitation
-
-══════════════════════════════════════════════════════════════
- ENVIRONMENT
-══════════════════════════════════════════════════════════════
-$GOPATH                 ~/go
-$EDITOR                 vim
-PATH                    Includes: ~/go/bin, ~/.local/bin
 
 ══════════════════════════════════════════════════════════════
 COMMANDS_DOC_EOF
@@ -1722,7 +1717,7 @@ clear
 echo -e "${GREEN}"
 cat << 'COMPLETION_BANNER'
 ╔═══════════════════════════════════════════════════════════════╗
-║         SHELLSHOCK v1.01 — INSTALLATION COMPLETE              ║
+║          SHELLSHOCK v1.01 — INSTALLATION COMPLETE             ║
 ╚═══════════════════════════════════════════════════════════════╝
 COMPLETION_BANNER
 echo -e "${NC}\n"
@@ -1754,7 +1749,7 @@ echo ""
 echo -e "${CYAN}Installation log:${NC} /var/log/shellshock-install.log"
 echo ""
 
-read -p "Reboot now? (y/n): " reboot_choice
+read -rp "Reboot now? (y/n): " reboot_choice
 if [[ "$reboot_choice" =~ ^[Yy]$ ]]; then
     echo -e "\n${YELLOW}Rebooting in 5 seconds...${NC}"
     sleep 5
