@@ -1,4 +1,4 @@
-a#!/bin/bash
+#!/bin/bash
 # ============================================
 # PROJECT SHELLSHOCK v1.01 (FIXED)
 # Automated Pentesting Environment Bootstrap
@@ -144,10 +144,21 @@ cat << 'EOF'
 EOF
 echo -e "${NC}\n"
 
+# Check if stdin is a terminal
+if [ ! -t 0 ]; then
+    log_error "ERROR: Script must be run interactively (not piped from curl/wget)"
+    log_error "Download the script first, then run: sudo bash shellshock-v1.01-FIXED.sh"
+    exit 1
+fi
+
 # Username prompt - NO DEFAULTS, MANUAL INPUT REQUIRED
 USERNAME=""
 while true; do
-    read -rp "Enter pentesting username: " USERNAME
+    echo -n "Enter pentesting username: "
+    read USERNAME
+    
+    # Debug: show what was read (remove this line after testing)
+    #echo "DEBUG: Read username='$USERNAME' (length=${#USERNAME})"
     
     # Check if empty
     if [[ -z "$USERNAME" ]]; then
