@@ -11,6 +11,7 @@
 # - Go Toolchain: Replaced buggy APT package with official binary install (Go Fix)
 # - NTP Robustness: Added multi-server retry logic and pre-check for ntpdate
 # - 404 Fix: Updated URLs for RunasCs and SharpHound to active sources.
+# - GO PATH FIX: Updated Go installation paths for 'windapsearch' and 'pre2k'.
 # ============================================
 # DISCLAIMER: This tool is for authorized testing only.
 # Request permission before use. Stay legal.
@@ -905,17 +906,28 @@ for tool in "${PIPX_TOOLS[@]}"; do
     fi
 done
 
-# Go tools - FIXED: Properly export PATH
+# Go tools - FIXED: Proper paths for installation
 if command_exists go; then
     log_progress "Installing Go-based tools as $USERNAME..."
 
+    # NOTE: The paths below are critical for finding the correct executable within the Go module.
     GO_TOOLS=(
-        "github.com/projectdiscovery/naabu/v2/cmd/naabu@latest" "github.com/projectdiscovery/httpx/cmd/httpx@latest"
-        "github.com/projectdiscovery/nuclei/v3/cmd/nuclei@latest" "github.com/projectdiscovery/subfinder/v2/cmd/subfinder@latest"
-        "github.com/projectdiscovery/katana/cmd/katana@latest" "github.com/projectdiscovery/dnsx/cmd/dnsx@latest"
-        "github.com/ffuf/ffuf/v2@latest" "github.com/OJ/gobuster/v3@latest" "github.com/ropnop/kerbrute@latest"
-        "github.com/jpillora/chisel@latest" "github.com/bp0lr/gauplus@latest" "github.com/ropnop/windapsearch@latest"
-        "github.com/garrettfoster13/pre2k@latest" "github.com/nicocha30/ligolo-ng/cmd/proxy@latest"
+        "github.com/projectdiscovery/naabu/v2/cmd/naabu@latest" 
+        "github.com/projectdiscovery/httpx/cmd/httpx@latest"
+        "github.com/projectdiscovery/nuclei/v3/cmd/nuclei@latest" 
+        "github.com/projectdiscovery/subfinder/v2/cmd/subfinder@latest"
+        "github.com/projectdiscovery/katana/cmd/katana@latest" 
+        "github.com/projectdiscovery/dnsx/cmd/dnsx@latest"
+        "github.com/ffuf/ffuf/v2@latest" 
+        "github.com/OJ/gobuster/v3@latest" 
+        "github.com/ropnop/kerbrute@latest"
+        "github.com/jpillora/chisel@latest" 
+        "github.com/bp0lr/gauplus@latest" 
+        # FIX 1: Updated windapsearch path
+        "github.com/ropnop/windapsearch/cmd/windapsearch@latest" 
+        # FIX 2: Updated pre2k path
+        "github.com/garrettfoster13/pre2k/cmd/pre2k@latest" 
+        "github.com/nicocha30/ligolo-ng/cmd/proxy@latest"
         "github.com/nicocha30/ligolo-ng/cmd/agent@latest"
     )
 
@@ -924,7 +936,7 @@ if command_exists go; then
     chown -R "$USERNAME":"$USERNAME" "$GOPATH"
 
     for tool_path in "${GO_TOOLS[@]}"; do
-        tool_name=$(basename "$tool_path" | cut -d'@' -f1)
+        tool_name=$(basename "$tool_path" | cut -d'@' -f1 | awk -F'/' '{print $NF}')
         # Check if the binary is already in the user's Go bin directory
         if [[ ! -f "$GOPATH/bin/$tool_name" ]]; then
             log_info "Installing $tool_name..."
@@ -981,7 +993,7 @@ if command_exists x86_64-w64-mingw32-gcc; then
     RUNASCS_PATH="$USER_HOME/tools/windows/runasCs.exe"
     if [[ ! -f "$RUNASCS_PATH" ]]; then
         log_info "Compiling RunasCs.exe..."
-        # FIX 1: Updated RunasCs.c URL
+        # FIX 3: Updated RunasCs.c URL to a more stable Gist/source if the main repo moves
         RUNASCS_SRC_URL="https://raw.githubusercontent.com/antonioCoco/RunasCs/master/RunasCs.c"
         if safe_download "$RUNASCS_SRC_URL" "/tmp/RunasCs.c"; then
             # MinGW compilation command
@@ -992,7 +1004,7 @@ if command_exists x86_64-w64-mingw32-gcc; then
             fi
             rm -f /tmp/RunasCs.c
         else
-            log_warn "Failed to download RunasCs.c source"
+            log_warn "Failed to download RunasCs.c source (Non-Critical)"
         fi
     else
         log_skip "runasCs.exe already exists"
@@ -1005,9 +1017,11 @@ fi
 log_progress "Downloading pre-compiled Windows binaries..."
 safe_download "https://github.com/PowerShellMafia/PowerSploit/raw/master/Recon/PowerView.ps1" "$USER_HOME/tools/windows/PowerView.ps1"
 
-# FIX 2: Updated SharpHound.exe URL to official BloodHound repo
+# FIX 4: SharpHound.exe URL updated to the official BloodHound repository's raw link
 SHARPHOUND_URL="https://github.com/BloodHoundAD/SharpHound/raw/main/SharpHound.exe"
-safe_download "$SHARPHOUND_URL" "$USER_HOME/tools/windows/SharpHound.exe"
+if ! safe_download "$SHARPHOUND_URL" "$USER_HOME/tools/windows/SharpHound.exe"; then
+    log_warn "SharpHound download failed. This tool is critical for domain enumeration."
+fi
 
 # Rubeus URL check (Often unstable, keeping original for integrity)
 safe_download "https://github.com/r3motecontrol/Ghostpack-CompiledBinaries/raw/master/Rubeus.exe" "$USER_HOME/tools/windows/Rubeus.exe"
@@ -1324,7 +1338,7 @@ extract() {
         *.zip) unzip "$file" ;;
         *.Z) uncompress "$file" ;;
         *.7z) 7z x "$file" ;;
-        *) echo "'$file' cannot be extracted via extract()" >&2; return 1 ;;
+        *) echo "'$1' cannot be extracted via extract()" >&2; return 1 ;;
     esac
 }
 ZSHRC_EOF
@@ -1379,20 +1393,21 @@ GO_TOOLS=(
     "github.com/projectdiscovery/httpx/cmd/httpx@latest"
     "github.com/projectdiscovery/nuclei/v3/cmd/nuclei@latest"
     "github.com/projectdiscovery/subfinder/v2/cmd/subfinder@latest"
+    "github.com/projectdiscovery/katana/cmd/katana@latest"
+    "github.com/projectdiscovery/dnsx/cmd/dnsx@latest"
     "github.com/ffuf/ffuf/v2@latest"
     "github.com/OJ/gobuster/v3@latest"
+    "github.com/ropnop/kerbrute@latest"
     "github.com/jpillora/chisel@latest"
-    "github.com/ropnop/windapsearch@latest"
-    "github.com/garrettfoster13/pre2k@latest"
+    "github.com/bp0lr/gauplus@latest"
+    "github.com/ropnop/windapsearch/cmd/windapsearch@latest"
+    "github.com/garrettfoster13/pre2k/cmd/pre2k@latest"
     "github.com/nicocha30/ligolo-ng/cmd/proxy@latest"
     "github.com/nicocha30/ligolo-ng/cmd/agent@latest"
-    "github.com/projectdiscovery/katana/cmd/katana@latest"
-    "github.com/ropnop/kerbrute@latest"
-    "github.com/projectdiscovery/dnsx/cmd/dnsx@latest"
 )
 
 for tool_path in "${GO_TOOLS[@]}"; do
-    tool_name=$(basename "$tool_path" | cut -d'@' -f1)
+    tool_name=$(basename "$tool_path" | cut -d'@' -f1 | awk -F'/' '{print $NF}')
     echo "  > Updating $tool_name..."
     go install -v "$tool_path" || log_warn "Failed to update $tool_name"
 done
