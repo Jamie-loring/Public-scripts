@@ -119,7 +119,7 @@ cat << 'EOF'
 ║     ╚═════╝    ╚═╝  ╚═╝         ╚═════╝  ╚═════╝ ╚═╝  ╚═╝     ║
 ║                                                               ║
 ║            Project ShellShock 1.01                            ║
-║           A love letter to Pentesting by Jamie Loring         ║ 
+║            A love letter to Pentesting by Jamie Loring        ║ 
 ║                                                               ║
 ╚═══════════════════════════════════════════════════════════════╝
 EOF
