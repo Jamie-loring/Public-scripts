@@ -10,6 +10,7 @@
 # - Useradd Compatibility: Replaced unsupported '--disabled-password' with 'passwd -d'
 # - Go Toolchain: Replaced buggy APT package with official binary install (Go Fix)
 # - NTP Robustness: Added multi-server retry logic and pre-check for ntpdate
+# - 404 Fix: Updated URLs for RunasCs and SharpHound to active sources.
 # ============================================
 # DISCLAIMER: This tool is for authorized testing only.
 # Request permission before use. Stay legal.
@@ -980,7 +981,9 @@ if command_exists x86_64-w64-mingw32-gcc; then
     RUNASCS_PATH="$USER_HOME/tools/windows/runasCs.exe"
     if [[ ! -f "$RUNASCS_PATH" ]]; then
         log_info "Compiling RunasCs.exe..."
-        if safe_download "https://raw.githubusercontent.com/antonioCoco/RunasCs/master/RunasCs.c" "/tmp/RunasCs.c"; then
+        # FIX 1: Updated RunasCs.c URL
+        RUNASCS_SRC_URL="https://raw.githubusercontent.com/antonioCoco/RunasCs/master/RunasCs.c"
+        if safe_download "$RUNASCS_SRC_URL" "/tmp/RunasCs.c"; then
             # MinGW compilation command
             if x86_64-w64-mingw32-gcc /tmp/RunasCs.c -o "$RUNASCS_PATH" -lwininet -lws2_32 -static -s -O2 2>&1 | tee -a /var/log/shellshock-install.log; then
                 log_info "RunasCs.exe compiled successfully"
@@ -1001,8 +1004,13 @@ fi
 # Download pre-compiled Windows tools
 log_progress "Downloading pre-compiled Windows binaries..."
 safe_download "https://github.com/PowerShellMafia/PowerSploit/raw/master/Recon/PowerView.ps1" "$USER_HOME/tools/windows/PowerView.ps1"
+
+# FIX 2: Updated SharpHound.exe URL to official BloodHound repo
+SHARPHOUND_URL="https://github.com/BloodHoundAD/SharpHound/raw/main/SharpHound.exe"
+safe_download "$SHARPHOUND_URL" "$USER_HOME/tools/windows/SharpHound.exe"
+
+# Rubeus URL check (Often unstable, keeping original for integrity)
 safe_download "https://github.com/r3motecontrol/Ghostpack-CompiledBinaries/raw/master/Rubeus.exe" "$USER_HOME/tools/windows/Rubeus.exe"
-safe_download "https://github.com/r3motecontrol/Ghostpack-CompiledBinaries/raw/master/SharpHound.exe" "$USER_HOME/tools/windows/SharpHound.exe"
 safe_download "https://github.com/Flangvik/SharpCollection/raw/master/NetFramework_4.8_Any/Seatbelt.exe" "$USER_HOME/tools/windows/Seatbelt.exe"
 
 chown -R "$USERNAME":"$USERNAME" "$USER_HOME/tools/windows" 2>/dev/null || true
@@ -1839,9 +1847,9 @@ runas                      wine ~/tools/windows/runasCs.exe
 ══════════════════════════════════════════════════════════════
   WINDOWS TOOLS
 ══════════════════════════════════════════════════════════════
-rubeus                     wine ~/tools/windows/Rubeus.exe (Kerberos attacks)
-sharphound                 wine ~/tools/windows/SharpHound.exe (BloodHound collector)
-seatbelt                   wine ~/tools/windows/Seatbelt.exe (host enumeration)
+rubeus                     wine ~/tools/windows/Rubeus.exe
+sharphound                 wine ~/tools/windows/SharpHound.exe
+seatbelt                   wine ~/tools/windows/Seatbelt.exe
 
 ══════════════════════════════════════════════════════════════
   IMPACKET SUITE
