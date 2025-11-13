@@ -1,13 +1,13 @@
 #!/bin/bash
 # ============================================
-# PROJECT SHELLSHOCK v1.01
+# PROJECT SHELLSHOCK v1.01 (Go Fix Integrated)
 # Automated Pentesting Environment Bootstrap
 # Debian/Ubuntu/Parrot Compatible
 # Author: Jamie Loring
+# Last updated: 2025-11-13
 # ============================================
 # DISCLAIMER: This tool is for authorized testing only.
 # Request permission before use. Stay legal.
-# Last updated: 2025-11-13
 # ============================================
 
 set -euo pipefail
@@ -189,22 +189,31 @@ attempt_sync() {
     else
         log_warn "ntpdate sync failed using $server."
         return 1
-    fi # <-- FIX: Correctly closing the inner if block
-} # <-- Correctly closing the function block
+    fi
+}
 
 # 1. Check if ntpdate is already installed and try to sync
 if command_exists ntpdate; then
+    log_info "ntpdate is installed, proceeding with sync."
     attempt_sync "time.google.com" || attempt_sync "pool.ntp.org" || log_warn "All ntpdate sync attempts failed."
 else
     # 2. ntpdate not found, attempt to install it quickly
     log_warn "ntpdate not found, attempting to install it now..."
-    # Install without updating repos (to avoid skew-related apt failures)
-    if apt install -y ntpdate 2>&1 | tee -a /var/log/shellshock-install.log; then
-        log_info "Installed ntpdate."
-        # Now that it's installed, try to sync
-        attempt_sync "time.google.com" || attempt_sync "pool.ntp.org" || log_warn "Sync failed even after ntpdate installation."
+    
+    # Check if ntpdate package is *already installed* but missing from PATH (unlikely, but safe)
+    if package_installed "ntpdate"; then
+        log_info "ntpdate package is installed but command is missing from PATH. Attempting sync anyway..."
+        attempt_sync "time.google.com" || attempt_sync "pool.ntp.org" || log_warn "Sync failed without a clear ntpdate binary."
     else
-        log_warn "Could not install ntpdate without updating - will rely on chrony later."
+        # Install ntpdate without updating repos (to avoid skew-related apt failures)
+        log_info "Installing ntpdate package via apt..."
+        if apt install -y ntpdate 2>&1 | tee -a /var/log/shellshock-install.log; then
+            log_info "Installed ntpdate."
+            # Now that it's installed, try to sync
+            attempt_sync "time.google.com" || attempt_sync "pool.ntp.org" || log_warn "Sync failed even after ntpdate installation."
+        else
+            log_warn "Could not install ntpdate without updating - will rely on chrony later."
+        fi
     fi
 fi
 
@@ -273,7 +282,7 @@ fi
 log_info "Installing base packages..."
 PACKAGES=(
     build-essential git curl wget vim neovim tmux zsh
-    python3-pip python3-venv python3-dev golang-go rustc cargo
+    python3-pip python3-venv python3-dev rustc cargo
     docker.io docker-compose jq ripgrep fd-find bat
     htop ncdu tree fonts-powerline silversearcher-ag
     john john-data hashcat sqlmap exploitdb
@@ -305,9 +314,57 @@ else
 fi
 
 # ============================================
-# PHASE 1.5: VIRTUALBOX DETECTION
+# PHASE 1.5: OFFICIAL GO TOOLCHAIN INSTALL
 # ============================================
-log_progress "Phase 1.5: VirtualBox Detection"
+log_progress "Phase 1.5: Installing Official Go Toolchain (Go Fix)..."
+
+# Remove any potentially broken APT-installed version
+if package_installed "golang-go"; then
+    log_warn "Removing potentially conflicting APT Go version..."
+    DEBIAN_FRONTEND=noninteractive apt purge -y golang-go 2>&1 | tee -a /var/log/shellshock-install.log || true
+fi
+
+# Set target variables
+GO_VERSION="1.21.6" # Using stable LTS version
+GO_ARCH="linux-amd64"
+GO_TAR="go${GO_VERSION}.${GO_ARCH}.tar.gz"
+GO_URL="https://go.dev/dl/${GO_TAR}"
+
+if [[ ! -d "/usr/local/go" ]]; then
+    log_info "Downloading and installing official Go v${GO_VERSION}..."
+    
+    # Download binary
+    if curl -fsSLk "$GO_URL" -o "/tmp/$GO_TAR" 2>&1 | tee -a /var/log/shellshock-install.log; then
+        
+        # Remove existing, clean install, and set permissions
+        rm -rf /usr/local/go
+        tar -C /usr/local -xzf "/tmp/$GO_TAR"
+        rm -f "/tmp/$GO_TAR"
+        log_info "Official Go installed to /usr/local/go"
+
+        # Ensure the target user's profile uses the new official path
+        if ! grep -q 'PATH="/usr/local/go/bin' /etc/profile; then
+            echo 'export PATH="/usr/local/go/bin:$PATH"' | tee -a /etc/profile
+        fi
+        
+        # Ensure the current root session has the updated PATH for immediate use
+        export PATH="/usr/local/go/bin:$PATH"
+        
+    else
+        log_error "Failed to download Go binary. Go tools will fail."
+    fi
+else
+    log_skip "Official Go installation directory already exists (/usr/local/go)"
+    # Ensure PATH is set for running Go tools in the following phase
+    export PATH="/usr/local/go/bin:$PATH"
+fi
+echo ""
+# End of Phase 1.5
+
+# ============================================
+# PHASE 1.6: VIRTUALBOX DETECTION
+# ============================================
+log_progress "Phase 1.6: VirtualBox Detection"
 
 if systemd-detect-virt 2>/dev/null | grep -qi "oracle"; then
     log_info "VirtualBox environment detected"
@@ -795,8 +852,10 @@ if command_exists go; then
 
     for tool_path in "${GO_TOOLS[@]}"; do
         tool_name=$(basename "$tool_path" | cut -d'@' -f1)
+        # Check if the binary is already in the user's Go bin directory
         if [[ ! -f "$GOPATH/bin/$tool_name" ]]; then
             log_info "Installing $tool_name..."
+            # Note: We rely on the PATH set in Phase 1.5 to find 'go'
             sudo -u "$USERNAME" bash -c "export GOPATH='$GOPATH'; export PATH=\$PATH:\$GOPATH/bin; go install -v '$tool_path'" 2>&1 | tee -a /var/log/shellshock-install.log || log_warn "Failed to install $tool_name"
         else
             log_skip "$tool_name already installed"
@@ -850,6 +909,7 @@ if command_exists x86_64-w64-mingw32-gcc; then
     if [[ ! -f "$RUNASCS_PATH" ]]; then
         log_info "Compiling RunasCs.exe..."
         if safe_download "https://raw.githubusercontent.com/antonioCoco/RunasCs/master/RunasCs.c" "/tmp/RunasCs.c"; then
+            # MinGW compilation command
             if x86_64-w64-mingw32-gcc /tmp/RunasCs.c -o "$RUNASCS_PATH" -lwininet -lws2_32 -static -s -O2 2>&1 | tee -a /var/log/shellshock-install.log; then
                 log_info "RunasCs.exe compiled successfully"
             else
@@ -996,7 +1056,8 @@ fi
 [[ -f ~/.p10k.zsh ]] && source ~/.p10k.zsh
 
 # Environment variables
-export PATH=$PATH:$HOME/go/bin:$HOME/.local/bin
+# PATH is updated here to include the official Go path
+export PATH=$PATH:/usr/local/go/bin:$HOME/go/bin:$HOME/.local/bin
 export EDITOR=vim
 export GOPATH=$HOME/go
 
@@ -1229,8 +1290,9 @@ log_info "Updating pipx tools..."
 pipx upgrade-all || log_warn "pipx update failed"
 
 log_info "Updating Go tools (Requires GOPATH set)..."
+# Use the official path set during bootstrap
 export GOPATH=$HOME/go
-export PATH=$PATH:$GOPATH/bin
+export PATH=/usr/local/go/bin:$PATH:$GOPATH/bin
 
 GO_TOOLS=(
     "github.com/projectdiscovery/naabu/v2/cmd/naabu@latest"
@@ -1687,7 +1749,7 @@ ssu                        Update exploit database
 ══════════════════════════════════════════════════════════════
 john <hashfile>            John with rockyou.txt
 hashcat <hash>             Hashcat
-sqlmap                     SQL injection tool
+sqlmap                     sqlmap
 
 ══════════════════════════════════════════════════════════════
   NETWORK TOOLS
