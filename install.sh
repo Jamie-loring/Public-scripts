@@ -1,17 +1,15 @@
 #!/bin/bash
 # ============================================
-# PROJECT SHELLSHOCK v1.02 (FINAL BUILD)
+# PROJECT SHELLSHOCK v1.03 (FINAL BUILD)
 # Automated Pentesting Environment Bootstrap
 # Debian/Ubuntu/Parrot Compatible
 # Author: Jamie Loring
 # Last updated: 2025-11-13
 # ============================================
 # FIXES:
-# - Useradd Compatibility: Replaced unsupported '--disabled-password' with 'passwd -d'
-# - Go Toolchain: Replaced buggy APT package with official binary install (Go Fix)
-# - NTP Robustness: Added multi-server retry logic and pre-check for ntpdate
-# - 404 Fix: Updated URLs for RunasCs and SharpHound to active sources.
-# - GO PATH FIX: Updated Go installation paths for 'windapsearch' and 'pre2k'.
+# - Windows Binaries (ROBUST SOURCING): Switched to GitHub API/APT package location for SharpHound/RunasCs.
+# - GO PATH FIX: Updated Go installation paths and removed unstable 'pre2k'.
+# - Foundational Fixes: Useradd, NTP, and Go Toolchain are stable.
 # ============================================
 # DISCLAIMER: This tool is for authorized testing only.
 # Request permission before use. Stay legal.
@@ -139,7 +137,7 @@ cat << 'EOF'
 ║    ╚██████╗  ██║  ██║        ██████╔╝╚██████╔╝██╔╝ ██╗     ║
 ║     ╚═════╝  ╚═╝  ╚═╝        ╚═════╝  ╚═════╝ ╚═╝  ╚═╝     ║
 ║                                                             ║
-║              Project ShellShock 1.02                        ║
+║              Project ShellShock 1.03                        ║
 ║              A love letter to Pentesting by Jamie Loring    ║
 ║                                                             ║
 ╚═══════════════════════════════════════════════════════════════╝
@@ -360,6 +358,8 @@ PACKAGES=(
     mingw-w64 mingw-w64-tools
     p7zip-full unzip zip
     net-tools dnsutils iproute2
+    sharphound # Ensure sharphound APT package is installed for Phase 4.5 copy
+    dotnet # Added dotnet for reliable source compilation of Seatbelt
 )
 
 PACKAGES_TO_INSTALL=()
@@ -768,7 +768,7 @@ PROFILES_INI_EOF
         # Step 4: Create user.js preferences file
         log_info "Configuring Firefox preferences..."
         cat > "$PROFILE_DIR/user.js" << USERJS_EOF
-// ShellShock v1.02 - Firefox Configuration for Pentesting
+// ShellShock v1.03 - Firefox Configuration for Pentesting
 
 // Disable automatic updates
 user_pref("app.update.auto", false);
@@ -925,8 +925,7 @@ if command_exists go; then
         "github.com/bp0lr/gauplus@latest" 
         # FIX 1: Updated windapsearch path
         "github.com/ropnop/windapsearch/cmd/windapsearch@latest" 
-        # FIX 2: Updated pre2k path
-        "github.com/garrettfoster13/pre2k/cmd/pre2k@latest" 
+        # REMOVED: pre2k is unstable/missing package, skip installation for now
         "github.com/nicocha30/ligolo-ng/cmd/proxy@latest"
         "github.com/nicocha30/ligolo-ng/cmd/agent@latest"
     )
@@ -982,50 +981,96 @@ else
 fi
 
 # ============================================
-# PHASE 4.5: WINDOWS BINARIES
+# PHASE 4.5: WINDOWS BINARIES (ROBUST DOWNLOADS)
 # ============================================
 log_progress "Phase 4.5: Compiling & Downloading Windows Binaries"
 
-mkdir -p "$USER_HOME/tools/windows"
+mkdir -p "$USER_HOME"/tools/windows
 
-# Compile RunasCs
-if command_exists x86_64-w64-mingw32-gcc; then
-    RUNASCS_PATH="$USER_HOME/tools/windows/runasCs.exe"
-    if [[ ! -f "$RUNASCS_PATH" ]]; then
-        log_info "Compiling RunasCs.exe..."
-        # FIX 3: Updated RunasCs.c URL to a more stable Gist/source if the main repo moves
-        RUNASCS_SRC_URL="https://raw.githubusercontent.com/antonioCoco/RunasCs/master/RunasCs.c"
-        if safe_download "$RUNASCS_SRC_URL" "/tmp/RunasCs.c"; then
-            # MinGW compilation command
-            if x86_64-w64-mingw32-gcc /tmp/RunasCs.c -o "$RUNASCS_PATH" -lwininet -lws2_32 -static -s -O2 2>&1 | tee -a /var/log/shellshock-install.log; then
-                log_info "RunasCs.exe compiled successfully"
-            else
-                log_warn "RunasCs compilation failed (non-critical)"
+# --- RunasCs.exe (Download ZIP via API for reliability) ---
+RUNASCS_EXE="$USER_HOME/tools/windows/RunasCs.exe"
+RUNASCS_DIR="$USER_HOME/tools/windows/RunasCs-temp"
+
+if [[ ! -f "$RUNASCS_EXE" ]]; then
+    log_info "Downloading RunasCs.exe using GitHub API lookup..."
+    
+    # Use API lookup to get the latest ZIP URL
+    ZIP_URL=$(curl -s https://api.github.com/repos/antonioCoco/RunasCs/releases/latest | grep browser_download_url | grep RunasCs.zip | cut -d '"' -f 4)
+    
+    if [[ -n "$ZIP_URL" ]]; then
+        if safe_download "$ZIP_URL" "/tmp/RunasCs.zip"; then
+            mkdir -p "$RUNASCS_DIR"
+            unzip -qq "/tmp/RunasCs.zip" -d "$RUNASCS_DIR" 2>&1 | tee -a /var/log/shellshock-install.log || log_warn "Failed to unzip RunasCs"
+            rm -f "/tmp/RunasCs.zip"
+            
+            # Use the pre-compiled EXE if present, otherwise try to compile the C source
+            if [[ -f "$RUNASCS_DIR/RunasCs.exe" ]]; then
+                 cp "$RUNASCS_DIR/RunasCs.exe" "$USER_HOME/tools/windows/"
+                 log_info "RunasCs.exe installed from pre-compiled binary."
+            elif [[ -f "$RUNASCS_DIR/RunasCs.c" ]]; then
+                 # Fallback to compilation if binary isn't in the zip
+                 log_warn "Pre-compiled RunasCs.exe not found in ZIP. Falling back to source compilation..."
+                 if command_exists x86_64-w64-mingw32-gcc; then
+                     if x86_64-w64-mingw32-gcc "$RUNASCS_DIR/RunasCs.c" -o "$RUNASCS_EXE" -lwininet -lws2_32 -static -s -O2 2>&1 | tee -a /var/log/shellshock-install.log; then
+                         log_info "RunasCs.exe compiled successfully."
+                     else
+                         log_warn "RunasCs compilation failed (non-critical)."
+                     fi
+                 fi
             fi
-            rm -f /tmp/RunasCs.c
+            rm -rf "$RUNASCS_DIR"
         else
-            log_warn "Failed to download RunasCs.c source (Non-Critical)"
+            log_warn "RunasCs download failed (Non-Critical)"
         fi
     else
-        log_skip "runasCs.exe already exists"
+        log_warn "RunasCs GitHub API URL lookup failed."
     fi
 else
-    log_warn "MinGW not available - skipping RunasCs compilation"
+    log_skip "RunasCs.exe already exists"
 fi
 
-# Download pre-compiled Windows tools
-log_progress "Downloading pre-compiled Windows binaries..."
+# --- SharpHound.exe (APT/Parrot default) ---
+SHARPHOUND_APT_PATH="/usr/share/sharphound/SharpHound.exe"
+if [[ ! -f "$USER_HOME/tools/windows/SharpHound.exe" ]]; then
+    if [[ -f "$SHARPHOUND_APT_PATH" ]]; then
+        log_info "Copying SharpHound.exe from APT share location..."
+        cp "$SHARPHOUND_APT_PATH" "$USER_HOME/tools/windows/" 2>/dev/null || log_warn "Failed to copy SharpHound.exe from APT directory."
+    else
+        log_warn "SharpHound.exe not found in APT share. Ensure the 'sharphound' package is installed."
+    fi
+else
+    log_skip "SharpHound.exe already exists"
+fi
+
+# --- Seatbelt.exe (Build from Source for integrity) ---
+SEATBELT_EXE="$USER_HOME/tools/windows/Seatbelt.exe"
+if [[ ! -f "$SEATBELT_EXE" ]]; then
+    log_info "Cloning and building Seatbelt from source..."
+    if command_exists dotnet; then
+        SEATBELT_SRC_DIR="$USER_HOME/tools/windows/Seatbelt-src"
+        if safe_clone "https://github.com/GhostPack/Seatbelt.git" "$SEATBELT_SRC_DIR"; then
+            if ( cd "$SEATBELT_SRC_DIR" && dotnet build -c Release -f net462 ) 2>&1 | tee -a /var/log/shellshock-install.log; then
+                cp "$SEATBELT_SRC_DIR/bin/Release/net462/Seatbelt.exe" "$USER_HOME/tools/windows/"
+                log_info "Seatbelt.exe successfully built and copied."
+            else
+                log_warn "Seatbelt compilation failed (non-critical)."
+            fi
+            rm -rf "$SEATBELT_SRC_DIR" # Cleanup source
+        fi
+    else
+        log_warn ".NET (dotnet) command not found. Skipping Seatbelt compilation."
+    fi
+else
+    log_skip "Seatbelt.exe already exists."
+fi
+
+
+# Download PowerView.ps1 (Still stable, keeping original link)
 safe_download "https://github.com/PowerShellMafia/PowerSploit/raw/master/Recon/PowerView.ps1" "$USER_HOME/tools/windows/PowerView.ps1"
 
-# FIX 4: SharpHound.exe URL updated to the official BloodHound repository's raw link
-SHARPHOUND_URL="https://github.com/BloodHoundAD/SharpHound/raw/main/SharpHound.exe"
-if ! safe_download "$SHARPHOUND_URL" "$USER_HOME/tools/windows/SharpHound.exe"; then
-    log_warn "SharpHound download failed. This tool is critical for domain enumeration."
-fi
-
-# Rubeus URL check (Often unstable, keeping original for integrity)
+# Rubeus URL check (Keeping original for integrity, assumes stability)
 safe_download "https://github.com/r3motecontrol/Ghostpack-CompiledBinaries/raw/master/Rubeus.exe" "$USER_HOME/tools/windows/Rubeus.exe"
-safe_download "https://github.com/Flangvik/SharpCollection/raw/master/NetFramework_4.8_Any/Seatbelt.exe" "$USER_HOME/tools/windows/Seatbelt.exe"
+# NOTE: The last Seatbelt binary download link is now redundant, removed for cleanliness.
 
 chown -R "$USERNAME":"$USERNAME" "$USER_HOME/tools/windows" 2>/dev/null || true
 
@@ -1125,7 +1170,7 @@ if [[ ! -f "$USER_HOME/.zshrc" ]] || ! grep -q "ShellShock v1.01" "$USER_HOME/.z
     log_info "Creating .zshrc configuration..."
     cat > "$USER_HOME/.zshrc" << 'ZSHRC_EOF'
 # ============================================
-# ShellShock v1.02 - Zsh Configuration (NTP/SSL Fixed)
+# ShellShock v1.03 - Zsh Configuration (NTP/SSL Fixed)
 # ============================================
 
 export ZSH="$HOME/.oh-my-zsh"
@@ -1163,7 +1208,7 @@ if [[ -o interactive ]] && [[ -z "$TMUX" ]]; then
     echo -e "\033[1;36m"
     cat << 'BANNER'
     ╔════════════════════════════════════════════════════════╗
-    ║           SHELLSHOCK v1.02 - LOCKED & LOADED           ║
+    ║           SHELLSHOCK v1.03 - LOCKED & LOADED           ║
     ║                                                        ║
     ║ Quick:     tools | repos | win | update | timesync     ║
     ║ Engage:    newengagement <name>                        ║
@@ -1229,7 +1274,7 @@ alias peas='linpeas.sh'
 alias ysoserial='java -jar ~/tools/ysoserial.jar'
 alias evil='evil-winrm'
 alias ldump='ldapdomaindump'
-alias runas='wine ~/tools/windows/runasCs.exe'
+alias runas='wine ~/tools/windows/RunasCs.exe'
 
 # ============================================
 # WINDOWS TOOLS
@@ -1401,7 +1446,7 @@ GO_TOOLS=(
     "github.com/jpillora/chisel@latest"
     "github.com/bp0lr/gauplus@latest"
     "github.com/ropnop/windapsearch/cmd/windapsearch@latest"
-    "github.com/garrettfoster13/pre2k/cmd/pre2k@latest"
+    # pre2k intentionally excluded
     "github.com/nicocha30/ligolo-ng/cmd/proxy@latest"
     "github.com/nicocha30/ligolo-ng/cmd/agent@latest"
 )
@@ -1774,7 +1819,7 @@ log_progress "Phase 10: Creating Desktop Documentation"
 if [[ ! -f "$USER_HOME/Desktop/COMMANDS.txt" ]]; then
     cat > "$USER_HOME/Desktop/COMMANDS.txt" << 'COMMANDS_DOC_EOF'
 ╔═══════════════════════════════════════════════════════════════╗
-║             SHELLSHOCK v1.02 — COMMAND REFERENCE              ║
+║             SHELLSHOCK v1.03 — COMMAND REFERENCE              ║
 ╚═══════════════════════════════════════════════════════════════╝
 
 ══════════════════════════════════════════════════════════════
@@ -1857,7 +1902,7 @@ bloodhound                 BloodHound Python ingestor
 ldump                      ldapdomaindump
 evil                       evil-winrm
 ysoserial                  java -jar ~/tools/ysoserial.jar
-runas                      wine ~/tools/windows/runasCs.exe
+runas                      wine ~/tools/windows/RunasCs.exe
 
 ══════════════════════════════════════════════════════════════
   WINDOWS TOOLS
@@ -1968,7 +2013,7 @@ clear
 echo -e "${GREEN}"
 cat << 'COMPLETION_BANNER'
 ╔═══════════════════════════════════════════════════════════════╗
-║             SHELLSHOCK v1.02 — INSTALLATION COMPLETE          ║
+║             SHELLSHOCK v1.03 — INSTALLATION COMPLETE          ║
 ╚═══════════════════════════════════════════════════════════════╝
 COMPLETION_BANNER
 echo -e "${NC}\n"
@@ -1983,7 +2028,7 @@ echo "  ✓ Robust time sync (chrony) installed"
 echo "  ✓ HTTPS certificate issues resolved"
 echo -e "  ✓ Firefox with pentesting extensions"
 echo -e "  ✓ Comprehensive tool suite (Python, Go, Ruby)"
-echo -e "  ✓ Windows binaries (Rubeus, SharpHound, runasCs)"
+echo -e "  ✓ Windows binaries (Rubeus, SharpHound, RunasCs)"
 echo -e "  ✓ Wordlists (SecLists + rockyou.txt)"
 echo -e "  ✓ Essential repositories (PEASS, HackTricks, PayloadsAllTheThings)"
 echo -e "  ✓ Exploit database (searchsploit)"
