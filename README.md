@@ -9,7 +9,16 @@
 ShellShock is an automated setup script designed for Debian-based systems like **Parrot OS** and **Kali Linux**. It configures your environment into a complete, ready-to-go CTF and penetration testing box — all with a single command.
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/Jamie-loring/Public-scripts/main/ShellShock/install.sh | sudo bash
+curl -fsSL https://raw.githubusercontent.com/Jamie-loring/Public-scripts/ShellShock/ShellShock | sudo bash
+```
+
+**The structure is:**
+```
+https://raw.githubusercontent.com/
+  Jamie-loring/           (user)
+  Public-scripts/         (repo)
+  ShellShock/             (branch)
+  ShellShock              (filename - no extension!)
 ```
 
 After installation, reboot when prompted to enter your new environment.
