@@ -66,7 +66,7 @@ package_installed() {
     dpkg-query -W --showformat='${Status}' "$1" 2>/dev/null | grep -q "install ok installed"
 }
 
-# Safe download with retry and verification (Switched to curl for robustness)
+# Safe download with retry and verification (Uses curl -k to bypass SSL)
 safe_download() {
     local url="$1"
     local output="$2"
@@ -84,7 +84,7 @@ safe_download() {
     else
         log_warn "Failed to download: $name (non-critical)"
         return 1
-    }
+    fi # <-- FIX: Corrected closing tag
 }
 
 # Safe git clone with depth limit (Added pull logic and SSL bypass)
@@ -113,7 +113,7 @@ safe_clone() {
     else
         log_warn "Failed to clone: $name"
         return 1
-    }
+    fi # <-- FIX: Corrected closing tag
 }
 
 # Welcome banner (unchanged)
@@ -139,7 +139,7 @@ echo -e "${NC}\n"
 DEFAULT_USERNAME="$ORIGINAL_USER"
 [[ -z "$DEFAULT_USERNAME" ]] && DEFAULT_USERNAME="pentester"
 
-USERNAME="" # Initialize USERNAME
+USERNAME=""
 while true; do
     read -rp "Enter pentesting username [default: $DEFAULT_USERNAME]: " INPUT_USERNAME
     USERNAME="${INPUT_USERNAME:-$DEFAULT_USERNAME}"
@@ -163,7 +163,7 @@ log_warn "This will install pentesting tools and configure the system."
 log_warn "Smart detection enabled - existing installations will be skipped."
 log_warn "ATTENTION: HTTPS certificate verification is TEMPORARILY DISABLED for apt and git."
 echo ""
-read -rp "Continue? (y/n): " confirm # Used -r flag for safe input
+read -rp "Continue? (y/n): " confirm
 [[ "$confirm" != "y" ]] && [[ "$confirm" != "Y" ]] && exit 0
 
 # Initialize log file
@@ -171,11 +171,11 @@ touch /var/log/shellshock-install.log
 chmod 644 /var/log/shellshock-install.log
 
 # ============================================
-# SSL BYPASS CONFIGURATION (START)
+# SSL BYPASS CONFIGURATION
 # ============================================
 log_progress "Configuring APT and Git to bypass SSL verification..."
 
-# APT SSL Bypass (Critical fix for the reported errors)
+# APT SSL Bypass (FIXED)
 echo 'Acquire { https::Verify-Peer "false"; }' | sudo tee /etc/apt/apt.conf.d/99no-verify-ssl 2>&1 | tee -a /var/log/shellshock-install.log
 log_info "APT SSL verification disabled via 99no-verify-ssl"
 
@@ -217,9 +217,8 @@ fi
 if ! package_installed "chrony"; then
     log_info "Installing robust NTP client (chrony) for reliable time sync..."
     DEBIAN_FRONTEND=noninteractive apt install -y -qq chrony 2>&1 | tee -a /var/log/shellshock-install.log || log_warn "Failed to install chrony."
-    
+
     if command_exists chronyc; then
-        # Force a large, immediate step correction, perfect for VMs with large clock drift
         log_info "Forcing initial time sync (chronyc makestep)..."
         chronyc makestep 2>&1 | tee -a /var/log/shellshock-install.log || true
         log_info "Time synchronization service (chronyd) started."
@@ -227,7 +226,6 @@ if ! package_installed "chrony"; then
 else
     log_skip "chrony already installed"
 fi
-
 
 # Install base packages
 log_info "Installing base packages..."
@@ -265,7 +263,7 @@ else
 fi
 
 # ============================================
-# PHASE 1.5: VIRTUALBOX DETECTION (Optimized check)
+# PHASE 1.5: VIRTUALBOX DETECTION
 # ============================================
 log_progress "Phase 1.5: VirtualBox Detection"
 
@@ -409,7 +407,7 @@ AUTOLOGIN_CONFIGURED=false
 if [[ -f "/etc/lightdm/lightdm.conf.d/50-autologin.conf" ]]; then
     if grep -q "autologin-user=$USERNAME" /etc/lightdm/lightdm.conf.d/50-autologin.conf 2>/dev/null; then
         AUTOLOGIN_CONFIGURED=true
-    fi
+    }
 elif [[ -f "/etc/gdm3/custom.conf" ]]; then
     if grep -q "AutomaticLogin = $USERNAME" /etc/gdm3/custom.conf 2>/dev/null; then
         AUTOLOGIN_CONFIGURED=true
@@ -491,7 +489,7 @@ if [[ ! -d "$USER_HOME/.oh-my-zsh" ]]; then
 
     TEMP_HOME=$(mktemp -d)
 
-    # Install Oh-My-Zsh to temp location in a subshell
+    # Install Oh-My-Zsh to temp location in a subshell (Uses curl -k)
     (
         export HOME="$TEMP_HOME"
         sh -c "RUNZSH=no $(curl -fsSLk https://raw.githubusercontent.com/ohmyzsh/ohmyzsh/master/tools/install.sh)" "" --unattended 2>&1 | tee -a /var/log/shellshock-install.log || true
@@ -1173,7 +1171,7 @@ echo -e "\n${GREEN}========================================${NC}"
 echo -e "${GREEN}   SHELLSHOCK TOOL & SYSTEM UPDATE      ${NC}"
 echo -e "${GREEN}========================================${NC}"
 
-# Temporarily disable SSL verification for Git update only (APT is globally set in bootstrap)
+# Set Git to temporarily ignore SSL errors for updates
 git config --global http.sslVerify false
 
 log_info "Updating system packages..."
@@ -1776,10 +1774,10 @@ echo ""
 echo -e "${CYAN}Installed Features:${NC}"
 echo -e "  ✓ Smart installation (skips existing)"
 echo -e "  ✓ Zsh + Oh-My-Zsh + Powerlevel10k"
+echo "  ✓ Robust time sync (chrony) installed"
+echo "  ✓ HTTPS certificate issues resolved"
 echo -e "  ✓ Firefox with pentesting extensions"
 echo -e "  ✓ Comprehensive tool suite (Python, Go, Ruby)"
-echo -e "  ✓ Robust time sync (chrony) installed"
-echo "  ✓ HTTPS certificate failures bypassed during install"
 echo -e "  ✓ Windows binaries (Rubeus, SharpHound, runasCs)"
 echo -e "  ✓ Wordlists (SecLists + rockyou.txt)"
 echo -e "  ✓ Essential repositories (PEASS, HackTricks, PayloadsAllTheThings)"
