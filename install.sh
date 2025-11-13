@@ -10,7 +10,7 @@
 # Last updated: 2025-11-13
 # ============================================
 
-set -euo pipefail # Added -u (unset variables error) and -o pipefail (fail on pipe error)
+set -euo pipefail
 
 # Colors
 RED='\033[0;31m'
@@ -24,7 +24,7 @@ NC='\033[0m'
 # Logging functions
 log_info() { echo -e "${GREEN}[+]${NC} $1"; }
 log_warn() { echo -e "${YELLOW}[!]${NC} $1"; }
-log_error() { echo -e "${RED}[-]${NC} $1" >&2; } # Redirected errors to stderr
+log_error() { echo -e "${RED}[-]${NC} $1" >&2; }
 log_progress() { echo -e "${BLUE}[*]${NC} $1"; }
 log_skip() { echo -e "${MAGENTA}[SKIP]${NC} $1"; }
 
@@ -61,12 +61,12 @@ command_exists() {
     command -v "$1" &>/dev/null
 }
 
-# Check if package is installed (Improved using dpkg-query)
+# Check if package is installed
 package_installed() {
     dpkg-query -W --showformat='${Status}' "$1" 2>/dev/null | grep -q "install ok installed"
 }
 
-# Safe download with retry and verification (Uses curl -k to bypass SSL)
+# Safe download with retry and verification
 safe_download() {
     local url="$1"
     local output="$2"
@@ -77,17 +77,16 @@ safe_download() {
         return 0
     fi
 
-    # Using curl -fsSLk to bypass SSL verification (-k)
     if curl -fsSLk --retry 3 --max-time 30 "$url" -o "$output" 2>&1 | tee -a /var/log/shellshock-install.log; then
         log_info "Downloaded: $name"
         return 0
     else
         log_warn "Failed to download: $name (non-critical)"
         return 1
-    fi # <-- FIX: Corrected closing tag
+    fi
 }
 
-# Safe git clone with depth limit (Added pull logic and SSL bypass)
+# Safe git clone with depth limit
 safe_clone() {
     local url="$1"
     local dest="$2"
@@ -106,17 +105,16 @@ safe_clone() {
         return 0
     fi
 
-    # Added --single-branch for minimal history and quicker fetch
     if git clone --depth 1 --single-branch "$url" "$dest" 2>&1 | tee -a /var/log/shellshock-install.log; then
         log_info "Cloned: $name (Shallow, SSL ignored)"
         return 0
     else
         log_warn "Failed to clone: $name"
         return 1
-    fi # <-- FIX: Corrected closing tag
+    fi
 }
 
-# Welcome banner (unchanged)
+# Welcome banner
 clear
 echo -e "${CYAN}"
 cat << 'EOF'
@@ -135,7 +133,7 @@ cat << 'EOF'
 EOF
 echo -e "${NC}\n"
 
-# Username prompt (use ORIGINAL_USER or fallback)
+# Username prompt
 DEFAULT_USERNAME="$ORIGINAL_USER"
 [[ -z "$DEFAULT_USERNAME" ]] && DEFAULT_USERNAME="pentester"
 
@@ -149,6 +147,7 @@ done
 
 export USERNAME
 export USER_HOME="/home/$USERNAME"
+
 # Check if running as root before proceeding
 if [[ "$(id -u)" -ne 0 ]]; then
     log_error "This script must be run as root or via sudo."
@@ -175,11 +174,11 @@ chmod 644 /var/log/shellshock-install.log
 # ============================================
 log_progress "Configuring APT and Git to bypass SSL verification..."
 
-# APT SSL Bypass (FIXED)
+# APT SSL Bypass
 echo 'Acquire { https::Verify-Peer "false"; }' | sudo tee /etc/apt/apt.conf.d/99no-verify-ssl 2>&1 | tee -a /var/log/shellshock-install.log
 log_info "APT SSL verification disabled via 99no-verify-ssl"
 
-# Git SSL Bypass (Set globally for safe_clone)
+# Git SSL Bypass
 git config --global http.sslVerify false
 log_info "Git SSL verification disabled globally"
 
@@ -309,12 +308,12 @@ if ! id "$USERNAME" &>/dev/null; then
 
     chown -R "$USERNAME":"$USERNAME" "$USER_HOME" 2>/dev/null || true
 
-    # Configure Parrot theme via gsettings (Optimized for user context)
+    # Configure Parrot theme via gsettings
     log_info "Configuring Parrot theme (Requires running Display/DBUS session)..."
-    sudo -u "$USERNAME" bash << THEME_EOF
+    sudo -u "$USERNAME" bash << 'THEME_EOF'
 # Attempt to find the user's running DBUS session if it exists
-DBUS_ADDRESS=\$(sudo -u "$USERNAME" grep -z DBUS_SESSION_BUS_ADDRESS /proc/\$(pgrep -u "$USERNAME" mate-session|head -n1)/environ | tr -d '\0' | cut -d= -f2- || true)
-export DBUS_SESSION_BUS_ADDRESS="\${DBUS_ADDRESS}"
+DBUS_ADDRESS=$(sudo -u "$USERNAME" grep -z DBUS_SESSION_BUS_ADDRESS /proc/$(pgrep -u "$USERNAME" mate-session|head -n1)/environ | tr -d '\0' | cut -d= -f2- || true)
+export DBUS_SESSION_BUS_ADDRESS="${DBUS_ADDRESS}"
 export DISPLAY=:0
 
 if command -v gsettings &>/dev/null; then
@@ -344,9 +343,9 @@ else
             rsync -a /home/user/.config/dconf "$USER_HOME/.config/" 2>/dev/null || true
         fi
 
-        sudo -u "$USERNAME" bash << THEME2_EOF
-DBUS_ADDRESS=\$(sudo -u "$USERNAME" grep -z DBUS_SESSION_BUS_ADDRESS /proc/\$(pgrep -u "$USERNAME" mate-session|head -n1)/environ | tr -d '\0' | cut -d= -f2- || true)
-export DBUS_SESSION_BUS_ADDRESS="\${DBUS_ADDRESS}"
+        sudo -u "$USERNAME" bash << 'THEME2_EOF'
+DBUS_ADDRESS=$(sudo -u "$USERNAME" grep -z DBUS_SESSION_BUS_ADDRESS /proc/$(pgrep -u "$USERNAME" mate-session|head -n1)/environ | tr -d '\0' | cut -d= -f2- || true)
+export DBUS_SESSION_BUS_ADDRESS="${DBUS_ADDRESS}"
 export DISPLAY=:0
 
 if command -v gsettings &>/dev/null; then
@@ -376,7 +375,7 @@ else
     log_skip "Sudoers already configured"
 fi
 
-# Ensure ownership (final check for Phase 2 files)
+# Ensure ownership
 chown -R "$USERNAME":"$USERNAME" "$USER_HOME" 2>/dev/null || true
 
 # Set default shell to zsh
@@ -392,7 +391,7 @@ else
     log_warn "Zsh executable not found, skipping default shell change"
 fi
 
-# Disable old 'user' auto-login if exists (Combined cleanup)
+# Disable old 'user' auto-login if exists
 if [[ "$USERNAME" != "user" ]]; then
     log_progress "Checking for existing 'user' auto-login configuration..."
     sed -i '/autologin-user=user/d' /etc/lightdm/lightdm.conf* 2>/dev/null || true
@@ -401,13 +400,13 @@ if [[ "$USERNAME" != "user" ]]; then
     log_info "Cleaned up obsolete 'user' auto-login settings"
 fi
 
-# Configure auto-login (Logic retained)
+# Configure auto-login
 AUTOLOGIN_CONFIGURED=false
 
 if [[ -f "/etc/lightdm/lightdm.conf.d/50-autologin.conf" ]]; then
     if grep -q "autologin-user=$USERNAME" /etc/lightdm/lightdm.conf.d/50-autologin.conf 2>/dev/null; then
         AUTOLOGIN_CONFIGURED=true
-    }
+    fi
 elif [[ -f "/etc/gdm3/custom.conf" ]]; then
     if grep -q "AutomaticLogin = $USERNAME" /etc/gdm3/custom.conf 2>/dev/null; then
         AUTOLOGIN_CONFIGURED=true
@@ -454,7 +453,7 @@ else
     log_skip "Auto-login already configured"
 fi
 
-# Configure passwordless login group (Retained original logic)
+# Configure passwordless login group
 if ! grep -q '^nopasswdlogin:' /etc/group; then
     groupadd nopasswdlogin || true
     log_info "Created nopasswdlogin group"
@@ -465,7 +464,7 @@ if ! id -nG "$USERNAME" | grep -q 'nopasswdlogin'; then
     log_info "Added $USERNAME to nopasswdlogin group"
 fi
 
-# Retained original PAM logic
+# Configure PAM
 PAM_ENTRY='auth [success=1 default=ignore] pam_succeed_if.so user ingroup nopasswdlogin'
 PAM_FILE='/etc/pam.d/common-auth'
 
@@ -489,7 +488,7 @@ if [[ ! -d "$USER_HOME/.oh-my-zsh" ]]; then
 
     TEMP_HOME=$(mktemp -d)
 
-    # Install Oh-My-Zsh to temp location in a subshell (Uses curl -k)
+    # Install Oh-My-Zsh to temp location in a subshell
     (
         export HOME="$TEMP_HOME"
         sh -c "RUNZSH=no $(curl -fsSLk https://raw.githubusercontent.com/ohmyzsh/ohmyzsh/master/tools/install.sh)" "" --unattended 2>&1 | tee -a /var/log/shellshock-install.log || true
@@ -645,7 +644,7 @@ USERJS_EOF
         log_info "Firefox preferences configured"
     fi
 
-    # Step 5: Configure enterprise policies (fallback method)
+    # Step 5: Configure enterprise policies
     FIREFOX_PATH=$(find /usr/lib -maxdepth 1 -type d \( -name 'firefox' -o -name 'firefox-esr' \) 2>/dev/null | head -n1)
     if [[ -n "$FIREFOX_PATH" ]]; then
         mkdir -p "$FIREFOX_PATH/distribution"
@@ -698,7 +697,7 @@ if ! command_exists pipx; then
     export PATH="$PATH:/root/.local/bin:$USER_HOME/.local/bin"
 fi
 
-# Python packages via pip3 (system-wide installation)
+# Python packages via pip3
 PIP_TOOLS=(
     "impacket" "hashid" "bloodhound" "bloodyAD" "mitm6" "responder" "certipy-ad"
     "coercer" "pypykatz" "lsassy" "enum4linux-ng" "dnsrecon" "git-dumper"
@@ -713,7 +712,7 @@ for tool in "${PIP_TOOLS[@]}"; do
     fi
 done
 
-# Pipx tools (isolated installations - executed as user)
+# Pipx tools
 log_progress "Installing pipx-isolated tools as $USERNAME..."
 
 PIPX_TOOLS=(
@@ -733,7 +732,7 @@ for tool in "${PIPX_TOOLS[@]}"; do
     fi
 done
 
-# Go tools (Executed as user)
+# Go tools
 if command_exists go; then
     log_progress "Installing Go-based tools as $USERNAME..."
 
@@ -782,7 +781,7 @@ else
     log_warn "Ruby not available - skipping Ruby-based tools"
 fi
 
-# Ysoserial (Java deserialization tool)
+# Ysoserial
 if command_exists java; then
     if [[ ! -f "$USER_HOME/tools/ysoserial.jar" ]]; then
         log_info "Downloading ysoserial.jar..."
@@ -801,7 +800,7 @@ log_progress "Phase 4.5: Compiling & Downloading Windows Binaries"
 
 mkdir -p "$USER_HOME/tools/windows"
 
-# Compile RunasCs (requires MinGW)
+# Compile RunasCs
 if command_exists x86_64-w64-mingw32-gcc; then
     RUNASCS_PATH="$USER_HOME/tools/windows/runasCs.exe"
     if [[ ! -f "$RUNASCS_PATH" ]]; then
@@ -837,7 +836,7 @@ chown -R "$USERNAME":"$USERNAME" "$USER_HOME/tools/windows" 2>/dev/null || true
 # ============================================
 log_progress "Phase 5: Downloading Wordlists"
 
-# Clone SecLists (comprehensive wordlist collection)
+# Clone SecLists
 if [[ ! -d "$USER_HOME/tools/wordlists/SecLists/.git" ]]; then
     log_info "Cloning SecLists (Shallow clone, SSL ignored)..."
     safe_clone "https://github.com/danielmiessler/SecLists.git" "$USER_HOME/tools/wordlists/SecLists"
@@ -845,7 +844,7 @@ else
     safe_clone "https://github.com/danielmiessler/SecLists.git" "$USER_HOME/tools/wordlists/SecLists"
 fi
 
-# Decompress rockyou.txt if needed
+# Decompress rockyou.txt
 ROCKYOU_GZ="/usr/share/wordlists/rockyou.txt.gz"
 ROCKYOU_TXT="/usr/share/wordlists/rockyou.txt"
 
@@ -894,7 +893,7 @@ for repo in "${REPOS[@]}"; do
     safe_clone "$repo" "$USER_HOME/tools/repos/$name"
 done
 
-# Create convenience symlinks for frequently used tools
+# Create convenience symlinks
 if [[ -f "$USER_HOME/tools/repos/PEASS-ng/linPEAS/linpeas.sh" ]] && [[ ! -L "$USER_HOME/linpeas.sh" ]]; then
     ln -sf "$USER_HOME/tools/repos/PEASS-ng/linPEAS/linpeas.sh" "$USER_HOME/linpeas.sh" 2>/dev/null || true
 fi
@@ -923,7 +922,7 @@ log_progress "Phase 7: Creating Shell Configuration & Scripts"
 
 mkdir -p "$USER_HOME/scripts" "$USER_HOME/Desktop" "$USER_HOME/engagements"
 
-# Create .zshrc with comprehensive aliases and functions (Updated for fixes)
+# Create .zshrc
 if [[ ! -f "$USER_HOME/.zshrc" ]] || ! grep -q "ShellShock v1.01" "$USER_HOME/.zshrc"; then
     log_info "Creating .zshrc configuration..."
     cat > "$USER_HOME/.zshrc" << 'ZSHRC_EOF'
@@ -987,7 +986,7 @@ alias h='history'
 alias please='sudo'
 alias rl='rlwrap nc'
 alias python='python3'
-alias timesync='sudo chronyc makestep; timedatectl' # New alias for instant time sync
+alias timesync='sudo chronyc makestep; timedatectl'
 
 # ============================================
 # PENTESTING ALIASES
@@ -1156,7 +1155,7 @@ if [[ ! -f "$USER_HOME/scripts/update-tools.sh" ]]; then
     log_info "Creating update-tools.sh..."
     cat > "$USER_HOME/scripts/update-tools.sh" << 'UPDATE_SCRIPT_EOF'
 #!/bin/bash
-set -euo pipefail # Added robust error handling
+set -euo pipefail
 # ShellShock v1.01 - Tool Update Script
 
 RED='\033[0;31m'
@@ -1233,7 +1232,6 @@ done
 
 log_info "Forcing immediate system time synchronization..."
 sudo chronyc makestep || log_warn "chronyc makestep failed. Check network connection."
-
 
 log_info "Restoring Git SSL verification setting..."
 git config --global --unset http.sslVerify || true
@@ -1319,7 +1317,7 @@ log "Resetting /etc/hosts..."
 sudo cp /etc/hosts "$ARCHIVE_DIR/hosts.backup" 2>/dev/null || true
 sudo bash -c "cat > /etc/hosts << 'HOSTS_EOF'
 127.0.0.1 localhost
-127.0.1.1 \$(hostname)
+127.0.1.1 $(hostname)
 ::1 localhost ip6-localhost ip6-loopback
 ff02::1 ip6-allnodes
 ff02::2 ip6-allrouters
@@ -1353,7 +1351,6 @@ log "Restoring APT and Git SSL verification..."
 sudo rm -f /etc/apt/apt.conf.d/99no-verify-ssl || true
 git config --global --unset http.sslVerify || true
 log "SSL verification restored (Reboot recommended for full effect)"
-
 
 echo -e "\n${GREEN}RESET COMPLETE${NC}"
 echo -e "Archive location: ${CYAN}$ARCHIVE_DIR${NC}"
@@ -1429,7 +1426,6 @@ fi
 
 # Install required dependencies
 log_progress "Installing build dependencies..."
-# NOTE: Uses apt with SSL bypass already configured in bootstrap
 sudo apt update -qq
 sudo apt install -y build-essential dkms linux-headers-"$(uname -r)" wget
 
@@ -1723,12 +1719,11 @@ chown -R "$USERNAME":"$USERNAME" "$USER_HOME" 2>/dev/null || true
 apt autoremove -y -qq 2>/dev/null || true
 apt clean -qq 2>/dev/null || true
 
-# Restore SSL verification for APT and Git (Final step of the install process)
+# Restore SSL verification
 log_progress "Restoring original SSL configuration..."
 sudo rm -f /etc/apt/apt.conf.d/99no-verify-ssl || true
 git config --global --unset http.sslVerify || true
 log_info "APT and Git SSL verification restored."
-
 
 # Verify critical installations
 log_info "Verifying critical installations..."
