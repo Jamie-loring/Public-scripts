@@ -189,8 +189,8 @@ attempt_sync() {
     else
         log_warn "ntpdate sync failed using $server."
         return 1
-    fi
-}
+    fi # <-- FIX: Correctly closing the inner if block
+} # <-- Correctly closing the function block
 
 # 1. Check if ntpdate is already installed and try to sync
 if command_exists ntpdate; then
