@@ -6,7 +6,7 @@
 # oracle vbox drivers still need installed via ISO on mounted image. unless you
 # can fork this repo and get it to work. I haven't figured it out.
 
-# last updated 112/12/2025
+# last updated 11/12/2025
 
 # run with sudo bash ./<script>.sh
 
