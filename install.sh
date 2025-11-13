@@ -5,6 +5,12 @@
 # Debian/Ubuntu/Parrot Compatible
 # Author: Jamie Loring
 # Last updated: 2025-11-13
+# ============================================
+# FIXES:
+# - Username default now uses ORIGINAL_USER or 'pentester'
+# - Go PATH properly exported for tool installation
+# - Built-in 'user' account fully disabled
+# ============================================
 # DISCLAIMER: This tool is for authorized testing only.
 # Request permission before use. Stay legal.
 # ============================================
@@ -37,7 +43,12 @@ validate_username() {
 
     # Check format: lowercase alphanumeric, underscore, hyphen; 1-32 chars
     if [[ ! "$username" =~ ^[a-z_][a-z0-9_-]{0,31}$ ]]; then
-        log_error "Invalid username format. Must start with lowercase letter or underscore, and be alphanumeric (max 32 chars)."
+        log_error "Invalid username format."
+        echo -e "${YELLOW}Requirements:${NC}"
+        echo "  • Must start with lowercase letter or underscore"
+        echo "  • Can contain: lowercase letters, numbers, underscore, hyphen"
+        echo "  • Max 32 characters"
+        echo -e "${YELLOW}Valid examples:${NC} pentester, jamie, ctf_user, red-team, _hacker"
         return 1
     fi
 
