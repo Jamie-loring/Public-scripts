@@ -121,14 +121,14 @@ cat << 'EOF'
 ╔═══════════════════════════════════════════════════════════════╗
 ║     ██████╗████████╗███████╗    ██████╗  ██████╗ ██╗  ██╗     ║
 ║    ██╔════╝╚══██╔══╝██╔════╝    ██╔══██╗██╔═══██╗╚██╗██╔╝     ║
-║    ██║      ██║   █████╗      ██████╔╝██║   ██║ ╚███╔╝      ║
-║    ██║      ██║   ██╔══╝      ██╔══██╗██║   ██║ ██╔██╗      ║
-║    ╚██████╗  ██║   ██║         ██████╔╝╚██████╔╝██╔╝ ██╗     ║
-║     ╚═════╝  ╚═╝   ╚═╝         ╚═════╝  ╚═════╝ ╚═╝  ╚═╝     ║
-║                                                               ║
-║             Project ShellShock 1.01                           ║
-║             A love letter to Pentesting by Jamie Loring       ║
-║                                                               ║
+║    ██║      ██║  █████╗      ██████╔╝██║  ██║ ╚███╔╝      ║
+║    ██║      ██║  ██╔══╝      ██╔══██╗██║  ██║ ██╔██╗      ║
+║    ╚██████╗  ██║  ██║        ██████╔╝╚██████╔╝██╔╝ ██╗     ║
+║     ╚═════╝  ╚═╝  ╚═╝        ╚═════╝  ╚═════╝ ╚═╝  ╚═╝     ║
+║                                                             ║
+║              Project ShellShock 1.01                        ║
+║              A love letter to Pentesting by Jamie Loring    ║
+║                                                             ║
 ╚═══════════════════════════════════════════════════════════════╝
 EOF
 echo -e "${NC}\n"
@@ -172,30 +172,39 @@ chmod 644 /var/log/shellshock-install.log
 # ============================================
 # TIME SYNCHRONIZATION (CRITICAL - BEFORE APT)
 # ============================================
-log_progress "Forcing immediate time synchronization..."
+log_progress "Forcing immediate time synchronization (Google NTP)..."
 log_warn "Clock skew can cause APT repository signature failures"
 
 # Display current time before sync
 log_info "Current system time: $(date)"
 
-# Try ntpdate first (works even with major clock skew)
-if command_exists ntpdate; then
-    log_info "Using ntpdate for time sync..."
-    if ntpdate -u time.google.com 2>&1 | tee -a /var/log/shellshock-install.log; then
-        log_info "Time synced successfully via Google NTP"
-    elif ntpdate -u pool.ntp.org 2>&1 | tee -a /var/log/shellshock-install.log; then
-        log_info "Time synced successfully via pool.ntp.org"
+# Function to attempt time sync
+attempt_sync() {
+    local server="$1"
+    log_info "Attempting ntpdate sync with: $server..."
+    # The '|| true' ensures the script doesn't exit on sync failure (set -e)
+    if ntpdate -u "$server" 2>&1 | tee -a /var/log/shellshock-install.log; then
+        log_info "Time synced successfully via $server"
+        return 0
     else
-        log_warn "ntpdate sync failed, trying fallback methods..."
+        log_warn "ntpdate sync failed using $server."
+        return 1
     fi
+}
+
+# 1. Check if ntpdate is already installed and try to sync
+if command_exists ntpdate; then
+    attempt_sync "time.google.com" || attempt_sync "pool.ntp.org" || log_warn "All ntpdate sync attempts failed."
 else
-    log_warn "ntpdate not found, attempting to install..."
-    # Try to install ntpdate without updating repos (might fail due to clock skew)
+    # 2. ntpdate not found, attempt to install it quickly
+    log_warn "ntpdate not found, attempting to install it now..."
+    # Install without updating repos (to avoid skew-related apt failures)
     if apt install -y ntpdate 2>&1 | tee -a /var/log/shellshock-install.log; then
-        ntpdate -u time.google.com 2>&1 | tee -a /var/log/shellshock-install.log || true
-        log_info "Installed and ran ntpdate"
+        log_info "Installed ntpdate."
+        # Now that it's installed, try to sync
+        attempt_sync "time.google.com" || attempt_sync "pool.ntp.org" || log_warn "Sync failed even after ntpdate installation."
     else
-        log_warn "Could not install ntpdate - will rely on chrony later"
+        log_warn "Could not install ntpdate without updating - will rely on chrony later."
     fi
 fi
 
@@ -999,12 +1008,12 @@ if [[ -o interactive ]] && [[ -z "$TMUX" ]]; then
     echo -e "\033[1;36m"
     cat << 'BANNER'
     ╔════════════════════════════════════════════════════════╗
-    ║         SHELLSHOCK v1.01 - LOCKED & LOADED             ║
+    ║           SHELLSHOCK v1.01 - LOCKED & LOADED           ║
     ║                                                        ║
-    ║  Quick:    tools | repos | win | update | timesync     ║
-    ║  Engage:   newengagement <name>                        ║
-    ║  Scan:     quickscan <target>                          ║
-    ║  Reset:    ~/Desktop/RESET_SHELLSHOCK.sh               ║
+    ║ Quick:     tools | repos | win | update | timesync     ║
+    ║ Engage:    newengagement <name>                        ║
+    ║ Scan:      quickscan <target>                          ║
+    ║ Reset:     ~/Desktop/RESET_SHELLSHOCK.sh               ║
     ╚════════════════════════════════════════════════════════╝
 BANNER
     echo -e "\033[0m"
@@ -1202,7 +1211,7 @@ log_info() { echo -e "${GREEN}[+]${NC} $1"; }
 log_warn() { echo -e "${YELLOW}[!]${NC} $1"; }
 
 echo -e "\n${GREEN}========================================${NC}"
-echo -e "${GREEN}   SHELLSHOCK TOOL & SYSTEM UPDATE      ${NC}"
+echo -e "${GREEN}    SHELLSHOCK TOOL & SYSTEM UPDATE      ${NC}"
 echo -e "${GREEN}========================================${NC}"
 
 # Set Git to temporarily ignore SSL errors for updates
@@ -1437,9 +1446,9 @@ clear
 echo -e "${CYAN}"
 cat << 'BANNER'
 ╔══════════════════════════════════════════════════════════╗
-║      VIRTUALBOX GUEST ADDITIONS INSTALLER                ║
-║      Official ISO Method - Direct from Oracle            ║
-║      ShellShock v1.01                                    ║
+║     VIRTUALBOX GUEST ADDITIONS INSTALLER                  ║
+║     Official ISO Method - Direct from Oracle              ║
+║     ShellShock v1.01                                      ║
 ╚══════════════════════════════════════════════════════════╝
 BANNER
 echo -e "${NC}\n"
@@ -1610,117 +1619,128 @@ log_progress "Phase 10: Creating Desktop Documentation"
 if [[ ! -f "$USER_HOME/Desktop/COMMANDS.txt" ]]; then
     cat > "$USER_HOME/Desktop/COMMANDS.txt" << 'COMMANDS_DOC_EOF'
 ╔═══════════════════════════════════════════════════════════════╗
-║          SHELLSHOCK v1.01 — COMMAND REFERENCE                 ║
+║             SHELLSHOCK v1.01 — COMMAND REFERENCE              ║
 ╚═══════════════════════════════════════════════════════════════╝
 
 ══════════════════════════════════════════════════════════════
   CUSTOM FUNCTIONS
 ══════════════════════════════════════════════════════════════
-newengagement <name>      Create engagement directory structure
-                          → ~/engagements/<name>/{recon,scans,exploits,loot,notes,screenshots}
+newengagement <name>       Create engagement directory structure
+                           → ~/engagements/<name>/{recon,scans,exploits,loot,notes,screenshots}
 
-quickscan <target>        Fast nmap scan with timestamped output
-                          → nmap -sV -sC -O -oA quickscan_TIMESTAMP <target>
+quickscan <target>         Fast nmap scan with timestamped output
+                           → nmap -sV -sC -O -oA quickscan_TIMESTAMP <target>
 
-extract <file>            Universal archive extractor
-                          → Supports: .tar.gz, .zip, .7z, .rar, .bz2, etc.
+extract <file>             Universal archive extractor
+                           → Supports: .tar.gz, .zip, .7z, .rar, .bz2, etc.
 
 ══════════════════════════════════════════════════════════════
   NAVIGATION SHORTCUTS
 ══════════════════════════════════════════════════════════════
-tools                     cd ~/tools
-repos                     cd ~/tools/repos
-wordlists                 cd ~/tools/wordlists
-scripts                   cd ~/tools/scripts
-engagements               cd ~/engagements
-win                       cd ~/tools/windows
-host                      cd /media/sf_ctf-tools (VirtualBox shared folder)
+tools                      cd ~/tools
+repos                      cd ~/tools/repos
+wordlists                  cd ~/tools/wordlists
+scripts                    cd ~/tools/scripts
+engagements                cd ~/engagements
+win                        cd ~/tools/windows
+host                       cd /media/sf_ctf-tools (VirtualBox shared folder)
 
 ══════════════════════════════════════════════════════════════
   SYSTEM ALIASES
 ══════════════════════════════════════════════════════════════
-ll                        ls -lah --color=auto (detailed listing)
-...                       cd ../.. (up two directories)
-..                        cd .. (up one directory)
-c                         clear
-h                         history
-please                    sudo
-rl                        rlwrap nc (netcat with readline)
-python                    python3 (explicit)
-timesync                  sudo chronyc makestep; timedatectl (Instant clock sync)
+ll                         ls -lah --color=auto (detailed listing)
+...                        cd ../.. (up two directories)
+..                         cd .. (up one directory)
+c                          clear
+h                          history
+please                     sudo
+rl                         rlwrap nc (netcat with readline)
+python                     python3 (explicit)
+timesync                   sudo chronyc makestep; timedatectl (Instant clock sync)
 
 ══════════════════════════════════════════════════════════════
   PENTESTING TOOLS
 ══════════════════════════════════════════════════════════════
-nmap-quick <target>       nmap -sV -sC -O
-nmap-full <target>        nmap -sV -sC -O -p- --min-rate 1000
-nmap-udp <target>         nmap -sU -sV
+nmap-quick <target>        nmap -sV -sC -O
+nmap-full <target>         nmap -sV -sC -O -p- --min-rate 1000
+nmap-udp <target>          nmap -sU -sV
 
-serve                     python3 -m http.server 8000
-serve80                   sudo python3 -m http.server 80
+serve                      python3 -m http.server 8000
+serve80                    sudo python3 -m http.server 80
 
-myip                      Display external IP
-ports                     netstat -tulanp
-listening                 Show listening ports
+myip                       Display external IP
+ports                      netstat -tulanp
+listening                  Show listening ports
 
-hash <hash>               Identify hash type
-shell                     Launch penelope reverse shell handler
+hash <hash>                Identify hash type
+shell                      Launch penelope reverse shell handler
 
 ══════════════════════════════════════════════════════════════
   EXPLOIT DATABASE (SEARCHSPLOIT)
 ══════════════════════════════════════════════════════════════
-searchsploit <term>       Search exploit database
-ss <term>                 Searchsploit shortcut
-ssx <id>                  Examine exploit code
-ssm <id>                  Mirror exploit to current directory
-ssu                       Update exploit database
+searchsploit <term>        Search exploit database
+ss <term>                  Searchsploit shortcut
+ssx <id>                   Examine exploit code
+ssm <id>                   Mirror exploit to current directory
+ssu                        Update exploit database
 
 ══════════════════════════════════════════════════════════════
   CRACKING TOOLS
 ══════════════════════════════════════════════════════════════
-john <hashfile>           John with rockyou.txt
-hashcat <hash>            Hashcat
-sqlmap                    SQL injection tool
+john <hashfile>            John with rockyou.txt
+hashcat <hash>             Hashcat
+sqlmap                     SQL injection tool
 
 ══════════════════════════════════════════════════════════════
   NETWORK TOOLS
 ══════════════════════════════════════════════════════════════
-nxc / cme                 NetExec (CrackMapExec fork)
-smb <target>              NetExec SMB enumeration
-winrm <target>            NetExec WinRM
+nxc / cme                  NetExec (CrackMapExec fork)
+smb <target>               NetExec SMB enumeration
+winrm <target>             NetExec WinRM
 
-bloodhound                BloodHound Python ingestor
-ldump                     ldapdomaindump
-evil                      evil-winrm
-ysoserial                 java -jar ~/tools/ysoserial.jar
-runas                     wine ~/tools/windows/runasCs.exe
+bloodhound                 BloodHound Python ingestor
+ldump                      ldapdomaindump
+evil                       evil-winrm
+ysoserial                  java -jar ~/tools/ysoserial.jar
+runas                      wine ~/tools/windows/runasCs.exe
 
 ══════════════════════════════════════════════════════════════
   WINDOWS TOOLS
 ══════════════════════════════════════════════════════════════
-rubeus                    wine ~/tools/windows/Rubeus.exe (Kerberos attacks)
-sharphound                wine ~/tools/windows/SharpHound.exe (BloodHound collector)
-seatbelt                  wine ~/tools/windows/Seatbelt.exe (host enumeration)
+rubeus                     wine ~/tools/windows/Rubeus.exe (Kerberos attacks)
+sharphound                 wine ~/tools/windows/SharpHound.exe (BloodHound collector)
+seatbelt                   wine ~/tools/windows/Seatbelt.exe (host enumeration)
 
 ══════════════════════════════════════════════════════════════
   IMPACKET SUITE
 ══════════════════════════════════════════════════════════════
-secretsdump               secretsdump.py
-getnpusers                GetNPUsers.py (ASREPRoast)
-getuserspns               GetUserSPNs.py (Kerberoast)
-psexec                    psexec.py
-smbexec                   smbexec.py
-wmiexec                   wmiexec.py
-ntlmrelayx                ntlmrelayx.py
+secretsdump                secretsdump.py
+getnpusers                 GetNPUsers.py (ASREPRoast)
+getuserspns                GetUserSPNs.py (Kerberoast)
+psexec                     psexec.py
+smbexec                    smbexec.py
+wmiexec                    wmiexec.py
+ntlmrelayx                 ntlmrelayx.py
 
 ══════════════════════════════════════════════════════════════
   WORDLIST SHORTCUTS
 ══════════════════════════════════════════════════════════════
-wl-common                 common.txt
-wl-dir                    directory-list-2.3-medium.txt
-wl-users                  names.txt
-wl-pass                   rockyou.txt
-wl-params                 burp-parameter-names.txt
+wl-common                  common.txt
+wl-dir                     directory-list-2.3-medium.txt
+wl-users                   names.txt
+wl-pass                    rockyou.txt
+wl-params                  burp-parameter-names.txt
+
+══════════════════════════════════════════════════════════════
+  CHISEL TUNNELING
+══════════════════════════════════════════════════════════════
+chisel-server              chisel server --reverse --port 8000
+chisel-client              chisel client
+
+══════════════════════════════════════════════════════════════
+  COMBO ATTACKS
+══════════════════════════════════════════════════════════════
+mitm-relay                 sudo mitm6 -d DOMAIN & ntlmrelayx.py -t ldaps://DC-IP -wh attacker-ip --delegate-access
 
 ══════════════════════════════════════════════════════════════
   SYSTEM SCRIPTS
@@ -1793,7 +1813,7 @@ clear
 echo -e "${GREEN}"
 cat << 'COMPLETION_BANNER'
 ╔═══════════════════════════════════════════════════════════════╗
-║          SHELLSHOCK v1.01 — INSTALLATION COMPLETE             ║
+║             SHELLSHOCK v1.01 — INSTALLATION COMPLETE          ║
 ╚═══════════════════════════════════════════════════════════════╝
 COMPLETION_BANNER
 echo -e "${NC}\n"
