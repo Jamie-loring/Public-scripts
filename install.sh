@@ -1,21 +1,21 @@
 #!/bin/bash
 # ============================================
-# PROJECT SHELLSHOCK v1.01 (FIXED)
+# PROJECT SHELLSHOCK v1.02 (FINAL BUILD)
 # Automated Pentesting Environment Bootstrap
 # Debian/Ubuntu/Parrot Compatible
 # Author: Jamie Loring
 # Last updated: 2025-11-13
 # ============================================
 # FIXES:
-# - Username default now uses ORIGINAL_USER or 'pentester'
-# - Go PATH properly exported for tool installation
-# - Built-in 'user' account fully disabled
+# - Useradd Compatibility: Replaced unsupported '--disabled-password' with 'passwd -d'
+# - Go Toolchain: Replaced buggy APT package with official binary install (Go Fix)
+# - NTP Robustness: Added multi-server retry logic and pre-check for ntpdate
 # ============================================
 # DISCLAIMER: This tool is for authorized testing only.
 # Request permission before use. Stay legal.
 # ============================================
 
-set -eo pipefail
+set -euo pipefail
 
 # Colors
 RED='\033[0;31m'
@@ -132,19 +132,19 @@ cat << 'EOF'
 ╔═══════════════════════════════════════════════════════════════╗
 ║     ██████╗████████╗███████╗    ██████╗  ██████╗ ██╗  ██╗     ║
 ║    ██╔════╝╚══██╔══╝██╔════╝    ██╔══██╗██╔═══██╗╚██╗██╔╝     ║
-║    ██║        ██║   █████╗      ██████╔╝██║   ██║ ╚███╔╝      ║
-║    ██║        ██║   ██╔══╝      ██╔══██╗██║   ██║ ██╔██╗      ║
-║    ╚██████╗   ██║   ██║         ██████╔╝╚██████╔╝██╔╝ ██╗     ║
-║     ╚═════╝    ╚═╝  ╚═╝         ╚═════╝  ╚═════╝ ╚═╝  ╚═╝     ║
-║                                                               ║
-║            Project ShellShock 1.01                            ║
-║            A love letter to Pentesting by Jamie Loring        ║ 
-║                                                               ║
+║    ██║      ██║  █████╗      ██████╔╝██║  ██║ ╚███╔╝      ║
+║    ██║      ██║  ██╔══╝      ██╔══██╗██║  ██║ ██╔██╗      ║
+║    ╚██████╗  ██║  ██║        ██████╔╝╚██████╔╝██╔╝ ██╗     ║
+║     ╚═════╝  ╚═╝  ╚═╝        ╚═════╝  ╚═════╝ ╚═╝  ╚═╝     ║
+║                                                             ║
+║              Project ShellShock 1.02                        ║
+║              A love letter to Pentesting by Jamie Loring    ║
+║                                                             ║
 ╚═══════════════════════════════════════════════════════════════╝
 EOF
 echo -e "${NC}\n"
 
-# Username prompt - Support both interactive and environment variable
+# Username prompt
 if [[ -n "${USERNAME:-}" ]]; then
     # Username provided via environment variable
     log_info "Using USERNAME from environment: $USERNAME"
@@ -155,16 +155,11 @@ if [[ -n "${USERNAME:-}" ]]; then
 else
     # Interactive prompt
     USERNAME=""
+    DEFAULT_USERNAME="${ORIGINAL_USER:-pentester}" # Fallback if ORIG is empty
+    
     while true; do
-        echo -n "Enter pentesting username: "
-        read USERNAME
-        
-        # Check if empty
-        if [[ -z "$USERNAME" ]]; then
-            log_error "Username cannot be empty. Please enter a username."
-            echo ""
-            continue
-        fi
+        read -rp "Enter pentesting username [default: $DEFAULT_USERNAME]: " INPUT_USERNAME
+        USERNAME="${INPUT_USERNAME:-$DEFAULT_USERNAME}"
         
         # Validate format and reserved names
         if validate_username "$USERNAME"; then
@@ -246,9 +241,17 @@ else
     # 2. ntpdate not found, attempt to install it
     log_warn "ntpdate not found, attempting to install it now..."
     
+    # Check if ntpdate package is *already installed* but missing from PATH (unlikely, but safe)
     if package_installed "ntpdate"; then
-        log_info "ntpdate package is installed but command is missing from PATH."
+        log_info "ntpdate package is installed but command is missing from PATH. Attempting sync anyway..."
+        for server in "${NTP_SERVERS[@]}"; do
+            if attempt_sync "$server"; then
+                SYNC_SUCCESS=true
+                break
+            fi
+        done
     else
+        # Install ntpdate without updating repos (to avoid skew-related apt failures)
         log_info "Installing ntpdate package via apt..."
         if apt install -y ntpdate 2>&1 | tee -a /var/log/shellshock-install.log; then
             log_info "Installed ntpdate."
@@ -451,9 +454,13 @@ log_progress "Phase 2: User Account Configuration"
 
 # Create or verify user account
 if ! id "$USERNAME" &>/dev/null; then
+    # FIXED: Removed '--disabled-password' flag for compatibility and use passwd -d below
     log_info "Creating user: $USERNAME"
-    useradd -m -s /bin/zsh -G sudo,docker --disabled-password "$USERNAME"
-    log_info "User '$USERNAME' created (no password required)"
+    useradd -m -s /bin/zsh -G sudo,docker "$USERNAME"
+    
+    # Explicitly disable password using the widely supported passwd command
+    passwd -d "$USERNAME" 2>&1 | tee -a /var/log/shellshock-install.log || log_warn "Failed to disable password for $USERNAME"
+    log_info "User '$USERNAME' created (password disabled)"
 
     # Apply Parrot OS defaults from /etc/skel
     log_info "Applying default configuration from /etc/skel..."
@@ -759,7 +766,7 @@ PROFILES_INI_EOF
         # Step 4: Create user.js preferences file
         log_info "Configuring Firefox preferences..."
         cat > "$PROFILE_DIR/user.js" << USERJS_EOF
-// ShellShock v1.01 - Firefox Configuration for Pentesting
+// ShellShock v1.02 - Firefox Configuration for Pentesting
 
 // Disable automatic updates
 user_pref("app.update.auto", false);
@@ -1096,7 +1103,7 @@ if [[ ! -f "$USER_HOME/.zshrc" ]] || ! grep -q "ShellShock v1.01" "$USER_HOME/.z
     log_info "Creating .zshrc configuration..."
     cat > "$USER_HOME/.zshrc" << 'ZSHRC_EOF'
 # ============================================
-# ShellShock v1.01 - Zsh Configuration (NTP/SSL Fixed)
+# ShellShock v1.02 - Zsh Configuration (NTP/SSL Fixed)
 # ============================================
 
 export ZSH="$HOME/.oh-my-zsh"
@@ -1134,7 +1141,7 @@ if [[ -o interactive ]] && [[ -z "$TMUX" ]]; then
     echo -e "\033[1;36m"
     cat << 'BANNER'
     ╔════════════════════════════════════════════════════════╗
-    ║           SHELLSHOCK v1.01 - LOCKED & LOADED           ║
+    ║           SHELLSHOCK v1.02 - LOCKED & LOADED           ║
     ║                                                        ║
     ║ Quick:     tools | repos | win | update | timesync     ║
     ║ Engage:    newengagement <name>                        ║
@@ -1326,7 +1333,7 @@ if [[ ! -f "$USER_HOME/scripts/update-tools.sh" ]]; then
     cat > "$USER_HOME/scripts/update-tools.sh" << 'UPDATE_SCRIPT_EOF'
 #!/bin/bash
 set -euo pipefail
-# ShellShock v1.01 - Tool Update Script
+# ShellShock v1.02 - Tool Update Script
 
 RED='\033[0;31m'
 GREEN='\033[0;32m'
@@ -1427,7 +1434,7 @@ if [[ ! -f "$USER_HOME/Desktop/RESET_SHELLSHOCK.sh" ]]; then
     cat > "$USER_HOME/Desktop/RESET_SHELLSHOCK.sh" << 'RESET_SCRIPT_EOF'
 #!/bin/bash
 set -euo pipefail
-# ShellShock v1.01 - System Reset Script
+# ShellShock v1.02 - System Reset Script
 
 RED='\033[0;31m'
 GREEN='\033[0;32m'
@@ -1435,7 +1442,7 @@ YELLOW='\033[1;33m'
 CYAN='\033[0;36m'
 NC='\033[0m'
 
-echo -e "${CYAN}SHELLSHOCK v1.01 — SYSTEM RESET${NC}\n"
+echo -e "${CYAN}SHELLSHOCK v1.02 — SYSTEM RESET${NC}\n"
 echo -e "${YELLOW}This will:${NC}"
 echo "  • Archive Zsh history and live terminal buffers"
 echo "  • Backup and clear engagement directories"
@@ -1553,7 +1560,7 @@ if [[ ! -f "$USER_HOME/Desktop/INSTALL_VBOX_ADDITIONS.sh" ]]; then
     cat > "$USER_HOME/Desktop/INSTALL_VBOX_ADDITIONS.sh" << 'VBOX_INSTALLER_EOF'
 #!/bin/bash
 set -euo pipefail
-# ShellShock v1.01 - VirtualBox Guest Additions Installer
+# ShellShock v1.02 - VirtualBox Guest Additions Installer
 
 RED='\033[0;31m'
 GREEN='\033[0;32m'
@@ -1573,7 +1580,7 @@ cat << 'BANNER'
 ╔══════════════════════════════════════════════════════════╗
 ║     VIRTUALBOX GUEST ADDITIONS INSTALLER                  ║
 ║     Official ISO Method - Direct from Oracle              ║
-║     ShellShock v1.01                                      ║
+║     ShellShock v1.02                                      ║
 ╚══════════════════════════════════════════════════════════╝
 BANNER
 echo -e "${NC}\n"
@@ -1744,7 +1751,7 @@ log_progress "Phase 10: Creating Desktop Documentation"
 if [[ ! -f "$USER_HOME/Desktop/COMMANDS.txt" ]]; then
     cat > "$USER_HOME/Desktop/COMMANDS.txt" << 'COMMANDS_DOC_EOF'
 ╔═══════════════════════════════════════════════════════════════╗
-║             SHELLSHOCK v1.01 — COMMAND REFERENCE              ║
+║             SHELLSHOCK v1.02 — COMMAND REFERENCE              ║
 ╚═══════════════════════════════════════════════════════════════╝
 
 ══════════════════════════════════════════════════════════════
@@ -1859,13 +1866,13 @@ wl-params                  burp-parameter-names.txt
 ══════════════════════════════════════════════════════════════
   CHISEL TUNNELING
 ══════════════════════════════════════════════════════════════
-chisel-server              chisel server --reverse --port 8000
-chisel-client              chisel client
+alias chisel-server='chisel server --reverse --port 8000'
+alias chisel-client='chisel client'
 
 ══════════════════════════════════════════════════════════════
   COMBO ATTACKS
 ══════════════════════════════════════════════════════════════
-mitm-relay                 sudo mitm6 -d DOMAIN & ntlmrelayx.py -t ldaps://DC-IP -wh attacker-ip --delegate-access
+alias mitm-relay='sudo mitm6 -d DOMAIN & ntlmrelayx.py -t ldaps://DC-IP -wh attacker-ip --delegate-access'
 
 ══════════════════════════════════════════════════════════════
   SYSTEM SCRIPTS
@@ -1938,7 +1945,7 @@ clear
 echo -e "${GREEN}"
 cat << 'COMPLETION_BANNER'
 ╔═══════════════════════════════════════════════════════════════╗
-║             SHELLSHOCK v1.01 — INSTALLATION COMPLETE          ║
+║             SHELLSHOCK v1.02 — INSTALLATION COMPLETE          ║
 ╚═══════════════════════════════════════════════════════════════╝
 COMPLETION_BANNER
 echo -e "${NC}\n"
