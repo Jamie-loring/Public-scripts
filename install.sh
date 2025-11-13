@@ -121,13 +121,13 @@ cat << 'EOF'
 ╔═══════════════════════════════════════════════════════════════╗
 ║     ██████╗████████╗███████╗    ██████╗  ██████╗ ██╗  ██╗     ║
 ║    ██╔════╝╚══██╔══╝██╔════╝    ██╔══██╗██╔═══██╗╚██╗██╔╝     ║
-║    ██║        ██║   █████╗      ██████╔╝██║   ██║ ╚███╔╝      ║
-║    ██║        ██║   ██╔══╝      ██╔══██╗██║   ██║ ██╔██╗      ║
-║    ╚██████╗   ██║   ██║         ██████╔╝╚██████╔╝██╔╝ ██╗     ║
-║     ╚═════╝    ╚═╝  ╚═╝         ╚═════╝  ╚═════╝ ╚═╝  ╚═╝     ║
+║    ██║      ██║   █████╗      ██████╔╝██║   ██║ ╚███╔╝      ║
+║    ██║      ██║   ██╔══╝      ██╔══██╗██║   ██║ ██╔██╗      ║
+║    ╚██████╗  ██║   ██║         ██████╔╝╚██████╔╝██╔╝ ██╗     ║
+║     ╚═════╝  ╚═╝   ╚═╝         ╚═════╝  ╚═════╝ ╚═╝  ╚═╝     ║
 ║                                                               ║
-║            Project ShellShock 1.01                            ║
-║            A love letter to Pentesting by Jamie Loring        ║ 
+║             Project ShellShock 1.01                           ║
+║             A love letter to Pentesting by Jamie Loring       ║
 ║                                                               ║
 ╚═══════════════════════════════════════════════════════════════╝
 EOF
@@ -168,6 +168,40 @@ read -rp "Continue? (y/n): " confirm
 # Initialize log file
 touch /var/log/shellshock-install.log
 chmod 644 /var/log/shellshock-install.log
+
+# ============================================
+# TIME SYNCHRONIZATION (CRITICAL - BEFORE APT)
+# ============================================
+log_progress "Forcing immediate time synchronization..."
+log_warn "Clock skew can cause APT repository signature failures"
+
+# Display current time before sync
+log_info "Current system time: $(date)"
+
+# Try ntpdate first (works even with major clock skew)
+if command_exists ntpdate; then
+    log_info "Using ntpdate for time sync..."
+    if ntpdate -u time.google.com 2>&1 | tee -a /var/log/shellshock-install.log; then
+        log_info "Time synced successfully via Google NTP"
+    elif ntpdate -u pool.ntp.org 2>&1 | tee -a /var/log/shellshock-install.log; then
+        log_info "Time synced successfully via pool.ntp.org"
+    else
+        log_warn "ntpdate sync failed, trying fallback methods..."
+    fi
+else
+    log_warn "ntpdate not found, attempting to install..."
+    # Try to install ntpdate without updating repos (might fail due to clock skew)
+    if apt install -y ntpdate 2>&1 | tee -a /var/log/shellshock-install.log; then
+        ntpdate -u time.google.com 2>&1 | tee -a /var/log/shellshock-install.log || true
+        log_info "Installed and ran ntpdate"
+    else
+        log_warn "Could not install ntpdate - will rely on chrony later"
+    fi
+fi
+
+# Show updated time
+log_info "Updated system time: $(date)"
+echo ""
 
 # ============================================
 # SSL BYPASS CONFIGURATION
