@@ -15,7 +15,7 @@
 # Request permission before use. Stay legal.
 # ============================================
 
-set -euo pipefail
+set -eo pipefail
 
 # Colors
 RED='\033[0;31m'
@@ -132,47 +132,47 @@ cat << 'EOF'
 ╔═══════════════════════════════════════════════════════════════╗
 ║     ██████╗████████╗███████╗    ██████╗  ██████╗ ██╗  ██╗     ║
 ║    ██╔════╝╚══██╔══╝██╔════╝    ██╔══██╗██╔═══██╗╚██╗██╔╝     ║
-║    ██║      ██║  █████╗      ██████╔╝██║  ██║ ╚███╔╝      ║
-║    ██║      ██║  ██╔══╝      ██╔══██╗██║  ██║ ██╔██╗      ║
-║    ╚██████╗  ██║  ██║        ██████╔╝╚██████╔╝██╔╝ ██╗     ║
-║     ╚═════╝  ╚═╝  ╚═╝        ╚═════╝  ╚═════╝ ╚═╝  ╚═╝     ║
-║                                                             ║
-║              Project ShellShock 1.01 (FIXED)                ║
-║              A love letter to Pentesting by Jamie Loring    ║
-║                                                             ║
+║    ██║        ██║   █████╗      ██████╔╝██║   ██║ ╚███╔╝      ║
+║    ██║        ██║   ██╔══╝      ██╔══██╗██║   ██║ ██╔██╗      ║
+║    ╚██████╗   ██║   ██║         ██████╔╝╚██████╔╝██╔╝ ██╗     ║
+║     ╚═════╝    ╚═╝  ╚═╝         ╚═════╝  ╚═════╝ ╚═╝  ╚═╝     ║
+║                                                               ║
+║            Project ShellShock 1.01                            ║
+║            A love letter to Pentesting by Jamie Loring        ║ 
+║                                                               ║
 ╚═══════════════════════════════════════════════════════════════╝
 EOF
 echo -e "${NC}\n"
 
-# Check if stdin is a terminal
-if [ ! -t 0 ]; then
-    log_error "ERROR: Script must be run interactively (not piped from curl/wget)"
-    log_error "Download the script first, then run: sudo bash shellshock-v1.01-FIXED.sh"
-    exit 1
-fi
-
-# Username prompt - NO DEFAULTS, MANUAL INPUT REQUIRED
-USERNAME=""
-while true; do
-    echo -n "Enter pentesting username: "
-    read USERNAME
-    
-    # Debug: show what was read (remove this line after testing)
-    #echo "DEBUG: Read username='$USERNAME' (length=${#USERNAME})"
-    
-    # Check if empty
-    if [[ -z "$USERNAME" ]]; then
-        log_error "Username cannot be empty. Please enter a username."
+# Username prompt - Support both interactive and environment variable
+if [[ -n "${USERNAME:-}" ]]; then
+    # Username provided via environment variable
+    log_info "Using USERNAME from environment: $USERNAME"
+    if ! validate_username "$USERNAME"; then
+        log_error "Invalid USERNAME provided via environment variable"
+        exit 1
+    fi
+else
+    # Interactive prompt
+    USERNAME=""
+    while true; do
+        echo -n "Enter pentesting username: "
+        read USERNAME
+        
+        # Check if empty
+        if [[ -z "$USERNAME" ]]; then
+            log_error "Username cannot be empty. Please enter a username."
+            echo ""
+            continue
+        fi
+        
+        # Validate format and reserved names
+        if validate_username "$USERNAME"; then
+            break
+        fi
         echo ""
-        continue
-    fi
-    
-    # Validate format and reserved names
-    if validate_username "$USERNAME"; then
-        break
-    fi
-    echo ""
-done
+    done
+fi
 
 export USERNAME
 export USER_HOME="/home/$USERNAME"
@@ -207,47 +207,84 @@ log_warn "Clock skew can cause APT repository signature failures"
 # Display current time before sync
 log_info "Current system time: $(date)"
 
-# Function to attempt time sync
+# Function to attempt time sync with retries
 attempt_sync() {
     local server="$1"
-    log_info "Attempting ntpdate sync with: $server..."
-    # The '|| true' ensures the script doesn't exit on sync failure (set -e)
-    if ntpdate -u "$server" 2>&1 | tee -a /var/log/shellshock-install.log; then
-        log_info "Time synced successfully via $server"
-        return 0
-    else
-        log_warn "ntpdate sync failed using $server."
-        return 1
-    fi
+    local max_attempts=3
+    local attempt=1
+    
+    while [ $attempt -le $max_attempts ]; do
+        log_info "Attempting ntpdate sync with: $server (attempt $attempt/$max_attempts)..."
+        if timeout 10 ntpdate -u "$server" 2>&1 | tee -a /var/log/shellshock-install.log; then
+            log_info "Time synced successfully via $server"
+            return 0
+        else
+            log_warn "ntpdate sync attempt $attempt failed using $server"
+            attempt=$((attempt + 1))
+            [ $attempt -le $max_attempts ] && sleep 2
+        fi
+    done
+    
+    return 1
 }
 
+# Array of NTP servers to try (in order)
+NTP_SERVERS=("time.google.com" "time1.google.com" "pool.ntp.org" "0.pool.ntp.org" "time.cloudflare.com")
+
 # 1. Check if ntpdate is already installed and try to sync
+SYNC_SUCCESS=false
+
 if command_exists ntpdate; then
-    log_info "ntpdate is installed, proceeding with sync."
-    attempt_sync "time.google.com" || attempt_sync "pool.ntp.org" || log_warn "All ntpdate sync attempts failed."
+    log_info "ntpdate is installed, attempting sync..."
+    for server in "${NTP_SERVERS[@]}"; do
+        if attempt_sync "$server"; then
+            SYNC_SUCCESS=true
+            break
+        fi
+    done
 else
-    # 2. ntpdate not found, attempt to install it quickly
+    # 2. ntpdate not found, attempt to install it
     log_warn "ntpdate not found, attempting to install it now..."
     
-    # Check if ntpdate package is *already installed* but missing from PATH (unlikely, but safe)
     if package_installed "ntpdate"; then
-        log_info "ntpdate package is installed but command is missing from PATH. Attempting sync anyway..."
-        attempt_sync "time.google.com" || attempt_sync "pool.ntp.org" || log_warn "Sync failed without a clear ntpdate binary."
+        log_info "ntpdate package is installed but command is missing from PATH."
     else
-        # Install ntpdate without updating repos (to avoid skew-related apt failures)
         log_info "Installing ntpdate package via apt..."
         if apt install -y ntpdate 2>&1 | tee -a /var/log/shellshock-install.log; then
             log_info "Installed ntpdate."
-            # Now that it's installed, try to sync
-            attempt_sync "time.google.com" || attempt_sync "pool.ntp.org" || log_warn "Sync failed even after ntpdate installation."
+            
+            # Try sync after installation
+            for server in "${NTP_SERVERS[@]}"; do
+                if attempt_sync "$server"; then
+                    SYNC_SUCCESS=true
+                    break
+                fi
+            done
         else
-            log_warn "Could not install ntpdate without updating - will rely on chrony later."
+            log_warn "Could not install ntpdate - will rely on chrony later."
         fi
     fi
 fi
 
-# Show updated time
-log_info "Updated system time: $(date)"
+# Show result
+if [ "$SYNC_SUCCESS" = true ]; then
+    log_info "Updated system time: $(date)"
+else
+    log_warn "WARNING: All NTP sync attempts failed!"
+    log_warn "This may cause APT signature verification failures."
+    echo ""
+    echo -e "${YELLOW}Options:${NC}"
+    echo "  1. Continue anyway (may fail during apt operations)"
+    echo "  2. Exit and troubleshoot network/firewall/DNS"
+    echo ""
+    read -rp "Continue despite time sync failure? (y/n): " continue_choice
+    if [[ "$continue_choice" != "y" ]] && [[ "$continue_choice" != "Y" ]]; then
+        log_error "Exiting. Fix time sync issues and re-run the script."
+        log_info "Troubleshooting: Check network connectivity, DNS, and firewall rules for UDP port 123"
+        exit 1
+    fi
+    log_warn "Continuing without time sync (you were warned!)"
+fi
 echo ""
 
 # ============================================
