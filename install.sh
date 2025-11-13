@@ -1,15 +1,17 @@
 #!/bin/bash
 # ============================================
-# PROJECT SHELLSHOCK v1.03 (FINAL BUILD)
+# PROJECT SHELLSHOCK v1.04 (MAX STABILITY)
 # Automated Pentesting Environment Bootstrap
 # Debian/Ubuntu/Parrot Compatible
 # Author: Jamie Loring
 # Last updated: 2025-11-13
 # ============================================
 # FIXES:
-# - Windows Binaries (ROBUST SOURCING): Switched to GitHub API/APT package location for SharpHound/RunasCs.
-# - GO PATH FIX: Updated Go installation paths and removed unstable 'pre2k'.
-# - Foundational Fixes: Useradd, NTP, and Go Toolchain are stable.
+# - Go Tools: Confirmed correct paths for windapsearch; removed unstable pre2k.
+# - Win Binaries: Switched RunasCs to GitHub API ZIP lookup for reliable download.
+# - Win Binaries: Switched SharpHound to rely on APT installation path.
+# - Win Binaries: Switched Seatbelt to build-from-source (requires dotnet).
+# - Foundation: Useradd, NTP, Go Toolchain are stable.
 # ============================================
 # DISCLAIMER: This tool is for authorized testing only.
 # Request permission before use. Stay legal.
@@ -410,7 +412,6 @@ if [[ ! -d "/usr/local/go" ]]; then
         # Remove existing, clean install, and set permissions
         rm -rf /usr/local/go
         tar -C /usr/local -xzf "/tmp/$GO_TAR"
-        rm -f "/tmp/$GO_TAR"
         log_info "Official Go installed to /usr/local/go"
 
         # Ensure the target user's profile uses the new official path
@@ -424,6 +425,7 @@ if [[ ! -d "/usr/local/go" ]]; then
     else
         log_error "Failed to download Go binary. Go tools will fail."
     fi
+    rm -f "/tmp/$GO_TAR"
 else
     log_skip "Official Go installation directory already exists (/usr/local/go)"
     # Ensure PATH is set for running Go tools in the following phase
@@ -1023,7 +1025,7 @@ if [[ ! -f "$RUNASCS_EXE" ]]; then
             log_warn "RunasCs download failed (Non-Critical)"
         fi
     else
-        log_warn "RunasCs GitHub API URL lookup failed."
+        log_warn "RunasCs GitHub API URL lookup failed. Skipping."
     fi
 else
     log_skip "RunasCs.exe already exists"
@@ -1046,19 +1048,26 @@ fi
 SEATBELT_EXE="$USER_HOME/tools/windows/Seatbelt.exe"
 if [[ ! -f "$SEATBELT_EXE" ]]; then
     log_info "Cloning and building Seatbelt from source..."
-    if command_exists dotnet; then
+    # Ensure dotnet is installed before attempting to build
+    if package_installed "dotnet"; then 
         SEATBELT_SRC_DIR="$USER_HOME/tools/windows/Seatbelt-src"
         if safe_clone "https://github.com/GhostPack/Seatbelt.git" "$SEATBELT_SRC_DIR"; then
             if ( cd "$SEATBELT_SRC_DIR" && dotnet build -c Release -f net462 ) 2>&1 | tee -a /var/log/shellshock-install.log; then
-                cp "$SEATBELT_SRC_DIR/bin/Release/net462/Seatbelt.exe" "$USER_HOME/tools/windows/"
-                log_info "Seatbelt.exe successfully built and copied."
+                # Find and copy the built executable
+                SEATBELT_BUILT_PATH="$SEATBELT_SRC_DIR/bin/Release/net462/Seatbelt.exe"
+                if [[ -f "$SEATBELT_BUILT_PATH" ]]; then
+                    cp "$SEATBELT_BUILT_PATH" "$USER_HOME/tools/windows/"
+                    log_info "Seatbelt.exe successfully built and copied."
+                else
+                    log_warn "Seatbelt built successfully but EXE file was not found in expected path."
+                fi
             else
                 log_warn "Seatbelt compilation failed (non-critical)."
             fi
             rm -rf "$SEATBELT_SRC_DIR" # Cleanup source
         fi
     else
-        log_warn ".NET (dotnet) command not found. Skipping Seatbelt compilation."
+        log_warn ".NET (dotnet) package is not installed. Skipping Seatbelt compilation."
     fi
 else
     log_skip "Seatbelt.exe already exists."
@@ -1070,7 +1079,6 @@ safe_download "https://github.com/PowerShellMafia/PowerSploit/raw/master/Recon/P
 
 # Rubeus URL check (Keeping original for integrity, assumes stability)
 safe_download "https://github.com/r3motecontrol/Ghostpack-CompiledBinaries/raw/master/Rubeus.exe" "$USER_HOME/tools/windows/Rubeus.exe"
-# NOTE: The last Seatbelt binary download link is now redundant, removed for cleanliness.
 
 chown -R "$USERNAME":"$USERNAME" "$USER_HOME/tools/windows" 2>/dev/null || true
 
@@ -1400,7 +1408,7 @@ if [[ ! -f "$USER_HOME/scripts/update-tools.sh" ]]; then
     cat > "$USER_HOME/scripts/update-tools.sh" << 'UPDATE_SCRIPT_EOF'
 #!/bin/bash
 set -euo pipefail
-# ShellShock v1.02 - Tool Update Script
+# ShellShock v1.03 - Tool Update Script
 
 RED='\033[0;31m'
 GREEN='\033[0;32m'
