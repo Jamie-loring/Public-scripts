@@ -66,7 +66,7 @@ package_installed() {
     dpkg-query -W --showformat='${Status}' "$1" 2>/dev/null | grep -q "install ok installed"
 }
 
-# Safe download with retry and verification (Switched to curl for robustness, kept original flags)
+# Safe download with retry and verification (Switched to curl for robustness)
 safe_download() {
     local url="$1"
     local output="$2"
@@ -77,25 +77,27 @@ safe_download() {
         return 0
     fi
 
-    # Using curl -fsSL for non-verbose, silent failure, follow redirects
-    if curl -fsSL --retry 3 --max-time 30 "$url" -o "$output" 2>&1 | tee -a /var/log/shellshock-install.log; then
+    # Using curl -fsSLk to bypass SSL verification (-k)
+    if curl -fsSLk --retry 3 --max-time 30 "$url" -o "$output" 2>&1 | tee -a /var/log/shellshock-install.log; then
         log_info "Downloaded: $name"
         return 0
     else
         log_warn "Failed to download: $name (non-critical)"
         return 1
-    fi
+    }
 }
 
-# Safe git clone with depth limit (Added pull logic if already exists)
+# Safe git clone with depth limit (Added pull logic and SSL bypass)
 safe_clone() {
     local url="$1"
     local dest="$2"
     local name=$(basename "$dest")
 
+    # Set temporary Git config for SSL bypass during clone/pull
+    git config --global http.sslVerify false
+
     if [[ -d "$dest/.git" ]]; then
         log_skip "$name already cloned. Attempting update..."
-        # Using git -C (change directory) for clean execution
         if git -C "$dest" pull --depth 1 2>&1 | tee -a /var/log/shellshock-install.log; then
             log_info "Updated: $name"
         else
@@ -106,12 +108,12 @@ safe_clone() {
 
     # Added --single-branch for minimal history and quicker fetch
     if git clone --depth 1 --single-branch "$url" "$dest" 2>&1 | tee -a /var/log/shellshock-install.log; then
-        log_info "Cloned: $name (Shallow)"
+        log_info "Cloned: $name (Shallow, SSL ignored)"
         return 0
     else
         log_warn "Failed to clone: $name"
         return 1
-    fi
+    }
 }
 
 # Welcome banner (unchanged)
@@ -159,6 +161,7 @@ log_info "Home directory: ${GREEN}$USER_HOME${NC}"
 echo ""
 log_warn "This will install pentesting tools and configure the system."
 log_warn "Smart detection enabled - existing installations will be skipped."
+log_warn "ATTENTION: HTTPS certificate verification is TEMPORARILY DISABLED for apt and git."
 echo ""
 read -rp "Continue? (y/n): " confirm # Used -r flag for safe input
 [[ "$confirm" != "y" ]] && [[ "$confirm" != "Y" ]] && exit 0
@@ -166,6 +169,19 @@ read -rp "Continue? (y/n): " confirm # Used -r flag for safe input
 # Initialize log file
 touch /var/log/shellshock-install.log
 chmod 644 /var/log/shellshock-install.log
+
+# ============================================
+# SSL BYPASS CONFIGURATION (START)
+# ============================================
+log_progress "Configuring APT and Git to bypass SSL verification..."
+
+# APT SSL Bypass (Critical fix for the reported errors)
+echo 'Acquire { https::Verify-Peer "false"; }' | sudo tee /etc/apt/apt.conf.d/99no-verify-ssl 2>&1 | tee -a /var/log/shellshock-install.log
+log_info "APT SSL verification disabled via 99no-verify-ssl"
+
+# Git SSL Bypass (Set globally for safe_clone)
+git config --global http.sslVerify false
+log_info "Git SSL verification disabled globally"
 
 # ============================================
 # PHASE 1: SYSTEM SETUP
@@ -197,6 +213,22 @@ else
     log_skip "System already up to date"
 fi
 
+# Install robust NTP daemon (chrony)
+if ! package_installed "chrony"; then
+    log_info "Installing robust NTP client (chrony) for reliable time sync..."
+    DEBIAN_FRONTEND=noninteractive apt install -y -qq chrony 2>&1 | tee -a /var/log/shellshock-install.log || log_warn "Failed to install chrony."
+    
+    if command_exists chronyc; then
+        # Force a large, immediate step correction, perfect for VMs with large clock drift
+        log_info "Forcing initial time sync (chronyc makestep)..."
+        chronyc makestep 2>&1 | tee -a /var/log/shellshock-install.log || true
+        log_info "Time synchronization service (chronyd) started."
+    fi
+else
+    log_skip "chrony already installed"
+fi
+
+
 # Install base packages
 log_info "Installing base packages..."
 PACKAGES=(
@@ -219,7 +251,6 @@ done
 
 if [[ ${#PACKAGES_TO_INSTALL[@]} -gt 0 ]]; then
     log_info "Installing ${#PACKAGES_TO_INSTALL[@]} new packages..."
-    # Retained original robust installation line
     DEBIAN_FRONTEND=noninteractive apt install -y -qq "${PACKAGES_TO_INSTALL[@]}" 2>&1 | tee -a /var/log/shellshock-install.log || true
 else
     log_skip "All base packages already installed"
@@ -228,7 +259,6 @@ fi
 # Update searchsploit database
 if command_exists searchsploit; then
     log_info "Updating searchsploit database..."
-    # Added -v for visibility during update
     searchsploit -u -v 2>&1 | tee -a /var/log/shellshock-install.log || log_warn "searchsploit update failed (non-critical)"
 else
     log_skip "searchsploit not available"
@@ -259,14 +289,12 @@ log_progress "Phase 2: User Account Configuration"
 # Create or verify user account
 if ! id "$USERNAME" &>/dev/null; then
     log_info "Creating user: $USERNAME"
-    # Used --disabled-password for atomic creation
     useradd -m -s /bin/zsh -G sudo,docker --disabled-password "$USERNAME"
     log_info "User '$USERNAME' created (no password required)"
 
     # Apply Parrot OS defaults from /etc/skel
     log_info "Applying default configuration from /etc/skel..."
     if [[ -d "/etc/skel" ]]; then
-        # Used rsync for robust recursive copy
         rsync -a /etc/skel/. "$USER_HOME/" 2>/dev/null || true
         log_info "Copied base configurations"
     fi
@@ -339,7 +367,6 @@ fi
 
 # Configure sudoers
 if [[ ! -f "/etc/sudoers.d/$USERNAME" ]]; then
-    # Validate and write NOPASSWD entry
     if echo "$USERNAME ALL=(ALL) NOPASSWD:ALL" | visudo -cf - > /dev/null 2>&1; then
         echo "$USERNAME ALL=(ALL) NOPASSWD:ALL" > /etc/sudoers.d/"$USERNAME"
         chmod 440 /etc/sudoers.d/"$USERNAME"
@@ -429,19 +456,30 @@ else
     log_skip "Auto-login already configured"
 fi
 
-# Configure passwordless login group (Removed the redundant PAM steps, NOPASSWD sudo is better)
+# Configure passwordless login group (Retained original logic)
 if ! grep -q '^nopasswdlogin:' /etc/group; then
     groupadd nopasswdlogin || true
     log_info "Created nopasswdlogin group"
 fi
-# Only add user if not already in group
+
 if ! id -nG "$USERNAME" | grep -q 'nopasswdlogin'; then
     usermod -aG nopasswdlogin "$USERNAME" || true
     log_info "Added $USERNAME to nopasswdlogin group"
 fi
 
-# Removed the redundant PAM configuration block as NOPASSWD sudoers is already set
-# and the group nopasswdlogin is less critical when sudo is passwordless.
+# Retained original PAM logic
+PAM_ENTRY='auth [success=1 default=ignore] pam_succeed_if.so user ingroup nopasswdlogin'
+PAM_FILE='/etc/pam.d/common-auth'
+
+if ! grep -qF "$PAM_ENTRY" "$PAM_FILE"; then
+    if sed -i "1i$PAM_ENTRY" "$PAM_FILE"; then
+        log_info "PAM configured for passwordless login via nopasswdlogin group"
+    else
+        log_error "Failed to configure PAM for passwordless login (sed failed)"
+    fi
+else
+    log_skip "PAM already configured for nopasswdlogin group"
+fi
 
 # ============================================
 # PHASE 3: SHELL ENVIRONMENT
@@ -451,16 +489,14 @@ log_progress "Phase 3: Shell Environment (Zsh + Oh-My-Zsh + Powerlevel10k)"
 if [[ ! -d "$USER_HOME/.oh-my-zsh" ]]; then
     log_info "Installing Oh-My-Zsh..."
 
-    # Use a safe temporary directory
     TEMP_HOME=$(mktemp -d)
 
     # Install Oh-My-Zsh to temp location in a subshell
     (
         export HOME="$TEMP_HOME"
-        sh -c "RUNZSH=no $(curl -fsSL https://raw.githubusercontent.com/ohmyzsh/ohmyzsh/master/tools/install.sh)" "" --unattended 2>&1 | tee -a /var/log/shellshock-install.log || true
+        sh -c "RUNZSH=no $(curl -fsSLk https://raw.githubusercontent.com/ohmyzsh/ohmyzsh/master/tools/install.sh)" "" --unattended 2>&1 | tee -a /var/log/shellshock-install.log || true
     )
 
-    # Check if installation succeeded before proceeding
     if [[ -d "$TEMP_HOME/.oh-my-zsh" ]]; then
         # Install plugins using safe_clone
         safe_clone "https://github.com/zsh-users/zsh-autosuggestions" "${TEMP_HOME}/.oh-my-zsh/custom/plugins/zsh-autosuggestions"
@@ -494,14 +530,12 @@ log_progress "Phase 3.5: Firefox Extensions & Configuration"
 if command_exists firefox || command_exists firefox-esr; then
     log_info "Configuring Firefox for pentesting..."
 
-    # Use a safe way to find the command
     FIREFOX_CMD=$(command -v firefox || command -v firefox-esr)
 
     # Step 1: Create Firefox profile structure
     PROFILE_DIR="$USER_HOME/.mozilla/firefox/shellshock.default"
     mkdir -p "$PROFILE_DIR"
 
-    # Create minimal profiles.ini if necessary
     if [[ ! -f "$USER_HOME/.mozilla/firefox/profiles.ini" ]]; then
         cat > "$USER_HOME/.mozilla/firefox/profiles.ini" << 'PROFILES_INI_EOF'
 [General]
@@ -560,9 +594,8 @@ PROFILES_INI_EOF
             fi
         done
 
-        # Step 4: Create user.js preferences file (Corrected $USER_HOME expansion)
+        # Step 4: Create user.js preferences file
         log_info "Configuring Firefox preferences..."
-        # NOTE: $USER_HOME is not single-quoted here so it expands correctly
         cat > "$PROFILE_DIR/user.js" << USERJS_EOF
 // ShellShock v1.01 - Firefox Configuration for Pentesting
 
@@ -661,23 +694,21 @@ log_progress "Installing Python tools..."
 # Ensure pipx is installed
 if ! command_exists pipx; then
     log_info "Installing pipx..."
-    # Ensure apt can find pipx first
     DEBIAN_FRONTEND=noninteractive apt install -y python3-pip pipx 2>&1 | tee -a /var/log/shellshock-install.log || true
     pipx ensurepath || true
-    sudo -u "$USERNAME" pipx ensurepath || true # Setup user's pipx path
-    export PATH="$PATH:/root/.local/bin:$USER_HOME/.local/bin" # Update root's path for the rest of the script
+    sudo -u "$USERNAME" pipx ensurepath || true
+    export PATH="$PATH:/root/.local/bin:$USER_HOME/.local/bin"
 fi
 
 # Python packages via pip3 (system-wide installation)
 PIP_TOOLS=(
-    "impacket" "hashid" "bloodhound" "bloodyAD" "mitm6" "responder" "certipy-ad" 
-    "coercer" "pypykatz" "lsassy" "enum4linux-ng" "dnsrecon" "git-dumper" 
+    "impacket" "hashid" "bloodhound" "bloodyAD" "mitm6" "responder" "certipy-ad"
+    "coercer" "pypykatz" "lsassy" "enum4linux-ng" "dnsrecon" "git-dumper"
     "roadrecon" "manspider" "mitmproxy" "pwntools" "ROPgadget" "truffleHog"
 )
 
 for tool in "${PIP_TOOLS[@]}"; do
     if ! pip3 list 2>/dev/null | grep -qi "^${tool} "; then
-        # Use --break-system-packages for modern Debian compatibility
         pip3 install --break-system-packages "$tool" 2>&1 | tee -a /var/log/shellshock-install.log || log_warn "Failed to install $tool"
     else
         log_skip "$tool already installed"
@@ -695,10 +726,9 @@ PIPX_TOOLS=(
 )
 
 for tool in "${PIPX_TOOLS[@]}"; do
-    tool_name=$(basename "$tool" | cut -d'@' -f1 | sed 's/git+https:\/\/github.com\///' | cut -d'/' -f2 | awk '{print tolower($0)}') # Normalize name
+    tool_name=$(basename "$tool" | cut -d'@' -f1 | sed 's/git+https:\/\/github.com\///' | cut -d'/' -f2 | awk '{print tolower($0)}')
     if ! sudo -u "$USERNAME" pipx list 2>/dev/null | grep -qi "$tool_name"; then
         log_info "Installing $tool_name..."
-        # Execute as target user, ensuring PATH is correct
         sudo -u "$USERNAME" bash -c "export PATH=\$PATH:\$HOME/.local/bin; pipx install '$tool'" 2>&1 | tee -a /var/log/shellshock-install.log || log_warn "Failed to install $tool_name via pipx"
     else
         log_skip "$tool_name already installed"
@@ -726,7 +756,6 @@ if command_exists go; then
         tool_name=$(basename "$tool_path" | cut -d'@' -f1)
         if [[ ! -f "$GOPATH/bin/$tool_name" ]]; then
             log_info "Installing $tool_name..."
-            # Execute as target user
             sudo -u "$USERNAME" bash -c "export GOPATH='$GOPATH'; export PATH=\$PATH:\$GOPATH/bin; go install -v '$tool_path'" 2>&1 | tee -a /var/log/shellshock-install.log || log_warn "Failed to install $tool_name"
         else
             log_skip "$tool_name already installed"
@@ -780,7 +809,6 @@ if command_exists x86_64-w64-mingw32-gcc; then
     if [[ ! -f "$RUNASCS_PATH" ]]; then
         log_info "Compiling RunasCs.exe..."
         if safe_download "https://raw.githubusercontent.com/antonioCoco/RunasCs/master/RunasCs.c" "/tmp/RunasCs.c"; then
-            # Added optimization/strip flags
             if x86_64-w64-mingw32-gcc /tmp/RunasCs.c -o "$RUNASCS_PATH" -lwininet -lws2_32 -static -s -O2 2>&1 | tee -a /var/log/shellshock-install.log; then
                 log_info "RunasCs.exe compiled successfully"
             else
@@ -813,10 +841,9 @@ log_progress "Phase 5: Downloading Wordlists"
 
 # Clone SecLists (comprehensive wordlist collection)
 if [[ ! -d "$USER_HOME/tools/wordlists/SecLists/.git" ]]; then
-    log_info "Cloning SecLists (Shallow clone, minimizes disk usage)..."
+    log_info "Cloning SecLists (Shallow clone, SSL ignored)..."
     safe_clone "https://github.com/danielmiessler/SecLists.git" "$USER_HOME/tools/wordlists/SecLists"
 else
-    # Run safe_clone again to attempt update if already cloned
     safe_clone "https://github.com/danielmiessler/SecLists.git" "$USER_HOME/tools/wordlists/SecLists"
 fi
 
@@ -833,7 +860,7 @@ else
     log_warn "rockyou.txt.gz not found in /usr/share/wordlists"
 fi
 
-# Create convenience symlinks (Added checks before linking)
+# Create convenience symlinks
 if [[ ! -L "$USER_HOME/SecLists" ]] && [[ -d "$USER_HOME/tools/wordlists/SecLists" ]]; then
     ln -sf "$USER_HOME/tools/wordlists/SecLists" "$USER_HOME/SecLists" 2>/dev/null || true
 fi
@@ -846,7 +873,7 @@ chown -R "$USERNAME":"$USERNAME" "$USER_HOME/tools/wordlists" 2>/dev/null || tru
 # ============================================
 # PHASE 6: REPOSITORY CLONING
 # ============================================
-log_progress "Phase 6: Cloning Essential Repositories (Shallow clone)"
+log_progress "Phase 6: Cloning Essential Repositories (Shallow clone, SSL ignored)"
 
 REPOS=(
     "https://github.com/swisskyrepo/PayloadsAllTheThings.git"
@@ -874,7 +901,6 @@ if [[ -f "$USER_HOME/tools/repos/PEASS-ng/linPEAS/linpeas.sh" ]] && [[ ! -L "$US
     ln -sf "$USER_HOME/tools/repos/PEASS-ng/linPEAS/linpeas.sh" "$USER_HOME/linpeas.sh" 2>/dev/null || true
 fi
 
-# Determine the correct winPEAS path
 WINPEAS_PATH=""
 if [[ -f "$USER_HOME/tools/repos/PEASS-ng/winPEAS/winPEAS.exe" ]]; then
     WINPEAS_PATH="$USER_HOME/tools/repos/PEASS-ng/winPEAS/winPEAS.exe"
@@ -899,12 +925,12 @@ log_progress "Phase 7: Creating Shell Configuration & Scripts"
 
 mkdir -p "$USER_HOME/scripts" "$USER_HOME/Desktop" "$USER_HOME/engagements"
 
-# Create .zshrc with comprehensive aliases and functions (Updated aliases)
+# Create .zshrc with comprehensive aliases and functions (Updated for fixes)
 if [[ ! -f "$USER_HOME/.zshrc" ]] || ! grep -q "ShellShock v1.01" "$USER_HOME/.zshrc"; then
     log_info "Creating .zshrc configuration..."
     cat > "$USER_HOME/.zshrc" << 'ZSHRC_EOF'
 # ============================================
-# ShellShock v1.01 - Zsh Configuration
+# ShellShock v1.01 - Zsh Configuration (NTP/SSL Fixed)
 # ============================================
 
 export ZSH="$HOME/.oh-my-zsh"
@@ -919,8 +945,6 @@ plugins=(
     sudo
     history
     command-not-found
-    # Added rlwrap for safety/usability
-    # Added python to auto-alias python=python3
 )
 
 if [[ -f "$ZSH/oh-my-zsh.sh" ]]; then
@@ -935,8 +959,8 @@ export PATH=$PATH:$HOME/go/bin:$HOME/.local/bin
 export EDITOR=vim
 export GOPATH=$HOME/go
 
-# Auto-update nuclei templates in background (silent) - Removed background job for performance
-# (nuclei -update-templates -silent &>/dev/null &)
+# Auto-update nuclei templates in background (silent)
+(nuclei -update-templates -silent &>/dev/null &)
 
 # Welcome banner (interactive shells only, not in tmux)
 if [[ -o interactive ]] && [[ -z "$TMUX" ]]; then
@@ -945,7 +969,7 @@ if [[ -o interactive ]] && [[ -z "$TMUX" ]]; then
     ╔════════════════════════════════════════════════════════╗
     ║         SHELLSHOCK v1.01 - LOCKED & LOADED             ║
     ║                                                        ║
-    ║  Quick:    tools | repos | win | update                ║
+    ║  Quick:    tools | repos | win | update | timesync     ║
     ║  Engage:   newengagement <name>                        ║
     ║  Scan:     quickscan <target>                          ║
     ║  Reset:    ~/Desktop/RESET_SHELLSHOCK.sh               ║
@@ -957,20 +981,21 @@ fi
 # ============================================
 # SYSTEM ALIASES
 # ============================================
-alias ll='ls -lah --color=auto' # Added color
+alias ll='ls -lah --color=auto'
 alias ...='cd ../..'
-alias ..='cd ..' # Added single dot alias
+alias ..='cd ..'
 alias c='clear'
 alias h='history'
 alias please='sudo'
 alias rl='rlwrap nc'
-alias python='python3' # Explicit Python 3 alias
+alias python='python3'
+alias timesync='sudo chronyc makestep; timedatectl' # New alias for instant time sync
 
 # ============================================
 # PENTESTING ALIASES
 # ============================================
 alias nmap-quick='nmap -sV -sC -O'
-alias nmap-full='nmap -sV -sC -O -p- --min-rate 1000' # Added rate control
+alias nmap-full='nmap -sV -sC -O -p- --min-rate 1000'
 alias nmap-udp='nmap -sU -sV'
 alias serve='python3 -m http.server'
 alias serve80='sudo python3 -m http.server 80'
@@ -984,7 +1009,7 @@ alias shell='python3 ~/penelope.py'
 # CRACKING TOOLS
 # ============================================
 alias john='john --wordlist=~/tools/wordlists/rockyou.txt'
-alias hashcat='hashcat' # Removed -m 1000 default
+alias hashcat='hashcat'
 alias sqlmap='sqlmap'
 
 # ============================================
@@ -992,9 +1017,9 @@ alias sqlmap='sqlmap'
 # ============================================
 alias searchsploit='searchsploit'
 alias ss='searchsploit'
-alias ssx='searchsploit -x'  # Examine exploit
-alias ssm='searchsploit -m'  # Mirror/copy exploit
-alias ssu='searchsploit -u'  # Update database
+alias ssx='searchsploit -x'
+alias ssm='searchsploit -m'
+alias ssu='searchsploit -u'
 
 # ============================================
 # TOOL SHORTCUTS
@@ -1008,7 +1033,7 @@ alias peas='linpeas.sh'
 alias ysoserial='java -jar ~/tools/ysoserial.jar'
 alias evil='evil-winrm'
 alias ldump='ldapdomaindump'
-alias runas='wine ~/tools/windows/runasCs.exe' # Use wine explicitly
+alias runas='wine ~/tools/windows/runasCs.exe'
 
 # ============================================
 # WINDOWS TOOLS
@@ -1073,7 +1098,6 @@ newengagement() {
         return 1
     fi
     
-    # Sanitizing name for filesystem safety
     local name=$(echo "$1" | tr '[:upper:]' '[:lower:]' | tr -c '[:alnum:]_-' '-')
     local path="$HOME/engagements/$name"
 
@@ -1094,7 +1118,7 @@ quickscan() {
     
     local timestamp=$(date +%Y%m%d_%H%M%S)
     local output_file="quickscan_${timestamp}_$1"
-    nmap -sV -sC -O -oA "$output_file" "$1" # Quoted $output_file
+    nmap -sV -sC -O -oA "$output_file" "$1"
 }
 
 # Universal archive extractor
@@ -1106,7 +1130,7 @@ extract() {
     
     local file="$1"
 
-    case "$file" in # Quoted variable in case statement
+    case "$file" in
         *.tar.bz2) tar xjf "$file" ;;
         *.tar.gz) tar xzf "$file" ;;
         *.bz2) bunzip2 "$file" ;;
@@ -1148,6 +1172,9 @@ log_warn() { echo -e "${YELLOW}[!]${NC} $1"; }
 echo -e "\n${GREEN}========================================${NC}"
 echo -e "${GREEN}   SHELLSHOCK TOOL & SYSTEM UPDATE      ${NC}"
 echo -e "${GREEN}========================================${NC}"
+
+# Temporarily disable SSL verification for Git update only (APT is globally set in bootstrap)
+git config --global http.sslVerify false
 
 log_info "Updating system packages..."
 sudo apt update && sudo apt upgrade -y || log_warn "System update partially failed"
@@ -1196,16 +1223,22 @@ gem update one_gadget haiti-hash evil-winrm || log_warn "Ruby tools update faile
 log_info "Updating searchsploit database..."
 searchsploit -u -v || log_warn "searchsploit update failed"
 
-log_info "Updating git repositories (Shallow pull)..."
+log_info "Updating git repositories (Shallow pull, SSL ignored)..."
 cd ~/tools/repos || log_warn "Could not find ~/tools/repos" && exit 1
 
-# Iterate through directories and pull with --depth 1
 find . -maxdepth 1 -type d -name ".*" -prune -o -type d ! -name . | while read -r dir; do
     if [[ -d "$dir/.git" ]]; then
         echo -e "[*] Updating $(basename "$dir")"
         ( cd "$dir" && git pull --depth 1 ) || log_warn "Failed to update $(basename "$dir")"
     fi
 done
+
+log_info "Forcing immediate system time synchronization..."
+sudo chronyc makestep || log_warn "chronyc makestep failed. Check network connection."
+
+
+log_info "Restoring Git SSL verification setting..."
+git config --global --unset http.sslVerify || true
 
 echo -e "\n${GREEN}Update complete! Please check log for warnings.${NC}"
 UPDATE_SCRIPT_EOF
@@ -1244,8 +1277,9 @@ echo "  • Reset /etc/hosts to defaults"
 echo "  • Clear Kerberos tickets"
 echo "  • Wipe cached credentials (Responder, NetExec)"
 echo "  • Clear SSH known_hosts"
+echo "  • Restore APT and Git SSL verification"
 echo ""
-read -rp "Continue? (type 'yes' to confirm): " confirm # Used -r flag and explicit confirmation
+read -rp "Continue? (type 'yes' to confirm): " confirm
 [[ "$confirm" != "yes" ]] && exit 0
 
 ARCHIVE_DIR="$HOME/archives/$(date +%Y%m%d_%H%M%S)"
@@ -1257,7 +1291,6 @@ log() { echo -e "${GREEN}[+]${NC} $1"; }
 log "Archiving Zsh command history..."
 if [[ -f "$HOME/.zsh_history" ]]; then
     cp "$HOME/.zsh_history" "$ARCHIVE_DIR/history/zsh_history.txt"
-    # Decode Zsh extended history format
     perl -pe 's/^: \d+:\d+;//' "$HOME/.zsh_history" > "$ARCHIVE_DIR/history/zsh_clean.txt" 2>/dev/null || true
     log "Zsh history archived and decoded"
 fi
@@ -1270,7 +1303,6 @@ for pty in /dev/pts/[0-9]*; do
     owner=$(stat -c %U "$pty" 2>/dev/null || echo "")
     [[ "$owner" != "$USER" ]] && continue
     pty_name=$(basename "$pty")
-    # Using script -c cat for safer read (requires sudo/permissions)
     timeout 2 sudo script -q -c "cat $pty" /dev/null > "$ARCHIVE_DIR/history/pty_${pty_name}.txt" 2>/dev/null || true
     ((pty_count++))
 done
@@ -1310,13 +1342,20 @@ log "Zsh history cleared"
 
 # Clear cached credentials
 log "Wiping cached credentials..."
-rm -rf "$HOME/.responder"/* "$HOME/.nxc"/* "$HOME/.cme"/* "$HOME/.netexec"/* 2>/dev/null || true # Added .netexec
+rm -rf "$HOME/.responder"/* "$HOME/.nxc"/* "$HOME/.cme"/* "$HOME/.netexec"/* 2>/dev/null || true
 log "Cached credentials cleared"
 
 # Clear SSH known_hosts
 log "Clearing SSH known_hosts..."
 : > "$HOME/.ssh/known_hosts" 2>/dev/null || true
 log "SSH known_hosts cleared"
+
+# RESTORE SSL VERIFICATION
+log "Restoring APT and Git SSL verification..."
+sudo rm -f /etc/apt/apt.conf.d/99no-verify-ssl || true
+git config --global --unset http.sslVerify || true
+log "SSL verification restored (Reboot recommended for full effect)"
+
 
 echo -e "\n${GREEN}RESET COMPLETE${NC}"
 echo -e "Archive location: ${CYAN}$ARCHIVE_DIR${NC}"
@@ -1348,7 +1387,7 @@ if [[ ! -f "$USER_HOME/Desktop/INSTALL_VBOX_ADDITIONS.sh" ]]; then
     log_info "Creating INSTALL_VBOX_ADDITIONS.sh..."
     cat > "$USER_HOME/Desktop/INSTALL_VBOX_ADDITIONS.sh" << 'VBOX_INSTALLER_EOF'
 #!/bin/bash
-set -euo pipefail # Added robust error handling
+set -euo pipefail
 
 # ShellShock v1.01 - VirtualBox Guest Additions Installer
 
@@ -1392,6 +1431,7 @@ fi
 
 # Install required dependencies
 log_progress "Installing build dependencies..."
+# NOTE: Uses apt with SSL bypass already configured in bootstrap
 sudo apt update -qq
 sudo apt install -y build-essential dkms linux-headers-"$(uname -r)" wget
 
@@ -1467,7 +1507,7 @@ if command -v VBoxClient &>/dev/null; then
     # Start VBoxClient services
     log_progress "Starting VBoxClient services..."
     
-    pkill -9 -u "$(id -u)" -f VBoxClient 2>/dev/null || true # Kill by user ID
+    pkill -9 -u "$(id -u)" -f VBoxClient 2>/dev/null || true
     sleep 1
     
     VBoxClient --clipboard &>/dev/null &
@@ -1533,7 +1573,7 @@ else
 fi
 
 # ============================================
-# PHASE 10: DOCUMENTATION (Minor updates for aliases)
+# PHASE 10: DOCUMENTATION
 # ============================================
 log_progress "Phase 10: Creating Desktop Documentation"
 
@@ -1578,6 +1618,7 @@ h                         history
 please                    sudo
 rl                        rlwrap nc (netcat with readline)
 python                    python3 (explicit)
+timesync                  sudo chronyc makestep; timedatectl (Instant clock sync)
 
 ══════════════════════════════════════════════════════════════
   PENTESTING TOOLS
@@ -1656,13 +1697,13 @@ wl-params                 burp-parameter-names.txt
   SYSTEM SCRIPTS
 ══════════════════════════════════════════════════════════════
 ~/Desktop/RESET_SHELLSHOCK.sh
-    Archive history, wipe credentials, reset system
+    Archive history, wipe credentials, reset system, and restore SSL verification.
 
 ~/Desktop/INSTALL_VBOX_ADDITIONS.sh
-    Install VirtualBox Guest Additions (clipboard, drag-drop)
+    Install VirtualBox Guest Additions (clipboard, drag-drop).
 
 ~/scripts/update-tools.sh
-    Update all pentesting tools and repositories
+    Update all pentesting tools and repositories. Includes time sync.
 
 ══════════════════════════════════════════════════════════════
 COMMANDS_DOC_EOF
@@ -1683,6 +1724,13 @@ chown -R "$USERNAME":"$USERNAME" "$USER_HOME" 2>/dev/null || true
 # Remove unnecessary packages
 apt autoremove -y -qq 2>/dev/null || true
 apt clean -qq 2>/dev/null || true
+
+# Restore SSL verification for APT and Git (Final step of the install process)
+log_progress "Restoring original SSL configuration..."
+sudo rm -f /etc/apt/apt.conf.d/99no-verify-ssl || true
+git config --global --unset http.sslVerify || true
+log_info "APT and Git SSL verification restored."
+
 
 # Verify critical installations
 log_info "Verifying critical installations..."
@@ -1730,18 +1778,21 @@ echo -e "  ✓ Smart installation (skips existing)"
 echo -e "  ✓ Zsh + Oh-My-Zsh + Powerlevel10k"
 echo -e "  ✓ Firefox with pentesting extensions"
 echo -e "  ✓ Comprehensive tool suite (Python, Go, Ruby)"
+echo -e "  ✓ Robust time sync (chrony) installed"
+echo "  ✓ HTTPS certificate failures bypassed during install"
 echo -e "  ✓ Windows binaries (Rubeus, SharpHound, runasCs)"
 echo -e "  ✓ Wordlists (SecLists + rockyou.txt)"
 echo -e "  ✓ Essential repositories (PEASS, HackTricks, PayloadsAllTheThings)"
 echo -e "  ✓ Exploit database (searchsploit)"
 echo ""
 echo -e "${CYAN}Desktop Scripts:${NC}"
-echo -e "  • ${GREEN}RESET_SHELLSHOCK.sh${NC} - Archive & reset system"
+echo -e "  • ${GREEN}RESET_SHELLSHOCK.sh${NC} - Archive & reset system, restores SSL verification"
 echo -e "  • ${GREEN}INSTALL_VBOX_ADDITIONS.sh${NC} - VirtualBox integration"
 echo -e "  • ${GREEN}COMMANDS.txt${NC} - Complete command reference"
 echo ""
 echo -e "${CYAN}Maintenance:${NC}"
-echo -e "  • ${GREEN}~/scripts/update-tools.sh${NC} - Update all tools"
+echo -e "  • ${GREEN}~/scripts/update-tools.sh${NC} - Update all tools and syncs clock"
+echo -e "  • ${GREEN}timesync${NC} - New alias for instant clock correction"
 echo ""
 echo -e "${YELLOW}IMPORTANT:${NC} ${RED}Reboot required${NC}"
 echo -e "${YELLOW}After reboot:${NC} Log in as ${GREEN}$USERNAME${NC}"
