@@ -1,10 +1,15 @@
 #!/bin/bash
 # ============================================
-# PROJECT SHELLSHOCK v1.01 (Go Fix Integrated)
+# PROJECT SHELLSHOCK v1.01 (FIXED)
 # Automated Pentesting Environment Bootstrap
 # Debian/Ubuntu/Parrot Compatible
 # Author: Jamie Loring
 # Last updated: 2025-11-13
+# ============================================
+# FIXES:
+# - Username default now uses ORIGINAL_USER or 'pentester'
+# - Go PATH properly exported for tool installation
+# - Built-in 'user' account fully disabled
 # ============================================
 # DISCLAIMER: This tool is for authorized testing only.
 # Request permission before use. Stay legal.
@@ -126,14 +131,14 @@ cat << 'EOF'
 ║    ╚██████╗  ██║  ██║        ██████╔╝╚██████╔╝██╔╝ ██╗     ║
 ║     ╚═════╝  ╚═╝  ╚═╝        ╚═════╝  ╚═════╝ ╚═╝  ╚═╝     ║
 ║                                                             ║
-║              Project ShellShock 1.01                        ║
+║              Project ShellShock 1.01 (FIXED)                ║
 ║              A love letter to Pentesting by Jamie Loring    ║
 ║                                                             ║
 ╚═══════════════════════════════════════════════════════════════╝
 EOF
 echo -e "${NC}\n"
 
-# Username prompt
+# Username prompt - FIXED to use ORIGINAL_USER or fall back to 'pentester'
 DEFAULT_USERNAME="$ORIGINAL_USER"
 [[ -z "$DEFAULT_USERNAME" ]] && DEFAULT_USERNAME="pentester"
 
@@ -491,12 +496,27 @@ else
     log_warn "Zsh executable not found, skipping default shell change"
 fi
 
-# Disable old 'user' auto-login if exists
+# Disable old 'user' auto-login if exists - ENHANCED
 if [[ "$USERNAME" != "user" ]]; then
-    log_progress "Checking for existing 'user' auto-login configuration..."
+    log_progress "Disabling existing 'user' account auto-login configuration..."
+    
+    # LightDM
     sed -i '/autologin-user=user/d' /etc/lightdm/lightdm.conf* 2>/dev/null || true
+    sed -i '/autologin-user-timeout=0/d' /etc/lightdm/lightdm.conf* 2>/dev/null || true
+    
+    # GDM3
     sed -i '/AutomaticLogin = user/d' /etc/gdm3/custom.conf 2>/dev/null || true
     sed -i '/AutomaticLoginEnable = true/d' /etc/gdm3/custom.conf 2>/dev/null || true
+    
+    # SDDM
+    sed -i '/User=user/d' /etc/sddm.conf* 2>/dev/null || true
+    
+    # Lock the 'user' account if it exists
+    if id "user" &>/dev/null; then
+        passwd -l user 2>/dev/null || true
+        log_info "Locked 'user' account"
+    fi
+    
     log_info "Cleaned up obsolete 'user' auto-login settings"
 fi
 
@@ -832,7 +852,7 @@ for tool in "${PIPX_TOOLS[@]}"; do
     fi
 done
 
-# Go tools
+# Go tools - FIXED: Properly export PATH
 if command_exists go; then
     log_progress "Installing Go-based tools as $USERNAME..."
 
@@ -855,8 +875,8 @@ if command_exists go; then
         # Check if the binary is already in the user's Go bin directory
         if [[ ! -f "$GOPATH/bin/$tool_name" ]]; then
             log_info "Installing $tool_name..."
-            # Note: We rely on the PATH set in Phase 1.5 to find 'go'
-            sudo -u "$USERNAME" bash -c "export GOPATH='$GOPATH'; export PATH=\$PATH:\$GOPATH/bin; go install -v '$tool_path'" 2>&1 | tee -a /var/log/shellshock-install.log || log_warn "Failed to install $tool_name"
+            # FIXED: Explicitly pass PATH including /usr/local/go/bin
+            sudo -u "$USERNAME" bash -c "export GOPATH='$GOPATH'; export PATH='/usr/local/go/bin:\$PATH:\$GOPATH/bin'; go install -v '$tool_path'" 2>&1 | tee -a /var/log/shellshock-install.log || log_warn "Failed to install $tool_name"
         else
             log_skip "$tool_name already installed"
         fi
@@ -1057,7 +1077,7 @@ fi
 
 # Environment variables
 # PATH is updated here to include the official Go path
-export PATH=$PATH:/usr/local/go/bin:$HOME/go/bin:$HOME/.local/bin
+export PATH=/usr/local/go/bin:$HOME/go/bin:$HOME/.local/bin:$PATH
 export EDITOR=vim
 export GOPATH=$HOME/go
 
@@ -1327,7 +1347,7 @@ log_info "Updating searchsploit database..."
 searchsploit -u -v || log_warn "searchsploit update failed"
 
 log_info "Updating git repositories (Shallow pull, SSL ignored)..."
-cd ~/tools/repos || log_warn "Could not find ~/tools/repos" && exit 1
+cd ~/tools/repos || { log_warn "Could not find ~/tools/repos"; exit 1; }
 
 find . -maxdepth 1 -type d -name ".*" -prune -o -type d ! -name . | while read -r dir; do
     if [[ -d "$dir/.git" ]]; then
@@ -1794,13 +1814,13 @@ wl-params                  burp-parameter-names.txt
 ══════════════════════════════════════════════════════════════
   CHISEL TUNNELING
 ══════════════════════════════════════════════════════════════
-alias chisel-server='chisel server --reverse --port 8000'
-alias chisel-client='chisel client'
+chisel-server              chisel server --reverse --port 8000
+chisel-client              chisel client
 
 ══════════════════════════════════════════════════════════════
   COMBO ATTACKS
 ══════════════════════════════════════════════════════════════
-alias mitm-relay='sudo mitm6 -d DOMAIN & ntlmrelayx.py -t ldaps://DC-IP -wh attacker-ip --delegate-access'
+mitm-relay                 sudo mitm6 -d DOMAIN & ntlmrelayx.py -t ldaps://DC-IP -wh attacker-ip --delegate-access
 
 ══════════════════════════════════════════════════════════════
   SYSTEM SCRIPTS
