@@ -125,12 +125,15 @@ cat << 'EOF'
 EOF
 echo -e "${NC}\n"
 
-# Username prompt
-DEFAULT_USERNAME="$USER"
+# Username prompt (use ORIGINAL_USER or fallback)
+DEFAULT_USERNAME="$ORIGINAL_USER"
+[[ -z "$DEFAULT_USERNAME" ]] && DEFAULT_USERNAME="pentester"
+
 while true; do
     read -p "Enter pentesting username [default: $DEFAULT_USERNAME]: " USERNAME
     USERNAME="${USERNAME:-$DEFAULT_USERNAME}"
     validate_username "$USERNAME" && break
+    echo ""
 done
 
 export USERNAME
