@@ -189,7 +189,7 @@ attempt_sync() {
     else
         log_warn "ntpdate sync failed using $server."
         return 1
-    }
+    fi
 }
 
 # 1. Check if ntpdate is already installed and try to sync
@@ -354,7 +354,7 @@ if ! id "$USERNAME" &>/dev/null; then
     # Configure Parrot theme via gsettings
     log_info "Configuring Parrot theme (Requires running Display/DBUS session)..."
     sudo -u "$USERNAME" bash << 'THEME_EOF'
-# FIX: Added 'sudo -u "$USERNAME"' before grep to correctly fetch unprivileged user session info
+# Attempt to find the user's running DBUS session if it exists
 DBUS_ADDRESS=$(sudo -u "$USERNAME" grep -z DBUS_SESSION_BUS_ADDRESS /proc/$(pgrep -u "$USERNAME" mate-session|head -n1)/environ 2>/dev/null | tr -d '\0' | cut -d= -f2- || true)
 export DBUS_SESSION_BUS_ADDRESS="${DBUS_ADDRESS}"
 export DISPLAY=:0
@@ -387,7 +387,6 @@ else
         fi
 
         sudo -u "$USERNAME" bash << 'THEME2_EOF'
-# FIX: Added 'sudo -u "$USERNAME"' before grep to correctly fetch unprivileged user session info
 DBUS_ADDRESS=$(sudo -u "$USERNAME" grep -z DBUS_SESSION_BUS_ADDRESS /proc/$(pgrep -u "$USERNAME" mate-session|head -n1)/environ 2>/dev/null | tr -d '\0' | cut -d= -f2- || true)
 export DBUS_SESSION_BUS_ADDRESS="${DBUS_ADDRESS}"
 export DISPLAY=:0
@@ -517,8 +516,7 @@ if ! grep -qF "$PAM_ENTRY" "$PAM_FILE"; then
         log_info "PAM configured for passwordless login via nopasswdlogin group"
     else
         log_error "Failed to configure PAM for passwordless login (sed failed)"
-    }
-}
+    fi
 else
     log_skip "PAM already configured for nopasswdlogin group"
 fi
@@ -774,8 +772,8 @@ for tool in "${PIPX_TOOLS[@]}"; do
         sudo -u "$USERNAME" bash -c "export PATH=\$PATH:\$HOME/.local/bin; pipx install '$tool'" 2>&1 | tee -a /var/log/shellshock-install.log || log_warn "Failed to install $tool_name via pipx"
     else
         log_skip "$tool_name already installed"
-    }
-}
+    fi
+done
 
 # Go tools
 if command_exists go; then
