@@ -5,12 +5,6 @@
 # Debian/Ubuntu/Parrot Compatible
 # Author: Jamie Loring
 # Last updated: 2025-11-13
-# ============================================
-# FIXES:
-# - Username default now uses ORIGINAL_USER or 'pentester'
-# - Go PATH properly exported for tool installation
-# - Built-in 'user' account fully disabled
-# ============================================
 # DISCLAIMER: This tool is for authorized testing only.
 # Request permission before use. Stay legal.
 # ============================================
@@ -47,13 +41,14 @@ validate_username() {
         return 1
     fi
 
-    # Reserved system usernames
+    # Reserved system usernames (including Parrot's default 'user' account)
     local reserved=("root" "daemon" "bin" "sys" "sync" "games" "man" "lp" "mail"
-                    "news" "uucp" "proxy" "www-data" "backup" "list" "irc" "nobody")
+                    "news" "uucp" "proxy" "www-data" "backup" "list" "irc" "nobody" "user")
 
     for reserved_name in "${reserved[@]}"; do
         if [[ "$username" == "$reserved_name" ]]; then
             log_error "Cannot use reserved system username: $username"
+            log_error "The 'user' account is Parrot's default - please choose a custom username"
             return 1
         fi
     done
@@ -138,15 +133,22 @@ cat << 'EOF'
 EOF
 echo -e "${NC}\n"
 
-# Username prompt - FIXED to use ORIGINAL_USER or fall back to 'pentester'
-DEFAULT_USERNAME="$ORIGINAL_USER"
-[[ -z "$DEFAULT_USERNAME" ]] && DEFAULT_USERNAME="pentester"
-
+# Username prompt - NO DEFAULTS, MANUAL INPUT REQUIRED
 USERNAME=""
 while true; do
-    read -rp "Enter pentesting username [default: $DEFAULT_USERNAME]: " INPUT_USERNAME
-    USERNAME="${INPUT_USERNAME:-$DEFAULT_USERNAME}"
-    validate_username "$USERNAME" && break
+    read -rp "Enter pentesting username: " USERNAME
+    
+    # Check if empty
+    if [[ -z "$USERNAME" ]]; then
+        log_error "Username cannot be empty. Please enter a username."
+        echo ""
+        continue
+    fi
+    
+    # Validate format and reserved names
+    if validate_username "$USERNAME"; then
+        break
+    fi
     echo ""
 done
 
@@ -496,19 +498,19 @@ else
     log_warn "Zsh executable not found, skipping default shell change"
 fi
 
-# Disable old 'user' auto-login if exists - ENHANCED
+# Disable old 'user' auto-login and enable for new username - AUTOMATIC
 if [[ "$USERNAME" != "user" ]]; then
-    log_progress "Disabling existing 'user' account auto-login configuration..."
+    log_progress "Disabling 'user' account and configuring auto-login for $USERNAME..."
     
-    # LightDM
+    # LightDM - remove all 'user' auto-login
     sed -i '/autologin-user=user/d' /etc/lightdm/lightdm.conf* 2>/dev/null || true
     sed -i '/autologin-user-timeout=0/d' /etc/lightdm/lightdm.conf* 2>/dev/null || true
     
-    # GDM3
+    # GDM3 - remove all 'user' auto-login
     sed -i '/AutomaticLogin = user/d' /etc/gdm3/custom.conf 2>/dev/null || true
     sed -i '/AutomaticLoginEnable = true/d' /etc/gdm3/custom.conf 2>/dev/null || true
     
-    # SDDM
+    # SDDM - remove all 'user' auto-login
     sed -i '/User=user/d' /etc/sddm.conf* 2>/dev/null || true
     
     # Lock the 'user' account if it exists
@@ -520,58 +522,36 @@ if [[ "$USERNAME" != "user" ]]; then
     log_info "Cleaned up obsolete 'user' auto-login settings"
 fi
 
-# Configure auto-login
-AUTOLOGIN_CONFIGURED=false
+# Configure auto-login for supplied username - AUTOMATIC (no prompt)
+log_progress "Configuring auto-login for $USERNAME..."
 
-if [[ -f "/etc/lightdm/lightdm.conf.d/50-autologin.conf" ]]; then
-    if grep -q "autologin-user=$USERNAME" /etc/lightdm/lightdm.conf.d/50-autologin.conf 2>/dev/null; then
-        AUTOLOGIN_CONFIGURED=true
-    fi
-elif [[ -f "/etc/gdm3/custom.conf" ]]; then
-    if grep -q "AutomaticLogin = $USERNAME" /etc/gdm3/custom.conf 2>/dev/null; then
-        AUTOLOGIN_CONFIGURED=true
-    fi
-fi
-
-if [[ "$AUTOLOGIN_CONFIGURED" == "false" ]]; then
-    echo ""
-    read -rp "Enable auto-login for $USERNAME (recommended for CTF VM)? (y/n): " auto_login
-    if [[ "$auto_login" =~ ^[Yy]$ ]]; then
-        log_progress "Configuring auto-login..."
-
-        # LightDM
-        if command_exists lightdm || [[ -d "/etc/lightdm" ]]; then
-            mkdir -p /etc/lightdm/lightdm.conf.d
-            cat > /etc/lightdm/lightdm.conf.d/50-autologin.conf << EOF
+# LightDM
+if command_exists lightdm || [[ -d "/etc/lightdm" ]]; then
+    mkdir -p /etc/lightdm/lightdm.conf.d
+    cat > /etc/lightdm/lightdm.conf.d/50-autologin.conf << EOF
 [Seat:*]
 autologin-user=$USERNAME
 autologin-user-timeout=0
 allow-guest=false
 EOF
-            log_info "LightDM auto-login configured"
-        fi
-
-        # GDM3
-        if command_exists gdm3 || [[ -f "/etc/gdm3/custom.conf" ]]; then
-            sed -i '/AutomaticLoginEnable/d' /etc/gdm3/custom.conf 2>/dev/null || true
-            sed -i '/AutomaticLogin =/d' /etc/gdm3/custom.conf 2>/dev/null || true
-
-            if grep -q '^\[daemon\]' /etc/gdm3/custom.conf; then
-                sed -i "/^\[daemon\]/a AutomaticLoginEnable = true" /etc/gdm3/custom.conf
-                sed -i "/^\[daemon\]/a AutomaticLogin = $USERNAME" /etc/gdm3/custom.conf
-            else
-                echo -e "\n[daemon]\nAutomaticLoginEnable = true\nAutomaticLogin = $USERNAME" >> /etc/gdm3/custom.conf
-            fi
-            log_info "GDM3 auto-login configured"
-        fi
-
-        log_info "Auto-login enabled for $USERNAME"
-    else
-        log_info "Auto-login skipped - manual login required"
-    fi
-else
-    log_skip "Auto-login already configured"
+    log_info "LightDM auto-login configured for $USERNAME"
 fi
+
+# GDM3
+if command_exists gdm3 || [[ -f "/etc/gdm3/custom.conf" ]]; then
+    sed -i '/AutomaticLoginEnable/d' /etc/gdm3/custom.conf 2>/dev/null || true
+    sed -i '/AutomaticLogin =/d' /etc/gdm3/custom.conf 2>/dev/null || true
+
+    if grep -q '^\[daemon\]' /etc/gdm3/custom.conf; then
+        sed -i "/^\[daemon\]/a AutomaticLoginEnable = true" /etc/gdm3/custom.conf
+        sed -i "/^\[daemon\]/a AutomaticLogin = $USERNAME" /etc/gdm3/custom.conf
+    else
+        echo -e "\n[daemon]\nAutomaticLoginEnable = true\nAutomaticLogin = $USERNAME" >> /etc/gdm3/custom.conf
+    fi
+    log_info "GDM3 auto-login configured for $USERNAME"
+fi
+
+log_info "Auto-login enabled for $USERNAME (CTF VM optimized)"
 
 # Configure passwordless login group
 if ! grep -q '^nopasswdlogin:' /etc/group; then
@@ -579,6 +559,12 @@ if ! grep -q '^nopasswdlogin:' /etc/group; then
     log_info "Created nopasswdlogin group"
 fi
 
+# Remove 'user' from nopasswdlogin group if present
+if id "user" &>/dev/null; then
+    gpasswd -d user nopasswdlogin 2>/dev/null || true
+fi
+
+# Add supplied username to nopasswdlogin group
 if ! id -nG "$USERNAME" | grep -q 'nopasswdlogin'; then
     usermod -aG nopasswdlogin "$USERNAME" || true
     log_info "Added $USERNAME to nopasswdlogin group"
