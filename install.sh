@@ -4,7 +4,7 @@
 # Automated Pentesting Environment Bootstrap
 # Debian/Ubuntu/Parrot Compatible
 # Author: Jamie Loring
-# Last updated: 2025-11-14
+# Last updated: 2025-11-14 (Fix applied: 2025-11-14)
 # ============================================
 # v2.0 IMPROVEMENTS:
 # - Three-layer Go PATH configuration
@@ -43,8 +43,8 @@ log_skip() { echo -e "${BLUE}[~]${NC} $1"; }
 
 # Check if running as root
 if [[ $EUID -ne 0 ]]; then
-    log_error "This script must be run as root (use sudo)"
-    exit 1
+    log_error "This script must be run as root (use sudo)"
+    exit 1
 fi
 
 # Log file
@@ -54,76 +54,107 @@ exec 2>&1
 
 # Username validation
 validate_username() {
-    local username="$1"
-    
-    # Format check
-    if ! [[ "$username" =~ ^[a-z_][a-z0-9_-]{0,31}$ ]]; then
-        log_error "Invalid username format. Must start with lowercase letter or underscore."
-        return 1
-    fi
-    
-    # Reserved system usernames
-    local reserved=("root" "daemon" "bin" "sys" "sync" "games" "man" "lp" "mail" 
-                    "news" "uucp" "proxy" "www-data" "backup" "list" "irc" "nobody" "user")
-    
-    for reserved_name in "${reserved[@]}"; do
-        if [[ "$username" == "$reserved_name" ]]; then
-            log_error "Cannot use reserved system username: $username"
-            return 1
-        fi
-    done
-    
-    return 0
+    local username="$1"
+    
+    # Format check
+    if ! [[ "$username" =~ ^[a-z_][a-z0-9_-]{0,31}$ ]]; then
+        log_error "Invalid username format. Must start with lowercase letter or underscore."
+        return 1
+    fi
+    
+    # Reserved system usernames
+    local reserved=("root" "daemon" "bin" "sys" "sync" "games" "man" "lp" "mail" 
+                    "news" "uucp" "proxy" "www-data" "backup" "list" "irc" "nobody" "user")
+    
+    for reserved_name in "${reserved[@]}"; do
+        if [[ "$username" == "$reserved_name" ]]; then
+            log_error "Cannot use reserved system username: $username"
+            return 1
+        fi
+    done
+    
+    return 0
 }
 
 # Check if command exists
 command_exists() {
-    command -v "$1" &>/dev/null
+    command -v "$1" &>/dev/null
 }
 
 # Check if package is installed
 package_installed() {
-    dpkg -l "$1" 2>/dev/null | grep -q "^ii"
+    dpkg -l "$1" 2>/dev/null | grep -q "^ii"
+}
+
+# Universal archive extractor
+extract_archive() {
+    local file="$1"
+    if [[ ! -f "$file" ]]; then
+        log_error "'$file' is not a valid file"
+        return 1
+    fi
+    
+    case "$file" in
+        *.tar.bz2)   tar xjf "$file"     ;;
+        *.tar.gz)    tar xzf "$file"     ;;
+        *.tar.xz)    tar xJf "$file"     ;;
+        *.bz2)       bunzip2 "$file"     ;;
+        *.rar)       unrar e "$file"     ;;
+        *.gz)        gunzip "$file"      ;;
+        *.tar)       tar xf "$file"      ;;
+        *.tbz2)      tar xjf "$file"     ;;
+        *.tgz)       tar xzf "$file"     ;;
+        *.zip)       unzip -q "$file"    ;;
+        *.Z)         uncompress "$file"  ;;
+        *.7z)        7z x "$file"        ;;
+        *)
+            log_error "'$file' cannot be extracted via extract_archive()"
+            return 1
+            ;;
+    esac
+    
+    log_info "Extracted: $(basename $file)"
+    return 0
 }
 
 # Safe download with retry
 safe_download() {
-    local url="$1"
-    local output="$2"
-    local name=$(basename "$output")
-    
-    if [[ -f "$output" ]]; then
-        log_skip "$name already exists"
-        return 0
-    fi
-    
-    if wget --timeout=30 --tries=3 --no-verbose "$url" -O "$output" 2>&1 | tee -a "$LOG_FILE"; then
-        log_info "Downloaded: $name"
-        return 0
-    else
-        log_warn "Failed to download: $name (non-critical)"
-        return 1
-    fi
+    local url="$1"
+    local output="$2"
+    local name=$(basename "$output")
+    
+    if [[ -f "$output" ]]; then
+        log_skip "$name already exists"
+        return 0
+    fi
+    
+    if wget --timeout=30 --tries=3 --no-verbose "$url" -O "$output" 2>&1 | tee -a "$LOG_FILE"; then
+        log_info "Downloaded: $name"
+        return 0
+    else
+        log_warn "Failed to download: $name (non-critical)"
+        return 1
+    fi
 }
 
 # Safe git clone
 safe_clone() {
-    local url="$1"
-    local dest="$2"
-    local name=$(basename "$dest")
-    
-    if [[ -d "$dest/.git" ]]; then
-        log_skip "$name already cloned"
-        return 0
-    fi
-    
-    if git clone --depth 1 "$url" "$dest" 2>&1 | tee -a "$LOG_FILE"; then
-        log_info "Cloned: $name"
-        return 0
-    else
-        log_warn "Failed to clone: $name"
-        return 1
-    fi
+    local url="$1"
+    local dest="$2"
+    local name=$(basename "$dest")
+    
+    if [[ -d "$dest/.git" ]]; then
+        log_skip "$name already cloned"
+        return 0
+    fi
+    
+    if git clone --depth 1 "$url" "$dest" 2>&1 | tee -a "$LOG_FILE"; then
+        log_info "Cloned: $name"
+        return 0
+    else
+        log_warn "Failed to clone: $name"
+        return 1
+    fi
 }
 
 # ============================================
@@ -133,16 +164,16 @@ clear
 echo -e "${CYAN}"
 cat << 'EOF'
 ╔═══════════════════════════════════════════════════════════════╗
-║   ███████╗██╗  ██╗███████╗██╗     ██╗     ███████╗██╗  ██╗   ║
-║   ██╔════╝██║  ██║██╔════╝██║     ██║     ██╔════╝██║  ██║   ║
-║   ███████╗███████║█████╗  ██║     ██║     ███████╗███████║   ║
-║   ╚════██║██╔══██║██╔══╝  ██║     ██║     ╚════██║██╔══██║   ║
-║   ███████║██║  ██║███████╗███████╗███████╗███████║██║  ██║   ║
-║   ╚══════╝╚═╝  ╚═╝╚══════╝╚══════╝╚══════╝╚══════╝╚═╝  ╚═╝   ║
-║                                                               ║
-║             PROJECT SHELLSHOCK v2.0                           ║
-║        Automated Pentesting Environment Bootstrap             ║
-║             By Jamie Loring - Use Responsibly                 ║
+║   ███████╗██╗  ██╗███████╗██╗     ██╗     ███████╗██╗  ██╗   ║
+║   ██╔════╝██║  ██║██╔════╝██║     ██║     ██╔════╝██║  ██║   ║
+║   ███████╗███████║█████╗  ██║     ██║     ███████╗███████║   ║
+║   ╚════██║██╔══██║██╔══╝  ██║     ██║     ╚════██║██╔══██║   ║
+║   ███████║██║  ██║███████╗███████╗███████╗███████║██║  ██║   ║
+║   ╚══════╝╚═╝  ╚═╝╚══════╝╚══════╝╚══════╝╚══════╝╚═╝  ╚═╝   ║
+║                                                               ║
+║             PROJECT SHELLSHOCK v2.0                           ║
+║        Automated Pentesting Environment Bootstrap             ║
+║             By Jamie Loring - Use Responsibly                 ║
 ╚═══════════════════════════════════════════════════════════════╝
 EOF
 echo -e "${NC}\n"
@@ -152,10 +183,10 @@ DEFAULT_USERNAME="$ORIGINAL_USER"
 [[ -z "$DEFAULT_USERNAME" ]] && DEFAULT_USERNAME="pentester"
 
 while true; do
-    read -p "Enter pentesting username [default: $DEFAULT_USERNAME]: " USERNAME
-    USERNAME="${USERNAME:-$DEFAULT_USERNAME}"
-    validate_username "$USERNAME" && break
-    echo ""
+    read -p "Enter pentesting username [default: $DEFAULT_USERNAME]: " USERNAME
+    USERNAME="${USERNAME:-$DEFAULT_USERNAME}"
+    validate_username "$USERNAME" && break
+    echo ""
 done
 
 export USERNAME
@@ -171,8 +202,8 @@ echo ""
 read -p "Continue? (y/n): " -n 1 -r
 echo ""
 if [[ ! $REPLY =~ ^[Yy]$ ]]; then
-    log_error "Installation cancelled"
-    exit 1
+    log_error "Installation cancelled"
+    exit 1
 fi
 
 # ============================================
@@ -186,17 +217,17 @@ NTP_SERVERS=("pool.ntp.org" "time.nist.gov" "time.google.com" "time.cloudflare.c
 SYNC_SUCCESS=false
 
 for attempt in {1..3}; do
-    for ntp_server in "${NTP_SERVERS[@]}"; do
-        if timeout 10 ntpdate -u "$ntp_server" 2>&1 | tee -a "$LOG_FILE"; then
-            log_info "Time synced successfully via $ntp_server"
-            SYNC_SUCCESS=true
-            break 2
-        fi
-    done
+    for ntp_server in "${NTP_SERVERS[@]}"; do
+        if timeout 10 ntpdate -u "$ntp_server" 2>&1 | tee -a "$LOG_FILE"; then
+            log_info "Time synced successfully via $ntp_server"
+            SYNC_SUCCESS=true
+            break 2
+        fi
+    done
 done
 
 if [[ "$SYNC_SUCCESS" == "false" ]]; then
-    log_warn "All NTP sync attempts failed. Continuing anyway..."
+    log_warn "All NTP sync attempts failed. Continuing anyway..."
 fi
 
 # Update package lists
@@ -213,45 +244,59 @@ DEBIAN_FRONTEND=noninteractive apt-get upgrade -y -qq
 log_section "Phase 2: Installing Core Packages"
 
 CORE_PACKAGES=(
-    # Essential
-    "curl" "wget" "git" "vim" "nano" "unzip" "p7zip-full" "software-properties-common"
-    "apt-transport-https" "ca-certificates" "gnupg" "lsb-release"
-    
-    # Shells
-    "zsh" "tmux"
-    
-    # Build tools
-    "build-essential" "gcc" "g++" "make" "cmake" "pkg-config"
-    
-    # Python
-    "python3" "python3-pip" "python3-venv" "python3-dev" "pipx"
-    
-    # Ruby
-    "ruby" "ruby-dev"
-    
-    # Network tools
-    "nmap" "masscan" "netcat-traditional" "socat" "tcpdump" "wireshark" "tshark"
-    "dnsutils" "whois" "host" "ldap-utils" "openssl"
-    
-    # Web tools
-    "curl" "wget" "nikto" "dirb" "wfuzz" "sqlmap"
-    
-    # Other tools
-    "john" "hashcat" "hydra" "smbclient" "nfs-common" "snmp" "ftp"
-    "exploitdb" "metasploit-framework"
+    # Essential
+    "curl" "wget" "git" "vim" "nano" "unzip" "p7zip-full" "software-properties-common"
+    "apt-transport-https" "ca-certificates" "gnupg" "lsb-release"
+    
+    # Shells
+    "zsh" "tmux"
+    
+    # Build tools
+    "build-essential" "gcc" "g++" "make" "cmake" "pkg-config"
+    
+    # Python
+    "python3" "python3-pip" "python3-venv" "python3-dev" "pipx"
+    
+    # Ruby
+    "ruby" "ruby-dev"
+    
+    # Network tools
+    "nmap" "masscan" "netcat-traditional" "socat" "tcpdump" "wireshark" "tshark"
+    "dnsutils" "whois" "host" "ldap-utils" "openssl"
+    
+    # Web tools
+    "curl" "wget" "nikto" "dirb" "wfuzz" "sqlmap"
+    
+    # Other tools
+    "john" "hashcat" "hydra" "nfs-common" "snmp" "ftp"
+    "exploitdb" "metasploit-framework"
 )
 
 log_info "Installing core packages (this may take a while)..."
 for package in "${CORE_PACKAGES[@]}"; do
-    if package_installed "$package"; then
-        log_skip "$package already installed"
-    else
-        if DEBIAN_FRONTEND=noninteractive apt-get install -y -qq "$package" 2>&1 | tee -a "$LOG_FILE"; then
-            log_info "Installed: $package"
-        else
-            log_warn "Failed to install: $package (non-critical)"
-        fi
-    fi
+    if package_installed "$package"; then
+        log_skip "$package already installed"
+    else
+        if DEBIAN_FRONTEND=noninteractive apt-get install -y -qq "$package" 2>&1 | tee -a "$LOG_FILE"; then
+            log_info "Installed: $package"
+        else
+            log_warn "Failed to install: $package (non-critical)"
+        fi
+    fi
+done
+
+# Optional packages (may have dependency conflicts)
+OPTIONAL_PACKAGES=("smbclient" "cifs-utils")
+log_info "Installing optional packages..."
+for package in "${OPTIONAL_PACKAGES[@]}"; do
+    if package_installed "$package"; then
+        log_skip "$package already installed"
+    else
+        # Try to install, but don't fail if it doesn't work
+        DEBIAN_FRONTEND=noninteractive apt-get install -y -qq "$package" 2>&1 | tee -a "$LOG_FILE" && \
+            log_info "Installed: $package" || \
+            log_warn "Could not install: $package (optional, skipping)"
+    fi
 done
 
 # ============================================
@@ -261,45 +306,45 @@ log_section "Phase 3: User Account Configuration"
 
 # Create user if doesn't exist
 if id "$USERNAME" &>/dev/null; then
-    log_skip "User $USERNAME already exists"
+    log_skip "User $USERNAME already exists"
 else
-    log_info "Creating user: $USERNAME"
-    
-    # Ensure docker group exists
-    if ! getent group docker > /dev/null; then
-        groupadd docker
-        log_info "Created docker group"
-    fi
-    
-    # Create user with bash first (zsh may not be in PATH yet)
-    useradd -m -s /bin/bash -G sudo,docker "$USERNAME"
-    
-    # Set password
-    echo "$USERNAME:shellshock" | chpasswd
-    log_info "User created with default password: shellshock"
-    log_warn "IMPORTANT: Change password after first login!"
+    log_info "Creating user: $USERNAME"
+    
+    # Ensure docker group exists
+    if ! getent group docker > /dev/null; then
+        groupadd docker
+        log_info "Created docker group"
+    fi
+    
+    # Create user with bash first (zsh may not be in PATH yet)
+    useradd -m -s /bin/bash -G sudo,docker "$USERNAME"
+    
+    # Set password
+    echo "$USERNAME:shellshock" | chpasswd
+    log_info "User created with default password: shellshock"
+    log_warn "IMPORTANT: Change password after first login!"
 fi
 
 # Add to groups if not already member
 for group in sudo docker; do
-    if ! id -nG "$USERNAME" | grep -qw "$group"; then
-        usermod -aG "$group" "$USERNAME"
-        log_info "Added $USERNAME to $group group"
-    fi
+    if ! id -nG "$USERNAME" | grep -qw "$group"; then
+        usermod -aG "$group" "$USERNAME"
+        log_info "Added $USERNAME to $group group"
+    fi
 done
 
 # Passwordless sudo
 SUDOERS_FILE="/etc/sudoers.d/$USERNAME"
 if [[ ! -f "$SUDOERS_FILE" ]]; then
-    echo "$USERNAME ALL=(ALL) NOPASSWD:ALL" > "$SUDOERS_FILE"
-    chmod 440 "$SUDOERS_FILE"
-    log_info "Configured passwordless sudo"
+    echo "$USERNAME ALL=(ALL) NOPASSWD:ALL" > "$SUDOERS_FILE"
+    chmod 440 "$SUDOERS_FILE"
+    log_info "Configured passwordless sudo"
 fi
 
 # Disable built-in 'user' account if exists
 if id "user" &>/dev/null && [[ "$USERNAME" != "user" ]]; then
-    usermod -L user
-    log_info "Disabled built-in 'user' account"
+    usermod -L user
+    log_info "Disabled built-in 'user' account"
 fi
 
 # Create directory structure
@@ -314,8 +359,8 @@ log_section "Phase 4: Installing Go with Proper PATH Configuration"
 
 # Remove old Go if present
 if [[ -d "/usr/local/go" ]]; then
-    log_info "Removing old Go installation..."
-    rm -rf /usr/local/go
+    log_info "Removing old Go installation..."
+    rm -rf /usr/local/go
 fi
 
 # Install latest stable Go
@@ -328,7 +373,7 @@ rm go1.23.3.linux-amd64.tar.gz
 # Layer 1: /etc/environment (system-wide)
 log_info "Configuring Go PATH (system-wide)..."
 if ! grep -q "/usr/local/go/bin" /etc/environment; then
-    sed -i 's|PATH="\(.*\)"|PATH="/usr/local/go/bin:\1"|' /etc/environment
+    sed -i 's|PATH="\(.*\)"|PATH="/usr/local/go/bin:\1"|' /etc/environment
 fi
 
 # Layer 2: /etc/profile.d/golang.sh (all shells)
@@ -342,17 +387,17 @@ log_info "Created /etc/profile.d/golang.sh"
 
 # Layer 3: User shells
 for shell_rc in "$USER_HOME/.bashrc" "$USER_HOME/.zshrc"; do
-    touch "$shell_rc"
-    if ! grep -q "GOROOT" "$shell_rc"; then
-        cat >> "$shell_rc" << 'EOF'
+    touch "$shell_rc"
+    if ! grep -q "GOROOT" "$shell_rc"; then
+        cat >> "$shell_rc" << 'EOF'
 
 # Go configuration
 export GOROOT=/usr/local/go
 export GOPATH=$HOME/go
 export PATH=$GOROOT/bin:$GOPATH/bin:$PATH
 EOF
-        log_info "Added Go PATH to $(basename $shell_rc)"
-    fi
+        log_info "Added Go PATH to $(basename $shell_rc)"
+    fi
 done
 
 # Source for immediate use
@@ -361,10 +406,10 @@ export PATH="/usr/local/go/bin:$USER_HOME/go/bin:$PATH"
 
 # Verify Go installation
 if /usr/local/go/bin/go version &>/dev/null; then
-    log_info "✓ Go installed: $(/usr/local/go/bin/go version)"
+    log_info "✓ Go installed: $(/usr/local/go/bin/go version)"
 else
-    log_error "Go installation failed"
-    exit 1
+    log_error "Go installation failed"
+    exit 1
 fi
 
 # Create go directory
@@ -382,45 +427,45 @@ log_info "Set zsh as default shell for $USERNAME"
 
 # Install Oh-My-Zsh
 if [[ ! -d "$USER_HOME/.oh-my-zsh" ]]; then
-    log_info "Installing Oh-My-Zsh..."
-    su - "$USERNAME" -c 'sh -c "$(curl -fsSL https://raw.githubusercontent.com/ohmyzsh/ohmyzsh/master/tools/install.sh)" "" --unattended' 2>&1 | tee -a "$LOG_FILE"
-    log_info "✓ Oh-My-Zsh installed"
+    log_info "Installing Oh-My-Zsh..."
+    su - "$USERNAME" -c 'sh -c "$(curl -fsSL https://raw.githubusercontent.com/ohmyzsh/ohmyzsh/master/tools/install.sh)" "" --unattended' 2>&1 | tee -a "$LOG_FILE"
+    log_info "✓ Oh-My-Zsh installed"
 else
-    log_skip "Oh-My-Zsh already installed"
+    log_skip "Oh-My-Zsh already installed"
 fi
 
 # Install Powerlevel10k theme
 if [[ ! -d "$USER_HOME/.oh-my-zsh/custom/themes/powerlevel10k" ]]; then
-    log_info "Installing Powerlevel10k theme..."
-    su - "$USERNAME" -c "git clone --depth=1 https://github.com/romkatv/powerlevel10k.git ~/.oh-my-zsh/custom/themes/powerlevel10k"
-    log_info "✓ Powerlevel10k installed"
+    log_info "Installing Powerlevel10k theme..."
+    su - "$USERNAME" -c "git clone --depth=1 https://github.com/romkatv/powerlevel10k.git ~/.oh-my-zsh/custom/themes/powerlevel10k"
+    log_info "✓ Powerlevel10k installed"
 fi
 
 # Install zsh-autosuggestions
 if [[ ! -d "$USER_HOME/.oh-my-zsh/custom/plugins/zsh-autosuggestions" ]]; then
-    log_info "Installing zsh-autosuggestions..."
-    su - "$USERNAME" -c "git clone https://github.com/zsh-users/zsh-autosuggestions ~/.oh-my-zsh/custom/plugins/zsh-autosuggestions"
-    log_info "✓ zsh-autosuggestions installed"
+    log_info "Installing zsh-autosuggestions..."
+    su - "$USERNAME" -c "git clone https://github.com/zsh-users/zsh-autosuggestions ~/.oh-my-zsh/custom/plugins/zsh-autosuggestions"
+    log_info "✓ zsh-autosuggestions installed"
 fi
 
 # Install zsh-syntax-highlighting
 if [[ ! -d "$USER_HOME/.oh-my-zsh/custom/plugins/zsh-syntax-highlighting" ]]; then
-    log_info "Installing zsh-syntax-highlighting..."
-    su - "$USERNAME" -c "git clone https://github.com/zsh-users/zsh-syntax-highlighting.git ~/.oh-my-zsh/custom/plugins/zsh-syntax-highlighting"
-    log_info "✓ zsh-syntax-highlighting installed"
+    log_info "Installing zsh-syntax-highlighting..."
+    su - "$USERNAME" -c "git clone https://github.com/zsh-users/zsh-syntax-highlighting.git ~/.oh-my-zsh/custom/plugins/zsh-syntax-highlighting"
+    log_info "✓ zsh-syntax-highlighting installed"
 fi
 
 # Configure .zshrc
 if [[ -f "$USER_HOME/.zshrc" ]]; then
-    sed -i 's/^ZSH_THEME=.*/ZSH_THEME="powerlevel10k\/powerlevel10k"/' "$USER_HOME/.zshrc"
-    
-    if grep -q "^plugins=" "$USER_HOME/.zshrc"; then
-        sed -i 's/^plugins=.*/plugins=(git command-not-found zsh-autosuggestions zsh-syntax-highlighting)/' "$USER_HOME/.zshrc"
-    else
-        echo 'plugins=(git command-not-found zsh-autosuggestions zsh-syntax-highlighting)' >> "$USER_HOME/.zshrc"
-    fi
-    
-    log_info "✓ Configured .zshrc"
+    sed -i 's/^ZSH_THEME=.*/ZSH_THEME="powerlevel10k\/powerlevel10k"/' "$USER_HOME/.zshrc"
+    
+    if grep -q "^plugins=" "$USER_HOME/.zshrc"; then
+        sed -i 's/^plugins=.*/plugins=(git command-not-found zsh-autosuggestions zsh-syntax-highlighting)/' "$USER_HOME/.zshrc"
+    else
+        echo 'plugins=(git command-not-found zsh-autosuggestions zsh-syntax-highlighting)' >> "$USER_HOME/.zshrc"
+    fi
+    
+    log_info "✓ Configured .zshrc"
 fi
 
 # ============================================
@@ -433,46 +478,61 @@ export PATH="$USER_HOME/.local/bin:$PATH"
 
 # System-wide Python tools
 PYTHON_TOOLS=(
-    "impacket"
-    "bloodhound"
-    "netexec"
-    "bloodyAD"
-    "mitm6"
+    "impacket"
+    "bloodhound"
+    "bloodyAD"
+    "mitm6"
 )
 
 log_info "Installing Python tools (system-wide)..."
 for tool in "${PYTHON_TOOLS[@]}"; do
-    if python3 -c "import $tool" 2>/dev/null; then
-        log_skip "$tool already installed"
-    else
-        if pip3 install --break-system-packages "$tool" 2>&1 | tee -a "$LOG_FILE"; then
-            log_info "Installed: $tool"
-        else
-            log_warn "Failed to install: $tool"
-        fi
-    fi
+    # Check if tool is importable to determine if it's already installed
+    if python3 -c "import $tool" 2>/dev/null; then
+        log_skip "$tool already installed"
+    else
+        # Added || true to prevent script exit on non-critical pip install failures
+        if pip3 install --break-system-packages "$tool" 2>&1 | tee -a "$LOG_FILE" || true; then
+            log_info "Installed: $tool"
+        else
+            log_warn "Failed to install: $tool"
+        fi
+    fi
 done
+
+# NetExec - special case (git install)
+log_info "Installing NetExec..."
+if command_exists netexec || command_exists nxc; then
+    log_skip "NetExec already installed"
+else
+    # Added || true to prevent script exit on non-critical pip install failures
+    if pip3 install --break-system-packages git+https://github.com/Pennyw0rth/NetExec 2>&1 | tee -a "$LOG_FILE" || true; then
+        log_info "✓ NetExec installed"
+    else
+        log_warn "Failed to install NetExec (non-critical)"
+    fi
+fi
 
 # pipx-based tools (isolated)
 log_info "Installing pipx tools..."
 su - "$USERNAME" -c "pipx ensurepath"
 
 PIPX_TOOLS=(
-    "ldapdomaindump"
-    "sprayhound"
-    "certipy-ad"
+    "ldapdomaindump"
+    "sprayhound"
+    "certipy-ad"
 )
 
 for tool in "${PIPX_TOOLS[@]}"; do
-    if su - "$USERNAME" -c "pipx list" | grep -q "$tool"; then
-        log_skip "$tool already installed via pipx"
-    else
-        if su - "$USERNAME" -c "pipx install $tool" 2>&1 | tee -a "$LOG_FILE"; then
-            log_info "Installed via pipx: $tool"
-        else
-            log_warn "Failed to install via pipx: $tool"
-        fi
-    fi
+    if su - "$USERNAME" -c "pipx list" | grep -q "$tool"; then
+        log_skip "$tool already installed via pipx"
+    else
+        # Added || true to prevent script exit on non-critical pipx install failures
+        if su - "$USERNAME" -c "pipx install $tool" 2>&1 | tee -a "$LOG_FILE" || true; then
+            log_info "Installed via pipx: $tool"
+        else
+            log_warn "Failed to install via pipx: $tool"
+        fi
+    fi
 done
 
 # ============================================
@@ -481,21 +541,22 @@ done
 log_section "Phase 7: Installing Ruby Tools"
 
 RUBY_TOOLS=(
-    "evil-winrm"
-    "one_gadget"
-    "haiti-hash"
+    "evil-winrm"
+    "one_gadget"
+    "haiti-hash"
 )
 
 for tool in "${RUBY_TOOLS[@]}"; do
-    if gem list -i "$tool" &>/dev/null; then
-        log_skip "$tool already installed"
-    else
-        if gem install "$tool" 2>&1 | tee -a "$LOG_FILE"; then
-            log_info "Installed: $tool"
-        else
-            log_warn "Failed to install: $tool"
-        fi
-    fi
+    if gem list -i "$tool" &>/dev/null; then
+        log_skip "$tool already installed"
+    else
+        # Added || true to prevent script exit on non-critical gem install failures
+        if gem install "$tool" 2>&1 | tee -a "$LOG_FILE" || true; then
+            log_info "Installed: $tool"
+        else
+            log_warn "Failed to install: $tool"
+        fi
+    fi
 done
 
 # ============================================
@@ -505,30 +566,31 @@ log_section "Phase 8: Installing Go Security Tools"
 
 # Array of Go tools with full package paths
 declare -A GO_TOOLS=(
-    ["httpx"]="github.com/projectdiscovery/httpx/cmd/httpx@latest"
-    ["subfinder"]="github.com/projectdiscovery/subfinder/v2/cmd/subfinder@latest"
-    ["dnsx"]="github.com/projectdiscovery/dnsx/cmd/dnsx@latest"
-    ["nuclei"]="github.com/projectdiscovery/nuclei/v3/cmd/nuclei@latest"
-    ["ffuf"]="github.com/ffuf/ffuf/v2@latest"
-    ["gobuster"]="github.com/OJ/gobuster/v3@latest"
-    ["kerbrute"]="github.com/ropnop/kerbrute@latest"
-    ["chisel"]="github.com/jpillora/chisel@latest"
-    ["ligolo-ng"]="github.com/nicocha30/ligolo-ng/cmd/proxy@latest"
+    ["httpx"]="github.com/projectdiscovery/httpx/cmd/httpx@latest"
+    ["subfinder"]="github.com/projectdiscovery/subfinder/v2/cmd/subfinder@latest"
+    ["dnsx"]="github.com/projectdiscovery/dnsx/cmd/dnsx@latest"
+    ["nuclei"]="github.com/projectdiscovery/nuclei/v3/cmd/nuclei@latest"
+    ["ffuf"]="github.com/ffuf/ffuf/v2@latest"
+    ["gobuster"]="github.com/OJ/gobuster/v3@latest"
+    ["kerbrute"]="github.com/ropnop/kerbrute@latest"
+    ["chisel"]="github.com/jpillora/chisel@latest"
+    ["ligolo-ng"]="github.com/nicocha30/ligolo-ng/cmd/proxy@latest"
 )
 
 log_info "Installing Go tools (this may take a while)..."
 for tool_name in "${!GO_TOOLS[@]}"; do
-    tool_path="${GO_TOOLS[$tool_name]}"
-    if [[ -f "$USER_HOME/go/bin/$tool_name" ]]; then
-        log_skip "$tool_name already installed"
-    else
-        log_info "Installing $tool_name..."
-        if su - "$USERNAME" -c "export PATH=/usr/local/go/bin:\$HOME/go/bin:\$PATH && go install -v $tool_path" 2>&1 | tee -a "$LOG_FILE"; then
-            log_info "✓ $tool_name installed"
-        else
-            log_warn "Failed to install $tool_name"
-        fi
-    fi
+    tool_path="${GO_TOOLS[$tool_name]}"
+    if [[ -f "$USER_HOME/go/bin/$tool_name" ]]; then
+        log_skip "$tool_name already installed"
+    else
+        log_info "Installing $tool_name..."
+        # Added || true to prevent script exit on non-critical Go install failures
+        if su - "$USERNAME" -c "export PATH=/usr/local/go/bin:\$HOME/go/bin:\$PATH && go install -v $tool_path" 2>&1 | tee -a "$LOG_FILE" || true; then
+            log_info "✓ $tool_name installed"
+        else
+            log_warn "Failed to install $tool_name"
+        fi
+    fi
 done
 
 # ============================================
@@ -538,19 +600,20 @@ log_section "Phase 9: Installing Git-Based Tools"
 
 # Responder (git clone instead of pipx)
 if [[ ! -d "$USER_HOME/tools/repos/Responder" ]]; then
-    log_info "Installing Responder..."
-    safe_clone "https://github.com/lgandx/Responder.git" "$USER_HOME/tools/repos/Responder"
+    log_info "Installing Responder..."
+    safe_clone "https://github.com/lgandx/Responder.git" "$USER_HOME/tools/repos/Responder"
 else
-    log_skip "Responder already installed"
+    log_skip "Responder already installed"
 fi
 
 # enum4linux-ng (git clone instead of pipx)
 if [[ ! -d "$USER_HOME/tools/repos/enum4linux-ng" ]]; then
-    log_info "Installing enum4linux-ng..."
-    safe_clone "https://github.com/cddmp/enum4linux-ng.git" "$USER_HOME/tools/repos/enum4linux-ng"
-    su - "$USERNAME" -c "cd $USER_HOME/tools/repos/enum4linux-ng && pip3 install -r requirements.txt --break-system-packages" 2>&1 | tee -a "$LOG_FILE" || true
+    log_info "Installing enum4linux-ng..."
+    safe_clone "https://github.com/cddmp/enum4linux-ng.git" "$USER_HOME/tools/repos/enum4linux-ng"
+    # Added || true to prevent a non-critical pip install error from halting the script
+    su - "$USERNAME" -c "cd $USER_HOME/tools/repos/enum4linux-ng && pip3 install -r requirements.txt --break-system-packages" 2>&1 | tee -a "$LOG_FILE" || true
 else
-    log_skip "enum4linux-ng already installed"
+    log_skip "enum4linux-ng already installed"
 fi
 
 # ============================================
@@ -559,19 +622,19 @@ fi
 log_section "Phase 10: Cloning Essential Repositories"
 
 REPOS=(
-    "https://github.com/danielmiessler/SecLists.git|SecLists"
-    "https://github.com/carlospolop/PEASS-ng.git|PEASS-ng"
-    "https://github.com/brightio/penelope.git|penelope"
-    "https://github.com/swisskyrepo/PayloadsAllTheThings.git|PayloadsAllTheThings"
+    "https://github.com/danielmiessler/SecLists.git|SecLists"
+    "https://github.com/carlospolop/PEASS-ng.git|PEASS-ng"
+    "https://github.com/brightio/penelope.git|penelope"
+    "https://github.com/swisskyrepo/PayloadsAllTheThings.git|PayloadsAllTheThings"
 )
 
 for repo_entry in "${REPOS[@]}"; do
-    IFS='|' read -r url name <<< "$repo_entry"
-    safe_clone "$url" "$USER_HOME/tools/repos/$name"
+    IFS='|' read -r url name <<< "$repo_entry"
+    safe_clone "$url" "$USER_HOME/tools/repos/$name"
 done
 
 # ============================================
-# PHASE 11: WINDOWS BINARIES
+# PHASE 11: WINDOWS BINARIES (FIX APPLIED HERE)
 # ============================================
 log_section "Phase 11: Installing Windows Binaries"
 
@@ -580,47 +643,57 @@ cd "$USER_HOME/tools/windows"
 
 # SharpHound
 if [[ ! -f "SharpHound.exe" ]]; then
-    log_info "Downloading SharpHound..."
-    SHARPHOUND_URL=$(curl -s https://api.github.com/repos/BloodHoundAD/SharpHound/releases/latest | grep "browser_download_url.*SharpHound.*zip" | head -n 1 | cut -d '"' -f 4)
-    if [[ -n "$SHARPHOUND_URL" ]]; then
-        wget -q "$SHARPHOUND_URL" -O SharpHound.zip
-        unzip -q SharpHound.zip
-        rm SharpHound.zip
-        log_info "✓ SharpHound.exe downloaded"
-    else
-        log_warn "Could not fetch SharpHound from GitHub"
-    fi
+    log_info "Downloading SharpHound..."
+    # FIX: Added || true to the pipeline to prevent grep failure (no match)
+    # or curl failure (rate limit/network) from exiting the script due to pipefail.
+    SHARPHOUND_URL=$(curl -s https://api.github.com/repos/BloodHoundAD/SharpHound/releases/latest | grep "browser_download_url.*SharpHound.*zip" | head -n 1 | cut -d '"' -f 4 || true)
+
+    if [[ -n "$SHARPHOUND_URL" ]]; then
+        if wget -q "$SHARPHOUND_URL" -O SharpHound.zip 2>&1 | tee -a "$LOG_FILE"; then
+            extract_archive "SharpHound.zip" || unzip -q SharpHound.zip
+            rm -f SharpHound.zip
+            if [[ -f "SharpHound.exe" ]]; then
+                log_info "✓ SharpHound.exe downloaded"
+            else
+                log_warn "SharpHound.exe not found after extraction"
+            fi
+        else
+            log_warn "Failed to download SharpHound"
+        fi
+    else
+        log_warn "Could not fetch SharpHound URL from GitHub API. Skipping SharpHound."
+    fi
 else
-    log_skip "SharpHound.exe already present"
+    log_skip "SharpHound.exe already present"
 fi
 
 # Seatbelt
 if [[ ! -f "Seatbelt.exe" ]]; then
-    log_info "Downloading Seatbelt..."
-    wget -q https://github.com/r3motecontrol/Ghostpack-CompiledBinaries/raw/master/Seatbelt.exe -O Seatbelt.exe 2>&1 || \
-    log_warn "Could not fetch Seatbelt.exe"
-    [[ -f "Seatbelt.exe" ]] && log_info "✓ Seatbelt.exe downloaded"
+    log_info "Downloading Seatbelt..."
+    wget -q https://github.com/r3motecontrol/Ghostpack-CompiledBinaries/raw/master/Seatbelt.exe -O Seatbelt.exe 2>&1 || \
+    log_warn "Could not fetch Seatbelt.exe"
+    [[ -f "Seatbelt.exe" ]] && log_info "✓ Seatbelt.exe downloaded"
 else
-    log_skip "Seatbelt.exe already present"
+    log_skip "Seatbelt.exe already present"
 fi
 
 # Rubeus
 if [[ ! -f "Rubeus.exe" ]]; then
-    log_info "Downloading Rubeus..."
-    wget -q https://github.com/r3motecontrol/Ghostpack-CompiledBinaries/raw/master/Rubeus.exe -O Rubeus.exe 2>&1 || \
-    log_warn "Could not fetch Rubeus.exe"
-    [[ -f "Rubeus.exe" ]] && log_info "✓ Rubeus.exe downloaded"
+    log_info "Downloading Rubeus..."
+    wget -q https://github.com/r3motecontrol/Ghostpack-CompiledBinaries/raw/master/Rubeus.exe -O Rubeus.exe 2>&1 || \
+    log_warn "Could not fetch Rubeus.exe"
+    [[ -f "Rubeus.exe" ]] && log_info "✓ Rubeus.exe downloaded"
 else
-    log_skip "Rubeus.exe already present"
+    log_skip "Rubeus.exe already present"
 fi
 
 # PowerView
 if [[ ! -f "PowerView.ps1" ]]; then
-    log_info "Downloading PowerView..."
-    wget -q https://raw.githubusercontent.com/PowerShellMafia/PowerSploit/master/Recon/PowerView.ps1 -O PowerView.ps1
-    [[ -f "PowerView.ps1" ]] && log_info "✓ PowerView.ps1 downloaded"
+    log_info "Downloading PowerView..."
+    wget -q https://raw.githubusercontent.com/PowerShellMafia/PowerSploit/master/Recon/PowerView.ps1 -O PowerView.ps1
+    [[ -f "PowerView.ps1" ]] && log_info "✓ PowerView.ps1 downloaded"
 else
-    log_skip "PowerView.ps1 already present"
+    log_skip "PowerView.ps1 already present"
 fi
 
 # ============================================
@@ -630,17 +703,17 @@ log_section "Phase 12: Setting Up Wordlists"
 
 # Symlink SecLists
 if [[ ! -L "$USER_HOME/wordlists/SecLists" ]]; then
-    ln -s "$USER_HOME/tools/repos/SecLists" "$USER_HOME/wordlists/SecLists"
-    log_info "Symlinked SecLists to wordlists directory"
+    ln -s "$USER_HOME/tools/repos/SecLists" "$USER_HOME/wordlists/SecLists"
+    log_info "Symlinked SecLists to wordlists directory"
 fi
 
 # Extract rockyou.txt
 if [[ -f "/usr/share/wordlists/rockyou.txt.gz" ]] && [[ ! -f "$USER_HOME/wordlists/rockyou.txt" ]]; then
-    log_info "Extracting rockyou.txt..."
-    gunzip -c /usr/share/wordlists/rockyou.txt.gz > "$USER_HOME/wordlists/rockyou.txt"
-    log_info "✓ rockyou.txt extracted"
+    log_info "Extracting rockyou.txt..."
+    gunzip -c /usr/share/wordlists/rockyou.txt.gz > "$USER_HOME/wordlists/rockyou.txt"
+    log_info "✓ rockyou.txt extracted"
 elif [[ -f "$USER_HOME/wordlists/rockyou.txt" ]]; then
-    log_skip "rockyou.txt already present"
+    log_skip "rockyou.txt already present"
 fi
 
 # ============================================
@@ -652,34 +725,34 @@ mkdir -p "$USER_HOME/tools/scripts"
 
 # linPEAS
 if [[ -f "$USER_HOME/tools/repos/PEASS-ng/linPEAS/linpeas.sh" ]]; then
-    ln -sf "$USER_HOME/tools/repos/PEASS-ng/linPEAS/linpeas.sh" "$USER_HOME/tools/scripts/linpeas.sh"
-    log_info "✓ linpeas.sh symlinked"
+    ln -sf "$USER_HOME/tools/repos/PEASS-ng/linPEAS/linpeas.sh" "$USER_HOME/tools/scripts/linpeas.sh"
+    log_info "✓ linpeas.sh symlinked"
 else
-    log_warn "linpeas.sh not found in PEASS-ng repo"
+    log_warn "linpeas.sh not found in PEASS-ng repo"
 fi
 
 # winPEAS (check multiple locations)
 WINPEAS_FOUND=false
 for winpeas_path in \
-    "$USER_HOME/tools/repos/PEASS-ng/winPEAS/winPEASx64.exe" \
-    "$USER_HOME/tools/repos/PEASS-ng/winPEAS/winPEASx64_ofs.exe"; do
-    
-    if [[ -f "$winpeas_path" ]]; then
-        ln -sf "$winpeas_path" "$USER_HOME/tools/scripts/winpeas.exe"
-        log_info "✓ winpeas.exe symlinked"
-        WINPEAS_FOUND=true
-        break
-    fi
+    "$USER_HOME/tools/repos/PEASS-ng/winPEAS/winPEASx64.exe" \
+    "$USER_HOME/tools/repos/PEASS-ng/winPEAS/winPEASx64_ofs.exe"; do
+    
+    if [[ -f "$winpeas_path" ]]; then
+        ln -sf "$winpeas_path" "$USER_HOME/tools/scripts/winpeas.exe"
+        log_info "✓ winpeas.exe symlinked"
+        WINPEAS_FOUND=true
+        break
+    fi
 done
 [[ "$WINPEAS_FOUND" == false ]] && log_warn "winpeas.exe not found in PEASS-ng repo"
 
 # Penelope
 if [[ -f "$USER_HOME/tools/repos/penelope/penelope.py" ]]; then
-    ln -sf "$USER_HOME/tools/repos/penelope/penelope.py" "$USER_HOME/tools/scripts/penelope.py"
-    chmod +x "$USER_HOME/tools/repos/penelope/penelope.py"
-    log_info "✓ penelope.py symlinked"
+    ln -sf "$USER_HOME/tools/repos/penelope/penelope.py" "$USER_HOME/tools/scripts/penelope.py"
+    chmod +x "$USER_HOME/tools/repos/penelope/penelope.py"
+    log_info "✓ penelope.py symlinked"
 else
-    log_warn "penelope.py not found"
+    log_warn "penelope.py not found"
 fi
 
 # ============================================
@@ -706,6 +779,34 @@ alias linpeas='~/tools/scripts/linpeas.sh'
 export HTB_ENGAGEMENTS="$HOME/engagements"
 alias htb-new='mkdir -p $HTB_ENGAGEMENTS/$1 && cd $HTB_ENGAGEMENTS/$1'
 
+# Universal archive extractor
+extract() {
+    if [[ ! -f "$1" ]]; then
+        echo "Error: '$1' is not a valid file"
+        return 1
+    fi
+    
+    case "$1" in
+        *.tar.bz2)   tar xjf "$1"     ;;
+        *.tar.gz)    tar xzf "$1"     ;;
+        *.tar.xz)    tar xJf "$1"     ;;
+        *.bz2)       bunzip2 "$1"     ;;
+        *.rar)       unrar e "$1"     ;;
+        *.gz)        gunzip "$1"      ;;
+        *.tar)       tar xf "$1"      ;;
+        *.tbz2)      tar xjf "$1"     ;;
+        *.tgz)       tar xzf "$1"     ;;
+        *.zip)       unzip -q "$1"    ;;
+        *.Z)         uncompress "$1"  ;;
+        *.7z)        7z x "$1"        ;;
+        *)
+            echo "Error: '$1' cannot be extracted via extract()"
+            return 1
+            ;;
+    esac
+    echo "Extracted: $1"
+}
+
 # Color aliases
 alias ls='ls --color=auto'
 alias grep='grep --color=auto'
@@ -714,14 +815,14 @@ EOFENV
 
 # Add to shell configs
 for shell_rc in "$USER_HOME/.bashrc" "$USER_HOME/.zshrc"; do
-    if [[ -f "$shell_rc" ]] && ! grep -q ".shellshock_env" "$shell_rc"; then
-        cat >> "$shell_rc" << 'EOF'
+    if [[ -f "$shell_rc" ]] && ! grep -q ".shellshock_env" "$shell_rc"; then
+        cat >> "$shell_rc" << 'EOF'
 
 # ShellShock environment
 [[ -f ~/.shellshock_env ]] && source ~/.shellshock_env
 EOF
-        log_info "Added ShellShock env to $(basename $shell_rc)"
-    fi
+        log_info "Added ShellShock env to $(basename $shell_rc)"
+    fi
 done
 
 # ============================================
@@ -737,294 +838,3 @@ cat > "$USER_HOME/TOOLS_REFERENCE.md" << 'EOFDOC'
 export GOROOT=/usr/local/go
 export GOPATH=$HOME/go
 export PATH=$GOROOT/bin:$GOPATH/bin:$PATH
-```
-
-## Installed Tools
-
-### Go Tools
-- **httpx** - HTTP toolkit and probing
-- **subfinder** - Subdomain discovery
-- **dnsx** - DNS toolkit
-- **nuclei** - Vulnerability scanner
-- **ffuf** - Fast web fuzzer
-- **gobuster** - Directory/DNS brute-forcer
-- **kerbrute** - Kerberos username enumeration
-- **chisel** - TCP/UDP tunneling tool
-- **ligolo-ng** - Advanced network pivoting
-
-### Python Tools
-- **impacket** - Network protocol implementations
-- **bloodhound** - Active Directory visualization
-- **netexec** - Network service exploitation
-- **bloodyAD** - Active Directory privilege escalation
-- **mitm6** - IPv6 man-in-the-middle
-- **ldapdomaindump** - LDAP domain dumping
-- **sprayhound** - Password spraying
-- **certipy-ad** - AD CS exploitation
-
-### Ruby Tools
-- **evil-winrm** - WinRM shell
-- **one_gadget** - Libc gadget finder
-- **haiti-hash** - Hash identifier
-
-### Windows Binaries
-- **SharpHound.exe** - BloodHound data collector
-- **Seatbelt.exe** - Host enumeration
-- **Rubeus.exe** - Kerberos abuse toolkit
-- **PowerView.ps1** - AD enumeration
-
-## Tool Swaps (v2.0 Changes)
-
-### Why We Swapped
-Some tools have upstream issues. We replaced them with working alternatives:
-
-| Old Tool | Issue | New Tool | Command |
-|----------|-------|----------|---------|
-| naabu | libpcap dependency hell | masscan (apt) | `masscan -p1-65535 IP` |
-| responder (pipx) | httptools compilation fails | responder (git) | `responder` (alias) |
-| enum4linux-ng (pipx) | not on PyPI | enum4linux-ng (git) | `enum4linux-ng` (alias) |
-| windapsearch | upstream package changed | ldapsearch (apt) | `ldapsearch -x -H ldap://...` |
-
-## Directory Structure
-```
-~/tools/
-├── repos/              # Git cloned tools
-│   ├── Responder/
-│   ├── enum4linux-ng/
-│   ├── PEASS-ng/
-│   ├── penelope/
-│   ├── SecLists/
-│   └── PayloadsAllTheThings/
-├── scripts/            # Symlinked scripts
-│   ├── linpeas.sh
-│   ├── winpeas.exe
-│   └── penelope.py
-└── windows/            # Windows binaries
-    ├── SharpHound.exe
-    ├── Seatbelt.exe
-    ├── Rubeus.exe
-    └── PowerView.ps1
-```
-
-## Quick Commands
-
-### Reconnaissance
-```bash
-# Fast web probing
-httpx -u https://target.com -tech-detect
-
-# Subdomain discovery
-subfinder -d target.com -o subdomains.txt
-
-# DNS enumeration
-dnsx -l subdomains.txt -resp
-
-# Vulnerability scanning
-nuclei -u https://target.com
-```
-
-### Web Fuzzing
-```bash
-# Directory fuzzing
-gobuster dir -u https://target.com -w ~/wordlists/SecLists/Discovery/Web-Content/common.txt
-
-# Fast fuzzing
-ffuf -u https://target.com/FUZZ -w wordlist.txt
-```
-
-### Active Directory
-```bash
-# Kerberos username enum
-kerbrute userenum -d domain.local --dc 10.10.10.1 users.txt
-
-# SMB enumeration
-netexec smb 10.10.10.1 -u user -p password
-
-# BloodHound collection
-bloodhound-python -u user -p password -ns 10.10.10.1 -d domain.local -c All
-
-# LDAP enumeration
-enum4linux-ng 10.10.10.1
-```
-
-### Pivoting
-```bash
-# Chisel server
-chisel server --reverse --port 8000
-
-# Ligolo-ng
-ligolo-ng -selfcert
-```
-
-### Windows Tools
-```bash
-# Upload to target, then:
-.\SharpHound.exe -c All
-.\Seatbelt.exe -group=all
-.\Rubeus.exe dump
-```
-
-### Privilege Escalation
-```bash
-# Linux
-linpeas
-
-# Windows (on target)
-.\winpeas.exe
-```
-
-### Reverse Shells
-```bash
-# Start handler
-penelope -i tun0 4444
-```
-
-## Maintenance
-
-### Update Go Tools
-```bash
-cd ~/go/bin
-for tool in httpx subfinder dnsx nuclei ffuf gobuster; do
-    go install -v github.com/*/$tool*@latest 2>/dev/null
-done
-```
-
-### Update Repositories
-```bash
-cd ~/tools/repos
-for repo in */; do cd "$repo" && git pull && cd ..; done
-```
-
-### Update Python Tools
-```bash
-pip3 install -U --break-system-packages impacket bloodhound netexec
-pipx upgrade-all
-```
-
-## Troubleshooting
-
-### Go tools not found?
-```bash
-# Check PATH
-echo $PATH | grep go
-
-# Reload environment
-source ~/.zshrc
-```
-
-### Tool not working?
-```bash
-# Check tool location
-which <tool>
-
-# Check if installed
-ls ~/go/bin/
-pip3 list | grep <tool>
-```
-
----
-
-**Created:** $(date)
-**Version:** ShellShock v2.0
-EOFDOC
-
-log_info "✓ Created ~/TOOLS_REFERENCE.md"
-
-# ============================================
-# PHASE 16: FIX PERMISSIONS
-# ============================================
-log_section "Phase 16: Fixing Permissions"
-
-chown -R "$USERNAME":"$USERNAME" "$USER_HOME"
-log_info "✓ Set ownership of $USER_HOME to $USERNAME"
-
-# ============================================
-# PHASE 17: VERIFICATION
-# ============================================
-log_section "Phase 17: Verifying Installation"
-
-echo ""
-log_info "Quick verification..."
-
-# Check Go
-if /usr/local/go/bin/go version &>/dev/null; then
-    echo -e "${GREEN}✓${NC} Go: $(/usr/local/go/bin/go version)"
-else
-    echo -e "${RED}✗${NC} Go: Not found"
-fi
-
-# Check zsh
-if command -v zsh &>/dev/null; then
-    echo -e "${GREEN}✓${NC} Zsh: $(zsh --version)"
-else
-    echo -e "${RED}✗${NC} Zsh: Not found"
-fi
-
-# Check Oh-My-Zsh
-if [[ -d "$USER_HOME/.oh-my-zsh" ]]; then
-    echo -e "${GREEN}✓${NC} Oh-My-Zsh: Installed"
-else
-    echo -e "${RED}✗${NC} Oh-My-Zsh: Not found"
-fi
-
-# Count Go tools
-GO_TOOL_COUNT=$(ls "$USER_HOME/go/bin" 2>/dev/null | wc -l)
-echo -e "${GREEN}✓${NC} Go tools: $GO_TOOL_COUNT installed"
-
-# Count repos
-REPO_COUNT=$(ls -d "$USER_HOME/tools/repos"/*/ 2>/dev/null | wc -l)
-echo -e "${GREEN}✓${NC} Repositories: $REPO_COUNT cloned"
-
-# Count Windows binaries
-WIN_BIN_COUNT=$(ls "$USER_HOME/tools/windows"/*.exe 2>/dev/null | wc -l)
-echo -e "${GREEN}✓${NC} Windows binaries: $WIN_BIN_COUNT files"
-
-# ============================================
-# COMPLETION
-# ============================================
-clear
-echo -e "${GREEN}"
-cat << 'EOF'
-╔═══════════════════════════════════════════════════════════════╗
-║         SHELLSHOCK v2.0 — INSTALLATION COMPLETE               ║
-╚═══════════════════════════════════════════════════════════════╝
-EOF
-echo -e "${NC}\n"
-
-echo -e "${YELLOW}Target User:${NC} ${GREEN}$USERNAME${NC}"
-echo -e "${YELLOW}Home Directory:${NC} ${GREEN}$USER_HOME${NC}"
-echo -e "${YELLOW}Default Password:${NC} ${RED}shellshock${NC} ${YELLOW}(CHANGE THIS!)${NC}"
-echo ""
-echo -e "${CYAN}What's Installed:${NC}"
-echo -e "  ✓ Go 1.23.3 with proper PATH configuration"
-echo -e "  ✓ Oh-My-Zsh with Powerlevel10k theme"
-echo -e "  ✓ $GO_TOOL_COUNT Go security tools"
-echo -e "  ✓ Python, Ruby, and system tools"
-echo -e "  ✓ $WIN_BIN_COUNT Windows binaries"
-echo -e "  ✓ $REPO_COUNT essential repositories"
-echo -e "  ✓ Custom environment with aliases"
-echo ""
-echo -e "${CYAN}Documentation:${NC}"
-echo -e "  • ${GREEN}~/TOOLS_REFERENCE.md${NC} - Complete tool reference"
-echo -e "  • ${GREEN}~/.shellshock_env${NC} - Custom environment & aliases"
-echo ""
-echo -e "${CYAN}Quick Commands:${NC}"
-echo -e "  ${GREEN}responder${NC}      - Start Responder"
-echo -e "  ${GREEN}enum4linux-ng${NC}  - Run enum4linux-ng"
-echo -e "  ${GREEN}penelope${NC}       - Reverse shell handler"
-echo -e "  ${GREEN}linpeas${NC}        - Linux privilege escalation"
-echo ""
-echo -e "${YELLOW}Installation log:${NC} /var/log/shellshock-install.log"
-echo ""
-echo -e "${RED}IMPORTANT:${NC} ${YELLOW}Reboot required for all changes to take effect${NC}"
-echo ""
-
-read -p "Reboot now? (y/n): " reboot_choice
-if [[ "$reboot_choice" =~ ^[Yy]$ ]]; then
-    echo -e "\n${YELLOW}Rebooting in 5 seconds...${NC}"
-    sleep 5
-    reboot
-else
-    echo -e "\n${YELLOW}Remember to reboot:${NC} ${GREEN}sudo reboot${NC}"
-    echo -e "${CYAN}Happy hunting!${NC}\n"
-fi
