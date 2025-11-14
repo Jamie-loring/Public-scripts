@@ -18,6 +18,8 @@
 # - enum4linux-ng (pipx) -> enum4linux-ng (git)
 # - windapsearch -> ldap-utils + ldapdomaindump
 # - katana, gauplus removed (replaced by httpx/Burp)
+#
+# CRASH FIX: Added '|| true' to grep command in Phase 1.5.5 to prevent set -e exit.
 # ============================================
 # DISCLAIMER: This tool is for authorized testing only.
 # Request permission before use. Stay legal.
@@ -495,8 +497,8 @@ if [[ -d "/usr/local/go/bin" ]] && [[ -x "/usr/local/go/bin/go" ]]; then
     if ! grep -q '/usr/local/go/bin' /etc/environment; then
         # Update /etc/environment for system-wide availability
         if [[ -f /etc/environment ]]; then
-            # Get current PATH from /etc/environment
-            CURRENT_PATH=$(grep '^PATH=' /etc/environment | cut -d'"' -f2)
+            # Get current PATH from /etc/environment (Handle potential grep failure under set -e)
+            CURRENT_PATH=$(grep '^PATH=' /etc/environment | cut -d'"' -f2 || true) # ADDED || true for robustness
             if [[ -n "$CURRENT_PATH" ]]; then
                 # Prepend Go to existing PATH
                 sed -i 's|^PATH=.*|PATH="/usr/local/go/bin:'"$CURRENT_PATH"'"|' /etc/environment
