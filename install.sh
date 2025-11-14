@@ -10,6 +10,7 @@
 # - Python PATH Conflict: Moved Responder and Certipy-ad to isolated PIPX installs.
 # - Go Toolchain: Confirmed clean install and corrected problematic module paths.
 # - Foundational Fixes: Useradd, NTP, Go Toolchain are stable.
+# - Phase 2 Fix: Proper handling of zsh shell and docker group creation
 # ============================================
 # DISCLAIMER: This tool is for authorized testing only.
 # Request permission before use. Stay legal.
@@ -456,9 +457,24 @@ log_progress "Phase 2: User Account Configuration"
 
 # Create or verify user account
 if ! id "$USERNAME" &>/dev/null; then
-    # FIXED: Removed '--disabled-password' flag for compatibility and use passwd -d below
     log_info "Creating user: $USERNAME"
-    useradd -m -s /bin/zsh -G sudo,docker "$USERNAME"
+    
+    # Ensure docker group exists before adding user to it
+    if ! getent group docker >/dev/null 2>&1; then
+        groupadd docker || true
+        log_info "Created docker group"
+    fi
+    
+    # Create user with bash first (zsh might not be installed yet in PATH)
+    # We'll change the shell later after verification
+    useradd -m -s /bin/bash "$USERNAME"
+    
+    # Add user to groups
+    usermod -aG sudo "$USERNAME"
+    if getent group docker >/dev/null 2>&1; then
+        usermod -aG docker "$USERNAME"
+        log_info "Added $USERNAME to docker group"
+    fi
     
     # Explicitly disable password using the widely supported passwd command
     passwd -d "$USERNAME" 2>&1 | tee -a /var/log/shellshock-install.log || log_warn "Failed to disable password for $USERNAME"
@@ -553,7 +569,7 @@ fi
 # Ensure ownership
 chown -R "$USERNAME":"$USERNAME" "$USER_HOME" 2>/dev/null || true
 
-# Set default shell to zsh
+# Set default shell to zsh (after verifying it exists)
 ZSH_PATH="$(which zsh 2>/dev/null || echo '')"
 if [[ -n "$ZSH_PATH" ]]; then
     if [[ "$(getent passwd "$USERNAME" | cut -d: -f7)" != "$ZSH_PATH" ]]; then
@@ -563,7 +579,8 @@ if [[ -n "$ZSH_PATH" ]]; then
         log_skip "Shell already set to zsh"
     fi
 else
-    log_warn "Zsh executable not found, skipping default shell change"
+    log_warn "Zsh executable not found in PATH, skipping default shell change"
+    log_warn "Shell will remain as /bin/bash"
 fi
 
 # Disable old 'user' auto-login and enable for new username - AUTOMATIC
