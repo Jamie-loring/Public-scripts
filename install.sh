@@ -1,25 +1,19 @@
 #!/bin/bash
 # ============================================
-# PROJECT SHELLSHOCK v1.05 (Final Test Build)
+# PROJECT SHELLSHOCK v2.0
 # Automated Pentesting Environment Bootstrap
 # Debian/Ubuntu/Parrot Compatible
 # Author: Jamie Loring
-# Last updated: 2025-11-13
+# Last updated: 2025-11-14
 # ============================================
-# FIXES:
-# - Python PATH Conflict: Moved Responder and Certipy-ad to isolated PIPX installs.
-# - Go Toolchain: Confirmed clean install and corrected problematic module paths.
-# - Foundational Fixes: Useradd, NTP, Go Toolchain are stable.
-# - Phase 2 Fix: Proper handling of zsh shell and docker group creation
-#
-# RECONCILIATION FOR V2.0:
-# - naabu -> masscan (APT install)
-# - responder (pipx) -> responder (git)
-# - enum4linux-ng (pipx) -> enum4linux-ng (git)
-# - windapsearch -> ldap-utils + ldapdomaindump
-# - katana, gauplus removed (replaced by httpx/Burp)
-#
-# CRASH FIX: Added '|| true' to grep command in Phase 1.5.5 to prevent set -e exit.
+# v2.0 IMPROVEMENTS:
+# - Three-layer Go PATH configuration
+# - Oh-My-Zsh with robust installation
+# - Smart tool swaps (broken → working alternatives)
+# - Windows binaries with fallback sources
+# - PEAS tool symlinks
+# - Custom environment file
+# - Comprehensive documentation
 # ============================================
 # DISCLAIMER: This tool is for authorized testing only.
 # Request permission before use. Stay legal.
@@ -36,44 +30,49 @@ CYAN='\033[0;36m'
 MAGENTA='\033[0;35m'
 NC='\033[0m'
 
-# Logging functions
-log_info() { echo -e "${GREEN}[+]${NC} $1"; }
-log_warn() { echo -e "${YELLOW}[!]${NC} $1"; }
-log_error() { echo -e "${RED}[-]${NC} $1" >&2; }
-log_progress() { echo -e "${BLUE}[*]${NC} $1"; }
-log_skip() { echo -e "${MAGENTA}[SKIP]${NC} $1"; }
-
-# Capture original user (before sudo)
+# Capture original user before sudo
 ORIGINAL_USER="${SUDO_USER:-$USER}"
 [[ "$ORIGINAL_USER" == "root" ]] && ORIGINAL_USER=""
 
-# Username validation function
+# Logging functions
+log_info() { echo -e "${GREEN}[+]${NC} $1"; }
+log_warn() { echo -e "${YELLOW}[!]${NC} $1"; }
+log_error() { echo -e "${RED}[-]${NC} $1"; }
+log_section() { echo -e "\n${CYAN}[*] $1${NC}"; }
+log_skip() { echo -e "${BLUE}[~]${NC} $1"; }
+
+# Check if running as root
+if [[ $EUID -ne 0 ]]; then
+    log_error "This script must be run as root (use sudo)"
+    exit 1
+fi
+
+# Log file
+LOG_FILE="/var/log/shellshock-install.log"
+exec 1> >(tee -a "$LOG_FILE")
+exec 2>&1
+
+# Username validation
 validate_username() {
     local username="$1"
-
-    # Check format: lowercase alphanumeric, underscore, hyphen; 1-32 chars
-    if [[ ! "$username" =~ ^[a-z_][a-z0-9_-]{0,31}$ ]]; then
-        log_error "Invalid username format."
-        echo -e "${YELLOW}Requirements:${NC}"
-        echo "  • Must start with lowercase letter or underscore"
-        echo "  • Can contain: lowercase letters, numbers, underscore, hyphen"
-        echo "  • Max 32 characters"
-        echo -e "${YELLOW}Valid examples:${NC} pentester, jamie, ctf_user, red-team, _hacker"
+    
+    # Format check
+    if ! [[ "$username" =~ ^[a-z_][a-z0-9_-]{0,31}$ ]]; then
+        log_error "Invalid username format. Must start with lowercase letter or underscore."
         return 1
     fi
-
-    # Reserved system usernames (including Parrot's default 'user' account)
-    local reserved=("root" "daemon" "bin" "sys" "sync" "games" "man" "lp" "mail"
+    
+    # Reserved system usernames
+    local reserved=("root" "daemon" "bin" "sys" "sync" "games" "man" "lp" "mail" 
                     "news" "uucp" "proxy" "www-data" "backup" "list" "irc" "nobody" "user")
-
+    
     for reserved_name in "${reserved[@]}"; do
         if [[ "$username" == "$reserved_name" ]]; then
             log_error "Cannot use reserved system username: $username"
-            log_error "The 'user' account is Parrot's default - please choose a custom username"
             return 1
         fi
     done
-
+    
     return 0
 }
 
@@ -84,21 +83,21 @@ command_exists() {
 
 # Check if package is installed
 package_installed() {
-    dpkg-query -W --showformat='${Status}' "$1" 2>/dev/null | grep -q "install ok installed"
+    dpkg -l "$1" 2>/dev/null | grep -q "^ii"
 }
 
-# Safe download with retry and verification
+# Safe download with retry
 safe_download() {
     local url="$1"
     local output="$2"
     local name=$(basename "$output")
-
+    
     if [[ -f "$output" ]]; then
         log_skip "$name already exists"
         return 0
     fi
-
-    if curl -fsSLk --retry 3 --max-time 30 "$url" -o "$output" 2>&1 | tee -a /var/log/shellshock-install.log; then
+    
+    if wget --timeout=30 --tries=3 --no-verbose "$url" -O "$output" 2>&1 | tee -a "$LOG_FILE"; then
         log_info "Downloaded: $name"
         return 0
     else
@@ -107,27 +106,19 @@ safe_download() {
     fi
 }
 
-# Safe git clone with depth limit
+# Safe git clone
 safe_clone() {
     local url="$1"
     local dest="$2"
     local name=$(basename "$dest")
-
-    # Set temporary Git config for SSL bypass during clone/pull
-    git config --global http.sslVerify false
-
+    
     if [[ -d "$dest/.git" ]]; then
-        log_skip "$name already cloned. Attempting update..."
-        if git -C "$dest" pull --depth 1 2>&1 | tee -a /var/log/shellshock-install.log; then
-            log_info "Updated: $name"
-        else
-            log_warn "Failed to update: $name"
-        fi
+        log_skip "$name already cloned"
         return 0
     fi
-
-    if git clone --depth 1 --single-branch "$url" "$dest" 2>&1 | tee -a /var/log/shellshock-install.log; then
-        log_info "Cloned: $name (Shallow, SSL ignored)"
+    
+    if git clone --depth 1 "$url" "$dest" 2>&1 | tee -a "$LOG_FILE"; then
+        log_info "Cloned: $name"
         return 0
     else
         log_warn "Failed to clone: $name"
@@ -135,58 +126,40 @@ safe_clone() {
     fi
 }
 
-# Welcome banner
+# ============================================
+# WELCOME BANNER
+# ============================================
 clear
 echo -e "${CYAN}"
 cat << 'EOF'
 ╔═══════════════════════════════════════════════════════════════╗
-║     ██████╗████████╗███████╗    ██████╗  ██████╗ ██╗  ██╗     ║
-║    ██╔════╝╚══██╔══╝██╔════╝    ██╔══██╗██╔═══██╗╚██╗██╔╝     ║
-║    ██║      ██║  █████╗      ██████╔╝██║  ██║ ╚███╔╝      ║
-║    ██║      ██║  ██╔══╝      ██╔══██╗██║  ██║ ██╔██╗      ║
-║    ╚██████╗  ██║  ██║        ██████╔╝╚██████╔╝██╔╝ ██╗     ║
-║     ╚═════╝  ╚═╝  ╚═╝        ╚═════╝  ╚═════╝ ╚═╝  ╚═╝     ║
-║                                                             ║
-║              Project ShellShock 1.05                        ║
-║              A love letter to Pentesting by Jamie Loring    ║
-║                                                             ║
+║   ███████╗██╗  ██╗███████╗██╗     ██╗     ███████╗██╗  ██╗   ║
+║   ██╔════╝██║  ██║██╔════╝██║     ██║     ██╔════╝██║  ██║   ║
+║   ███████╗███████║█████╗  ██║     ██║     ███████╗███████║   ║
+║   ╚════██║██╔══██║██╔══╝  ██║     ██║     ╚════██║██╔══██║   ║
+║   ███████║██║  ██║███████╗███████╗███████╗███████║██║  ██║   ║
+║   ╚══════╝╚═╝  ╚═╝╚══════╝╚══════╝╚══════╝╚══════╝╚═╝  ╚═╝   ║
+║                                                               ║
+║             PROJECT SHELLSHOCK v2.0                           ║
+║        Automated Pentesting Environment Bootstrap             ║
+║             By Jamie Loring - Use Responsibly                 ║
 ╚═══════════════════════════════════════════════════════════════╝
 EOF
 echo -e "${NC}\n"
 
 # Username prompt
-if [[ -n "${USERNAME:-}" ]]; then
-    # Username provided via environment variable
-    log_info "Using USERNAME from environment: $USERNAME"
-    if ! validate_username "$USERNAME"; then
-        log_error "Invalid USERNAME provided via environment variable"
-        exit 1
-    fi
-else
-    # Interactive prompt
-    USERNAME=""
-    DEFAULT_USERNAME="${ORIGINAL_USER:-pentester}" # Fallback if ORIG is empty
-    
-    while true; do
-        read -rp "Enter pentesting username [default: $DEFAULT_USERNAME]: " INPUT_USERNAME
-        USERNAME="${INPUT_USERNAME:-$DEFAULT_USERNAME}"
-        
-        # Validate format and reserved names
-        if validate_username "$USERNAME"; then
-            break
-        fi
-        echo ""
-    done
-fi
+DEFAULT_USERNAME="$ORIGINAL_USER"
+[[ -z "$DEFAULT_USERNAME" ]] && DEFAULT_USERNAME="pentester"
+
+while true; do
+    read -p "Enter pentesting username [default: $DEFAULT_USERNAME]: " USERNAME
+    USERNAME="${USERNAME:-$DEFAULT_USERNAME}"
+    validate_username "$USERNAME" && break
+    echo ""
+done
 
 export USERNAME
 export USER_HOME="/home/$USERNAME"
-
-# Check if running as root before proceeding
-if [[ "$(id -u)" -ne 0 ]]; then
-    log_error "This script must be run as root or via sudo."
-    exit 1
-fi
 mkdir -p "$USER_HOME"
 
 log_info "Target username: ${GREEN}$USERNAME${NC}"
@@ -194,2147 +167,864 @@ log_info "Home directory: ${GREEN}$USER_HOME${NC}"
 echo ""
 log_warn "This will install pentesting tools and configure the system."
 log_warn "Smart detection enabled - existing installations will be skipped."
-log_warn "ATTENTION: HTTPS certificate verification is TEMPORARILY DISABLED for apt and git."
 echo ""
-read -rp "Continue? (y/n): " confirm
-[[ "$confirm" != "y" ]] && [[ "$confirm" != "Y" ]] && exit 0
-
-# Initialize log file
-touch /var/log/shellshock-install.log
-chmod 644 /var/log/shellshock-install.log
+read -p "Continue? (y/n): " -n 1 -r
+echo ""
+if [[ ! $REPLY =~ ^[Yy]$ ]]; then
+    log_error "Installation cancelled"
+    exit 1
+fi
 
 # ============================================
-# TIME SYNCHRONIZATION (CRITICAL - BEFORE APT)
+# PHASE 1: SYSTEM PREPARATION
 # ============================================
-log_progress "Forcing immediate time synchronization (Google NTP)..."
-log_warn "Clock skew can cause APT repository signature failures"
+log_section "Phase 1: System Preparation"
 
-# Display current time before sync
-log_info "Current system time: $(date)"
-
-# Function to attempt time sync with retries
-attempt_sync() {
-    local server="$1"
-    local max_attempts=3
-    local attempt=1
-    
-    while [ $attempt -le $max_attempts ]; do
-        log_info "Attempting ntpdate sync with: $server (attempt $attempt/$max_attempts)..."
-        if timeout 10 ntpdate -u "$server" 2>&1 | tee -a /var/log/shellshock-install.log; then
-            log_info "Time synced successfully via $server"
-            return 0
-        else
-            log_warn "ntpdate sync attempt $attempt failed using $server"
-            attempt=$((attempt + 1))
-            [ $attempt -le $max_attempts ] && sleep 2
-        fi
-    done
-    
-    return 1
-}
-
-# Array of NTP servers to try (in order)
-NTP_SERVERS=("time.google.com" "time1.google.com" "pool.ntp.org" "0.pool.ntp.org" "time.cloudflare.com")
-
-# 1. Check if ntpdate is already installed and try to sync
+# Time sync with robust NTP (15 attempts)
+log_info "Syncing system time..."
+NTP_SERVERS=("pool.ntp.org" "time.nist.gov" "time.google.com" "time.cloudflare.com" "time.windows.com")
 SYNC_SUCCESS=false
 
-if command_exists ntpdate; then
-    log_info "ntpdate is installed, attempting sync..."
-    for server in "${NTP_SERVERS[@]}"; do
-        if attempt_sync "$server"; then
+for attempt in {1..3}; do
+    for ntp_server in "${NTP_SERVERS[@]}"; do
+        if timeout 10 ntpdate -u "$ntp_server" 2>&1 | tee -a "$LOG_FILE"; then
+            log_info "Time synced successfully via $ntp_server"
             SYNC_SUCCESS=true
-            break
+            break 2
         fi
     done
-else
-    # 2. ntpdate not found, attempt to install it
-    log_warn "ntpdate not found, attempting to install it now..."
-    
-    # Check if ntpdate package is *already installed* but missing from PATH (unlikely, but safe)
-    if package_installed "ntpdate"; then
-        log_info "ntpdate package is installed but command is missing from PATH. Attempting sync anyway..."
-        for server in "${NTP_SERVERS[@]}"; do
-            if attempt_sync "$server"; then
-                SYNC_SUCCESS=true
-                break
-            fi
-        done
-    else
-        # Install ntpdate without updating repos (to avoid skew-related apt failures)
-        log_info "Installing ntpdate package via apt..."
-        if apt install -y ntpdate 2>&1 | tee -a /var/log/shellshock-install.log; then
-            log_info "Installed ntpdate."
-            
-            # Try sync after installation
-            for server in "${NTP_SERVERS[@]}"; do
-                if attempt_sync "$server"; then
-                    SYNC_SUCCESS=true
-                    break
-                fi
-            done
-        else
-            log_warn "Could not install ntpdate - will rely on chrony later."
-        fi
-    fi
+done
+
+if [[ "$SYNC_SUCCESS" == "false" ]]; then
+    log_warn "All NTP sync attempts failed. Continuing anyway..."
 fi
-
-# Show result
-if [ "$SYNC_SUCCESS" = true ]; then
-    log_info "Updated system time: $(date)"
-else
-    log_warn "WARNING: All NTP sync attempts failed!"
-    log_warn "This may cause APT signature verification failures."
-    echo ""
-    echo -e "${YELLOW}Options:${NC}"
-    echo "  1. Continue anyway (may fail during apt operations)"
-    echo "  2. Exit and troubleshoot network/firewall/DNS"
-    echo ""
-    read -rp "Continue despite time sync failure? (y/n): " continue_choice
-    if [[ "$continue_choice" != "y" ]] && [[ "$continue_choice" != "Y" ]]; then
-        log_error "Exiting. Fix time sync issues and re-run the script."
-        log_info "Troubleshooting: Check network connectivity, DNS, and firewall rules for UDP port 123"
-        exit 1
-    fi
-    log_warn "Continuing without time sync (you were warned!)"
-fi
-echo ""
-
-# ============================================
-# SSL BYPASS CONFIGURATION
-# ============================================
-log_progress "Configuring APT and Git to bypass SSL verification..."
-
-# APT SSL Bypass
-echo 'Acquire { https::Verify-Peer "false"; }' | sudo tee /etc/apt/apt.conf.d/99no-verify-ssl 2>&1 | tee -a /var/log/shellshock-install.log
-log_info "APT SSL verification disabled via 99no-verify-ssl"
-
-# Git SSL Bypass
-git config --global http.sslVerify false
-log_info "Git SSL verification disabled globally"
-
-# ============================================
-# PHASE 1: SYSTEM SETUP
-# ============================================
-log_progress "Phase 1: System Updates & Base Packages"
-
-# Configure non-interactive mode
-export DEBIAN_FRONTEND=noninteractive
-export NEEDRESTART_MODE=a
-export NEEDRESTART_SUSPEND=1
-echo 'debconf debconf/frontend select Noninteractive' | debconf-set-selections
-
-# Configure needrestart to avoid interactive prompts
-mkdir -p /etc/needrestart/conf.d
-cat > /etc/needrestart/conf.d/no-prompt.conf << 'EOF'
-$nrconf{restart} = 'a';
-$nrconf{kernelhints} = 0;
-EOF
 
 # Update package lists
 log_info "Updating package lists..."
-apt update -qq 2>&1 | tee -a /var/log/shellshock-install.log
+apt-get update -qq
 
-# Upgrade system only if packages are available
-if apt list --upgradable 2>/dev/null | grep -q "upgradable"; then
-    log_info "Upgrading system packages..."
-    DEBIAN_FRONTEND=noninteractive apt upgrade -y -qq 2>&1 | tee -a /var/log/shellshock-install.log
-else
-    log_skip "System already up to date"
-fi
+# Upgrade system
+log_info "Upgrading system packages..."
+DEBIAN_FRONTEND=noninteractive apt-get upgrade -y -qq
 
-# Install robust NTP daemon (chrony)
-if ! package_installed "chrony"; then
-    log_info "Installing robust NTP client (chrony) for reliable time sync..."
-    DEBIAN_FRONTEND=noninteractive apt install -y -qq chrony 2>&1 | tee -a /var/log/shellshock-install.log || log_warn "Failed to install chrony."
+# ============================================
+# PHASE 2: CORE PACKAGES
+# ============================================
+log_section "Phase 2: Installing Core Packages"
 
-    if command_exists chronyc; then
-        log_info "Forcing initial time sync (chronyc makestep)..."
-        chronyc makestep 2>&1 | tee -a /var/log/shellshock-install.log || true
-        log_info "Time synchronization service (chronyd) started."
-    fi
-else
-    log_skip "chrony already installed"
-fi
-
-# Install base packages
-log_info "Installing base packages..."
-
-# Core packages (must succeed)
 CORE_PACKAGES=(
-    build-essential git curl wget vim tmux zsh
-    python3-pip python3-venv python3-dev
-    htop tree net-tools dnsutils iproute2
-    p7zip-full unzip zip
-)
-
-# Security tools (best effort)
-SECURITY_PACKAGES=(
-    john john-data hashcat sqlmap exploitdb
-    mingw-w64 mingw-w64-tools
-    neovim jq ripgrep fd-find bat ncdu
-    fonts-powerline silversearcher-ag
-    rustc cargo docker.io docker-compose
-    masscan ldap-utils # ADDED masscan (replaces naabu) and ldap-utils (supports ldapsearch)
-)
-
-# Optional packages (may not be available on all distros)
-OPTIONAL_PACKAGES=(
-    sharphound
-    dotnet-sdk-8.0
-)
-
-# Install core packages first
-log_info "Installing core packages (required)..."
-DEBIAN_FRONTEND=noninteractive apt install -y "${CORE_PACKAGES[@]}" 2>&1 | tee -a /var/log/shellshock-install.log || {
-    log_error "Core packages failed to install. This is critical."
-    exit 1
-}
-
-# Install security packages
-log_info "Installing security packages..."
-for pkg in "${SECURITY_PACKAGES[@]}"; do
-    if ! package_installed "$pkg"; then
-        log_info "Installing: $pkg"
-        DEBIAN_FRONTEND=noninteractive apt install -y "$pkg" 2>&1 | tee -a /var/log/shellshock-install.log || log_warn "Failed to install $pkg"
-    else
-        log_skip "$pkg already installed"
-    fi
-done
-
-# Install optional packages
-log_info "Installing optional packages..."
-for pkg in "${OPTIONAL_PACKAGES[@]}"; do
-    if ! package_installed "$pkg"; then
-        log_info "Installing: $pkg"
-        DEBIAN_FRONTEND=noninteractive apt install -y "$pkg" 2>&1 | tee -a /var/log/shellshock-install.log || log_warn "Optional package $pkg not available"
-    else
-        log_skip "$pkg already installed"
-    fi
-done
-
-# Update searchsploit database
-if command_exists searchsploit; then
-    log_info "Updating searchsploit database..."
-    searchsploit -u -v 2>&1 | tee -a /var/log/shellshock-install.log || log_warn "searchsploit update failed (non-critical)"
-else
-    log_skip "searchsploit not available"
-fi
-
-# ============================================
-# PHASE 1.5: OFFICIAL GO TOOLCHAIN INSTALL
-# ============================================
-log_progress "Phase 1.5: Installing Official Go Toolchain (Go Fix)..."
-
-# Remove any potentially broken APT-installed version
-if package_installed "golang-go"; then
-    log_warn "Removing potentially conflicting APT Go version..."
-    DEBIAN_FRONTEND=noninteractive apt purge -y golang-go 2>&1 | tee -a /var/log/shellshock-install.log || true
-fi
-
-# Set target variables
-GO_VERSION="1.21.6" # Using stable LTS version
-GO_ARCH="linux-amd64"
-GO_TAR="go${GO_VERSION}.${GO_ARCH}.tar.gz"
-GO_URL="https://go.dev/dl/${GO_TAR}"
-
-if [[ ! -d "/usr/local/go" ]]; then
-    log_info "Downloading and installing official Go v${GO_VERSION}..."
+    # Essential
+    "curl" "wget" "git" "vim" "nano" "unzip" "p7zip-full" "software-properties-common"
+    "apt-transport-https" "ca-certificates" "gnupg" "lsb-release"
     
-    # Download binary
-    if curl -fsSLk "$GO_URL" -o "/tmp/$GO_TAR" 2>&1 | tee -a /var/log/shellshock-install.log; then
-        
-        # Remove existing, clean install, and set permissions
-        rm -rf /usr/local/go
-        tar -C /usr/local -xzf "/tmp/$GO_TAR"
-        log_info "Official Go installed to /usr/local/go"
+    # Shells
+    "zsh" "tmux"
+    
+    # Build tools
+    "build-essential" "gcc" "g++" "make" "cmake" "pkg-config"
+    
+    # Python
+    "python3" "python3-pip" "python3-venv" "python3-dev" "pipx"
+    
+    # Ruby
+    "ruby" "ruby-dev"
+    
+    # Network tools
+    "nmap" "masscan" "netcat-traditional" "socat" "tcpdump" "wireshark" "tshark"
+    "dnsutils" "whois" "host" "ldap-utils" "openssl"
+    
+    # Web tools
+    "curl" "wget" "nikto" "dirb" "wfuzz" "sqlmap"
+    
+    # Other tools
+    "john" "hashcat" "hydra" "smbclient" "nfs-common" "snmp" "ftp"
+    "exploitdb" "metasploit-framework"
+)
 
-        # Ensure the target user's profile uses the new official path
-        if ! grep -q 'PATH="/usr/local/go/bin' /etc/profile; then
-            echo 'export PATH="/usr/local/go/bin:$PATH"' | tee -a /etc/profile
+log_info "Installing core packages (this may take a while)..."
+for package in "${CORE_PACKAGES[@]}"; do
+    if package_installed "$package"; then
+        log_skip "$package already installed"
+    else
+        if DEBIAN_FRONTEND=noninteractive apt-get install -y -qq "$package" 2>&1 | tee -a "$LOG_FILE"; then
+            log_info "Installed: $package"
+        else
+            log_warn "Failed to install: $package (non-critical)"
         fi
-        
-        # Ensure the current root session has the updated PATH for immediate use
-        export PATH="/usr/local/go/bin:$PATH"
-        
-    else
-        log_error "Failed to download Go binary. Go tools will fail."
-    fi
-    rm -f "/tmp/$GO_TAR"
-else
-    log_skip "Official Go installation directory already exists (/usr/local/go)"
-    # Ensure PATH is set for running Go tools in the following phase
-    export PATH="/usr/local/go/bin:$PATH"
-fi
-echo ""
-# End of Phase 1.5
-
-# ============================================
-# PHASE 1.5.5: VERIFICATION & PATH FIXES
-# ============================================
-log_progress "Phase 1.5.5: Verifying installations and fixing PATH..."
-
-# Verify critical packages actually installed
-CRITICAL_MISSING=()
-for pkg in zsh vim git curl wget python3-pip; do
-    if ! package_installed "$pkg"; then
-        CRITICAL_MISSING+=("$pkg")
-        log_warn "Critical package missing: $pkg - attempting reinstall..."
-        DEBIAN_FRONTEND=noninteractive apt install -y "$pkg" 2>&1 | tee -a /var/log/shellshock-install.log || log_error "Failed to install $pkg"
     fi
 done
 
-if [[ ${#CRITICAL_MISSING[@]} -gt 0 ]]; then
-    log_warn "Some critical packages were missing and have been reinstalled"
-fi
+# ============================================
+# PHASE 3: USER ACCOUNT CONFIGURATION
+# ============================================
+log_section "Phase 3: User Account Configuration"
 
-# Fix Go PATH - ensure it's accessible immediately
-if [[ -d "/usr/local/go/bin" ]] && [[ -x "/usr/local/go/bin/go" ]]; then
-    # Add to current session
-    export PATH="/usr/local/go/bin:$PATH"
-    
-    # Ensure it's in system-wide profile
-    if ! grep -q '/usr/local/go/bin' /etc/environment; then
-        # Update /etc/environment for system-wide availability
-        if [[ -f /etc/environment ]]; then
-            # Get current PATH from /etc/environment (Handle potential grep failure under set -e)
-            CURRENT_PATH=$(grep '^PATH=' /etc/environment | cut -d'"' -f2 || true) # ADDED || true for robustness
-            if [[ -n "$CURRENT_PATH" ]]; then
-                # Prepend Go to existing PATH
-                sed -i 's|^PATH=.*|PATH="/usr/local/go/bin:'"$CURRENT_PATH"'"|' /etc/environment
-            else
-                # No PATH in /etc/environment, add it
-                echo 'PATH="/usr/local/go/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin"' >> /etc/environment
-            fi
-        fi
-        log_info "Added Go to /etc/environment for system-wide PATH"
-    fi
-    
-    # Verify Go is now accessible
-    if command -v go &>/dev/null; then
-        GO_VERSION=$(go version | awk '{print $3}')
-        log_info "Go is accessible: $GO_VERSION"
-    else
-        log_warn "Go binary exists but still not in PATH - may need reboot"
-    fi
+# Create user if doesn't exist
+if id "$USERNAME" &>/dev/null; then
+    log_skip "User $USERNAME already exists"
 else
-    log_warn "Go installation directory not found or binary not executable"
-fi
-
-# Ensure zsh is actually in PATH before proceeding to Oh-My-Zsh
-if ! command -v zsh &>/dev/null; then
-    log_warn "zsh command not found in PATH despite installation attempt"
-    log_warn "Attempting to locate zsh..."
-    if [[ -x "/bin/zsh" ]]; then
-        log_info "Found zsh at /bin/zsh"
-    elif [[ -x "/usr/bin/zsh" ]]; then
-        log_info "Found zsh at /usr/bin/zsh"
-    else
-        log_error "zsh not found anywhere - Oh-My-Zsh will fail"
-    fi
-fi
-
-log_info "Verification complete"
-echo ""
-
-# ============================================
-# PHASE 1.6: VIRTUALBOX DETECTION
-# ============================================
-log_progress "Phase 1.6: VirtualBox Detection"
-
-if systemd-detect-virt 2>/dev/null | grep -qi "oracle"; then
-    log_info "VirtualBox environment detected"
-    log_warn "VirtualBox Guest Additions installer will be created on Desktop"
-    log_warn "Run ~/Desktop/INSTALL_VBOX_ADDITIONS.sh after setup for:"
-    log_warn "  - Bidirectional clipboard"
-    log_warn "  - Drag & drop functionality"
-    log_warn "  - Auto-resize display"
-    log_warn "  - Shared folders support"
-else
-    log_skip "Not running in VirtualBox - Guest Additions not needed"
-fi
-
-# ============================================
-# PHASE 2: USER CONFIGURATION
-# ============================================
-log_progress "Phase 2: User Account Configuration"
-
-# Create or verify user account
-if ! id "$USERNAME" &>/dev/null; then
     log_info "Creating user: $USERNAME"
     
-    # Ensure docker group exists before adding user to it
-    if ! getent group docker >/dev/null 2>&1; then
-        groupadd docker || true
+    # Ensure docker group exists
+    if ! getent group docker > /dev/null; then
+        groupadd docker
         log_info "Created docker group"
     fi
     
-    # Create user with bash first (zsh might not be installed yet in PATH)
-    # We'll change the shell later after verification
-    useradd -m -s /bin/bash "$USERNAME"
+    # Create user with bash first (zsh may not be in PATH yet)
+    useradd -m -s /bin/bash -G sudo,docker "$USERNAME"
     
-    # Add user to groups
-    usermod -aG sudo "$USERNAME"
-    if getent group docker >/dev/null 2>&1; then
-        usermod -aG docker "$USERNAME"
-        log_info "Added $USERNAME to docker group"
-    fi
-    
-    # Explicitly disable password using the widely supported passwd command
-    passwd -d "$USERNAME" 2>&1 | tee -a /var/log/shellshock-install.log || log_warn "Failed to disable password for $USERNAME"
-    log_info "User '$USERNAME' created (password disabled)"
-
-    # Apply Parrot OS defaults from /etc/skel
-    log_info "Applying default configuration from /etc/skel..."
-    if [[ -d "/etc/skel" ]]; then
-        rsync -a /etc/skel/. "$USER_HOME/" 2>/dev/null || true
-        log_info "Copied base configurations"
-    fi
-
-    # Copy Parrot OS defaults from 'user' account if present
-    if [[ -d "/home/user" ]] && [[ "$USERNAME" != "user" ]]; then
-        log_info "Copying Parrot OS defaults from 'user' account..."
-        rsync -a /home/user/.config/mate "$USER_HOME/.config/" 2>/dev/null || true
-        rsync -a /home/user/.config/dconf "$USER_HOME/.config/" 2>/dev/null || true
-        cp /home/user/.gtkrc-2.0 "$USER_HOME/" 2>/dev/null || true
-        rsync -a /home/user/.themes "$USER_HOME/" 2>/dev/null || true
-        log_info "Parrot defaults applied"
-    fi
-
-    chown -R "$USERNAME":"$USERNAME" "$USER_HOME" 2>/dev/null || true
-
-    # Configure Parrot theme via gsettings
-    log_info "Configuring Parrot theme (Requires running Display/DBUS session)..."
-    sudo -u "$USERNAME" bash << 'THEME_EOF'
-# Attempt to find the user's running DBUS session if it exists
-DBUS_ADDRESS=$(sudo -u "$USERNAME" grep -z DBUS_SESSION_BUS_ADDRESS /proc/$(pgrep -u "$USERNAME" mate-session|head -n1)/environ 2>/dev/null | tr -d '\0' | cut -d= -f2- || true)
-export DBUS_SESSION_BUS_ADDRESS="${DBUS_ADDRESS}"
-export DISPLAY=:0
-
-if command -v gsettings &>/dev/null; then
-    gsettings set org.mate.interface gtk-theme 'Parrot' 2>/dev/null || gsettings set org.mate.interface gtk-theme 'Arc-Darker' 2>/dev/null || true
-    gsettings set org.mate.interface icon-theme 'Papirus-Dark' 2>/dev/null || gsettings set org.mate.interface icon-theme 'Papirus' 2>/dev/null || true
-    gsettings set org.mate.Marco.general theme 'Parrot' 2>/dev/null || gsettings set org.mate.Marco.general theme 'Arc-Darker' 2>/dev/null || true
-    
-    if [[ -f "/usr/share/backgrounds/parrot/default.jpg" ]]; then
-        gsettings set org.mate.background picture-filename '/usr/share/backgrounds/parrot/default.jpg' 2>/dev/null || true
-    elif [[ -f "/usr/share/backgrounds/parrot/parrot.jpg" ]]; then
-        gsettings set org.mate.background picture-filename '/usr/share/backgrounds/parrot/parrot.jpg' 2>/dev/null || true
-    fi
-    
-    gsettings set org.mate.terminal.profile:/org/mate/terminal/profiles/default/ use-theme-colors false 2>/dev/null || true
-fi
-THEME_EOF
-
-else
-    log_skip "User '$USERNAME' already exists"
-
-    # Apply Parrot defaults if not already configured
-    if [[ ! -f "$USER_HOME/.config/shellshock-configured" ]]; then
-        log_info "Applying Parrot defaults to existing user (if theme is available)..."
-
-        if [[ -d "/home/user" ]] && [[ "$USERNAME" != "user" ]]; then
-            rsync -a /home/user/.config/mate "$USER_HOME/.config/" 2>/dev/null || true
-            rsync -a /home/user/.config/dconf "$USER_HOME/.config/" 2>/dev/null || true
-        fi
-
-        sudo -u "$USERNAME" bash << 'THEME2_EOF'
-DBUS_ADDRESS=$(sudo -u "$USERNAME" grep -z DBUS_SESSION_BUS_ADDRESS /proc/$(pgrep -u "$USERNAME" mate-session|head -n1)/environ 2>/dev/null | tr -d '\0' | cut -d= -f2- || true)
-export DBUS_SESSION_BUS_ADDRESS="${DBUS_ADDRESS}"
-export DISPLAY=:0
-
-if command -v gsettings &>/dev/null; then
-    gsettings set org.mate.interface gtk-theme 'Parrot' 2>/dev/null || gsettings set org.mate.interface gtk-theme 'Arc-Darker' 2>/dev/null || true
-    gsettings set org.mate.interface icon-theme 'Papirus-Dark' 2>/dev/null || true
-fi
-THEME2_EOF
-
-        mkdir -p "$USER_HOME/.config"
-        touch "$USER_HOME/.config/shellshock-configured"
-        chown -R "$USERNAME":"$USERNAME" "$USER_HOME/.config"
-    else
-        log_skip "Parrot defaults already configured"
-    fi
+    # Set password
+    echo "$USERNAME:shellshock" | chpasswd
+    log_info "User created with default password: shellshock"
+    log_warn "IMPORTANT: Change password after first login!"
 fi
 
-# Configure sudoers
-if [[ ! -f "/etc/sudoers.d/$USERNAME" ]]; then
-    if echo "$USERNAME ALL=(ALL) NOPASSWD:ALL" | visudo -cf - > /dev/null 2>&1; then
-        echo "$USERNAME ALL=(ALL) NOPASSWD:ALL" > /etc/sudoers.d/"$USERNAME"
-        chmod 440 /etc/sudoers.d/"$USERNAME"
-        log_info "Sudoers configured for $USERNAME (NOPASSWD)"
-    else
-        log_error "Failed to validate sudoers entry. Skipping NOPASSWD setup."
+# Add to groups if not already member
+for group in sudo docker; do
+    if ! id -nG "$USERNAME" | grep -qw "$group"; then
+        usermod -aG "$group" "$USERNAME"
+        log_info "Added $USERNAME to $group group"
     fi
-else
-    log_skip "Sudoers already configured"
+done
+
+# Passwordless sudo
+SUDOERS_FILE="/etc/sudoers.d/$USERNAME"
+if [[ ! -f "$SUDOERS_FILE" ]]; then
+    echo "$USERNAME ALL=(ALL) NOPASSWD:ALL" > "$SUDOERS_FILE"
+    chmod 440 "$SUDOERS_FILE"
+    log_info "Configured passwordless sudo"
 fi
 
-# Ensure ownership
-chown -R "$USERNAME":"$USERNAME" "$USER_HOME" 2>/dev/null || true
-
-# Set default shell to zsh (after verifying it exists)
-ZSH_PATH="$(which zsh 2>/dev/null || echo '')"
-if [[ -n "$ZSH_PATH" ]]; then
-    if [[ "$(getent passwd "$USERNAME" | cut -d: -f7)" != "$ZSH_PATH" ]]; then
-        chsh -s "$ZSH_PATH" "$USERNAME" 2>/dev/null || true
-        log_info "Default shell set to zsh"
-    else
-        log_skip "Shell already set to zsh"
-    fi
-else
-    log_warn "Zsh executable not found in PATH, skipping default shell change"
-    log_warn "Shell will remain as /bin/bash"
+# Disable built-in 'user' account if exists
+if id "user" &>/dev/null && [[ "$USERNAME" != "user" ]]; then
+    usermod -L user
+    log_info "Disabled built-in 'user' account"
 fi
 
-# Disable old 'user' auto-login and enable for new username - AUTOMATIC
-if [[ "$USERNAME" != "user" ]]; then
-    log_progress "Disabling 'user' account and configuring auto-login for $USERNAME..."
-    
-    # LightDM - remove all 'user' auto-login
-    sed -i '/autologin-user=user/d' /etc/lightdm/lightdm.conf* 2>/dev/null || true
-    sed -i '/autologin-user-timeout=0/d' /etc/lightdm/lightdm.conf* 2>/dev/null || true
-    
-    # GDM3 - remove all 'user' auto-login
-    sed -i '/AutomaticLogin = user/d' /etc/gdm3/custom.conf 2>/dev/null || true
-    sed -i '/AutomaticLoginEnable = true/d' /etc/gdm3/custom.conf 2>/dev/null || true
-    
-    # SDDM - remove all 'user' auto-login
-    sed -i '/User=user/d' /etc/sddm.conf* 2>/dev/null || true
-    
-    # Lock the 'user' account if it exists
-    if id "user" &>/dev/null; then
-        passwd -l user 2>/dev/null || true
-        log_info "Locked 'user' account"
-    fi
-    
-    log_info "Cleaned up obsolete 'user' auto-login settings"
+# Create directory structure
+log_info "Creating directory structure..."
+mkdir -p "$USER_HOME"/{tools/{repos,scripts,windows},engagements,wordlists,.config}
+chown -R "$USERNAME":"$USERNAME" "$USER_HOME"
+
+# ============================================
+# PHASE 4: GO INSTALLATION (THREE-LAYER PATH)
+# ============================================
+log_section "Phase 4: Installing Go with Proper PATH Configuration"
+
+# Remove old Go if present
+if [[ -d "/usr/local/go" ]]; then
+    log_info "Removing old Go installation..."
+    rm -rf /usr/local/go
 fi
 
-# Configure auto-login for supplied username - AUTOMATIC (no prompt)
-log_progress "Configuring auto-login for $USERNAME..."
+# Install latest stable Go
+log_info "Installing Go 1.23.3..."
+cd /tmp
+wget -q https://go.dev/dl/go1.23.3.linux-amd64.tar.gz
+tar -C /usr/local -xzf go1.23.3.linux-amd64.tar.gz
+rm go1.23.3.linux-amd64.tar.gz
 
-# LightDM
-if command_exists lightdm || [[ -d "/etc/lightdm" ]]; then
-    mkdir -p /etc/lightdm/lightdm.conf.d
-    cat > /etc/lightdm/lightdm.conf.d/50-autologin.conf << EOF
-[Seat:*]
-autologin-user=$USERNAME
-autologin-user-timeout=0
-allow-guest=false
+# Layer 1: /etc/environment (system-wide)
+log_info "Configuring Go PATH (system-wide)..."
+if ! grep -q "/usr/local/go/bin" /etc/environment; then
+    sed -i 's|PATH="\(.*\)"|PATH="/usr/local/go/bin:\1"|' /etc/environment
+fi
+
+# Layer 2: /etc/profile.d/golang.sh (all shells)
+cat > /etc/profile.d/golang.sh << 'EOF'
+export GOROOT=/usr/local/go
+export GOPATH=$HOME/go
+export PATH=$GOROOT/bin:$GOPATH/bin:$PATH
 EOF
-    log_info "LightDM auto-login configured for $USERNAME"
-fi
+chmod +x /etc/profile.d/golang.sh
+log_info "Created /etc/profile.d/golang.sh"
 
-# GDM3
-if command_exists gdm3 || [[ -f "/etc/gdm3/custom.conf" ]]; then
-    sed -i '/AutomaticLoginEnable/d' /etc/gdm3/custom.conf 2>/dev/null || true
-    sed -i '/AutomaticLogin =/d' /etc/gdm3/custom.conf 2>/dev/null || true
+# Layer 3: User shells
+for shell_rc in "$USER_HOME/.bashrc" "$USER_HOME/.zshrc"; do
+    touch "$shell_rc"
+    if ! grep -q "GOROOT" "$shell_rc"; then
+        cat >> "$shell_rc" << 'EOF'
 
-    if grep -q '^\[daemon\]' /etc/gdm3/custom.conf; then
-        sed -i "/^\[daemon\]/a AutomaticLoginEnable = true" /etc/gdm3/custom.conf
-        sed -i "/^\[daemon\]/a AutomaticLogin = $USERNAME" /etc/gdm3/custom.conf
-    else
-        echo -e "\n[daemon]\nAutomaticLoginEnable = true\nAutomaticLogin = $USERNAME" >> /etc/gdm3/custom.conf
+# Go configuration
+export GOROOT=/usr/local/go
+export GOPATH=$HOME/go
+export PATH=$GOROOT/bin:$GOPATH/bin:$PATH
+EOF
+        log_info "Added Go PATH to $(basename $shell_rc)"
     fi
-    log_info "GDM3 auto-login configured for $USERNAME"
-fi
+done
 
-log_info "Auto-login enabled for $USERNAME (CTF VM optimized)"
+# Source for immediate use
+source /etc/profile.d/golang.sh
+export PATH="/usr/local/go/bin:$USER_HOME/go/bin:$PATH"
 
-# Configure passwordless login group
-if ! grep -q '^nopasswdlogin:' /etc/group; then
-    groupadd nopasswdlogin || true
-    log_info "Created nopasswdlogin group"
-fi
-
-# Remove 'user' from nopasswdlogin group if present
-if id "user" &>/dev/null; then
-    gpasswd -d user nopasswdlogin 2>/dev/null || true
-fi
-
-# Add supplied username to nopasswdlogin group
-if ! id -nG "$USERNAME" | grep -q 'nopasswdlogin'; then
-    usermod -aG nopasswdlogin "$USERNAME" || true
-    log_info "Added $USERNAME to nopasswdlogin group"
-fi
-
-# Configure PAM
-PAM_ENTRY='auth [success=1 default=ignore] pam_succeed_if.so user ingroup nopasswdlogin'
-PAM_FILE='/etc/pam.d/common-auth'
-
-if ! grep -qF "$PAM_ENTRY" "$PAM_FILE"; then
-    if sed -i "1i$PAM_ENTRY" "$PAM_FILE"; then
-        log_info "PAM configured for passwordless login via nopasswdlogin group"
-    else
-        log_error "Failed to configure PAM for passwordless login (sed failed)"
-    fi
+# Verify Go installation
+if /usr/local/go/bin/go version &>/dev/null; then
+    log_info "✓ Go installed: $(/usr/local/go/bin/go version)"
 else
-    log_skip "PAM already configured for nopasswdlogin group"
+    log_error "Go installation failed"
+    exit 1
 fi
 
-# ============================================
-# PHASE 3: SHELL ENVIRONMENT
-# ============================================
-log_progress "Phase 3: Shell Environment (Zsh + Oh-My-Zsh + Powerlevel10k)"
+# Create go directory
+mkdir -p "$USER_HOME/go/bin"
+chown -R "$USERNAME":"$USERNAME" "$USER_HOME/go"
 
-# Ensure zsh is installed
-if ! command_exists zsh; then
-    log_warn "Zsh not found, installing now..."
-    DEBIAN_FRONTEND=noninteractive apt install -y zsh 2>&1 | tee -a /var/log/shellshock-install.log || {
-        log_error "Failed to install zsh. Cannot proceed with Oh-My-Zsh"
-        exit 1
-    }
-fi
+# ============================================
+# PHASE 5: OH-MY-ZSH INSTALLATION
+# ============================================
+log_section "Phase 5: Installing Oh-My-Zsh & Plugins"
 
+# Set zsh as default shell
+chsh -s /usr/bin/zsh "$USERNAME"
+log_info "Set zsh as default shell for $USERNAME"
+
+# Install Oh-My-Zsh
 if [[ ! -d "$USER_HOME/.oh-my-zsh" ]]; then
     log_info "Installing Oh-My-Zsh..."
-
-    TEMP_HOME=$(mktemp -d)
-
-    # Install Oh-My-Zsh to temp location in a subshell
-    (
-        export HOME="$TEMP_HOME"
-        log_info "Downloading Oh-My-Zsh installer..."
-        
-        # Download and run Oh-My-Zsh installer
-        if curl -fsSLk https://raw.githubusercontent.com/ohmyzsh/ohmyzsh/master/tools/install.sh -o /tmp/install-omz.sh; then
-            log_info "Running Oh-My-Zsh installer..."
-            RUNZSH=no bash /tmp/install-omz.sh --unattended 2>&1 | tee -a /var/log/shellshock-install.log || true
-            rm -f /tmp/install-omz.sh
-        else
-            log_error "Failed to download Oh-My-Zsh installer"
-        fi
-    )
-
-    if [[ -d "$TEMP_HOME/.oh-my-zsh" ]]; then
-        log_info "Oh-My-Zsh downloaded successfully"
-        
-        # Install plugins using safe_clone
-        log_info "Installing Oh-My-Zsh plugins..."
-        safe_clone "https://github.com/zsh-users/zsh-autosuggestions" "${TEMP_HOME}/.oh-my-zsh/custom/plugins/zsh-autosuggestions"
-        safe_clone "https://github.com/zsh-users/zsh-syntax-highlighting.git" "${TEMP_HOME}/.oh-my-zsh/custom/plugins/zsh-syntax-highlighting"
-        safe_clone "https://github.com/romkatv/powerlevel10k.git" "${TEMP_HOME}/.oh-my-zsh/custom/themes/powerlevel10k"
-
-        # Download Powerlevel10k config
-        log_info "Downloading Powerlevel10k configuration..."
-        safe_download "https://raw.githubusercontent.com/Jamie-loring/Public-scripts/main/p10k-jamie-config.zsh" "${TEMP_HOME}/.p10k.zsh"
-
-        # Copy to user home using rsync
-        log_info "Installing to user home directory..."
-        rsync -a "$TEMP_HOME"/.oh-my-zsh "$USER_HOME/" 2>/dev/null || true
-        cp "$TEMP_HOME"/.p10k.zsh "$USER_HOME/" 2>/dev/null || true
-
-        if [[ -d "$USER_HOME/.oh-my-zsh" ]]; then
-            log_info "Oh-My-Zsh installed with plugins and theme"
-        else
-            log_error "Failed to copy Oh-My-Zsh to user home"
-        fi
-    else
-        log_error "Oh-My-Zsh installation failed in temporary directory"
-    fi
-
-    # Cleanup
-    rm -rf "$TEMP_HOME"
-
+    su - "$USERNAME" -c 'sh -c "$(curl -fsSL https://raw.githubusercontent.com/ohmyzsh/ohmyzsh/master/tools/install.sh)" "" --unattended' 2>&1 | tee -a "$LOG_FILE"
+    log_info "✓ Oh-My-Zsh installed"
 else
     log_skip "Oh-My-Zsh already installed"
 fi
 
-# ============================================
-# PHASE 3.5: FIREFOX EXTENSIONS & CONFIGURATION
-# ============================================
-log_progress "Phase 3.5: Firefox Extensions & Configuration"
+# Install Powerlevel10k theme
+if [[ ! -d "$USER_HOME/.oh-my-zsh/custom/themes/powerlevel10k" ]]; then
+    log_info "Installing Powerlevel10k theme..."
+    su - "$USERNAME" -c "git clone --depth=1 https://github.com/romkatv/powerlevel10k.git ~/.oh-my-zsh/custom/themes/powerlevel10k"
+    log_info "✓ Powerlevel10k installed"
+fi
 
-if command_exists firefox || command_exists firefox-esr; then
-    log_info "Configuring Firefox for pentesting..."
+# Install zsh-autosuggestions
+if [[ ! -d "$USER_HOME/.oh-my-zsh/custom/plugins/zsh-autosuggestions" ]]; then
+    log_info "Installing zsh-autosuggestions..."
+    su - "$USERNAME" -c "git clone https://github.com/zsh-users/zsh-autosuggestions ~/.oh-my-zsh/custom/plugins/zsh-autosuggestions"
+    log_info "✓ zsh-autosuggestions installed"
+fi
 
-    FIREFOX_CMD=$(command -v firefox || command -v firefox-esr)
+# Install zsh-syntax-highlighting
+if [[ ! -d "$USER_HOME/.oh-my-zsh/custom/plugins/zsh-syntax-highlighting" ]]; then
+    log_info "Installing zsh-syntax-highlighting..."
+    su - "$USERNAME" -c "git clone https://github.com/zsh-users/zsh-syntax-highlighting.git ~/.oh-my-zsh/custom/plugins/zsh-syntax-highlighting"
+    log_info "✓ zsh-syntax-highlighting installed"
+fi
 
-    # Step 1: Create Firefox profile structure
-    PROFILE_DIR="$USER_HOME/.mozilla/firefox/shellshock.default"
-    mkdir -p "$PROFILE_DIR"
-
-    if [[ ! -f "$USER_HOME/.mozilla/firefox/profiles.ini" ]]; then
-        cat > "$USER_HOME/.mozilla/firefox/profiles.ini" << 'PROFILES_INI_EOF'
-[General]
-StartWithLastProfile=1
-
-[Profile0]
-Name=default
-IsRelative=1
-Path=shellshock.default
-Default=1
-PROFILES_INI_EOF
-        log_info "Created Firefox profile: shellshock.default"
+# Configure .zshrc
+if [[ -f "$USER_HOME/.zshrc" ]]; then
+    sed -i 's/^ZSH_THEME=.*/ZSH_THEME="powerlevel10k\/powerlevel10k"/' "$USER_HOME/.zshrc"
+    
+    if grep -q "^plugins=" "$USER_HOME/.zshrc"; then
+        sed -i 's/^plugins=.*/plugins=(git command-not-found zsh-autosuggestions zsh-syntax-highlighting)/' "$USER_HOME/.zshrc"
+    else
+        echo 'plugins=(git command-not-found zsh-autosuggestions zsh-syntax-highlighting)' >> "$USER_HOME/.zshrc"
     fi
-
-    chown -R "$USERNAME":"$USERNAME" "$USER_HOME/.mozilla" 2>/dev/null || true
-
-    # Step 2: Download Firefox extensions
-    mkdir -p "$USER_HOME/.firefox-extensions"
-    log_info "Downloading Firefox extensions..."
-
-    declare -A EXTENSIONS=(
-        ["darkreader"]="https://addons.mozilla.org/firefox/downloads/latest/darkreader/latest.xpi"
-        ["cookie-editor"]="https://addons.mozilla.org/firefox/downloads/latest/cookie-editor/latest.xpi"
-        ["foxyproxy"]="https://addons.mozilla.org/firefox/downloads/latest/foxyproxy-standard/latest.xpi"
-        ["wappalyzer"]="https://addons.mozilla.org/firefox/downloads/latest/wappalyzer/latest.xpi"
-        ["user-agent-switcher"]="https://addons.mozilla.org/firefox/downloads/latest/user-agent-string-switcher/latest.xpi"
-        ["hacktools"]="https://addons.mozilla.org/firefox/downloads/latest/hacktools/latest.xpi"
-    )
-
-    for ext_name in "${!EXTENSIONS[@]}"; do
-        ext_url="${EXTENSIONS[$ext_name]}"
-        safe_download "$ext_url" "$USER_HOME/.firefox-extensions/${ext_name}.xpi"
-    done
-
-    # Step 3: Install extensions directly to profile
-    if [[ -d "$PROFILE_DIR" ]]; then
-        log_info "Installing extensions to Firefox profile..."
-        mkdir -p "$PROFILE_DIR/extensions"
-
-        declare -A EXT_IDS=(
-            ["darkreader"]="addon@darkreader.org"
-            ["cookie-editor"]="{c36177c0-224a-4e27-b20d-b91c8b6f3ae4}"
-            ["foxyproxy"]="foxyproxy@eric.h.jung"
-            ["wappalyzer"]="wappalyzer@crunchlabz.com"
-            ["user-agent-switcher"]="{3579f63b-d8ee-424f-bbb6-6d0ce3285e6a}"
-            ["hacktools"]="hacktools@hacktools.com"
-        )
-
-        for ext_name in "${!EXTENSIONS[@]}"; do
-            xpi_file="$USER_HOME/.firefox-extensions/${ext_name}.xpi"
-            if [[ -f "$xpi_file" ]]; then
-                ext_id="${EXT_IDS[$ext_name]}"
-                cp "$xpi_file" "$PROFILE_DIR/extensions/${ext_id}.xpi" 2>/dev/null && \
-                    log_info "Installed: $ext_name" || \
-                    log_warn "Failed to install: $ext_name (copy failed)"
-            fi
-        done
-
-        # Step 4: Create user.js preferences file
-        log_info "Configuring Firefox preferences..."
-        cat > "$PROFILE_DIR/user.js" << USERJS_EOF
-// ShellShock v1.05 - Firefox Configuration for Pentesting
-
-// Disable automatic updates
-user_pref("app.update.auto", false);
-user_pref("app.update.enabled", false);
-user_pref("extensions.update.enabled", false);
-
-// Developer tools
-user_pref("devtools.theme", "dark");
-user_pref("devtools.debugger.remote-enabled", true);
-user_pref("devtools.chrome.enabled", true);
-
-// Security relaxation for pentesting
-user_pref("security.fileuri.strict_origin_policy", false);
-user_pref("network.http.referer.XOriginPolicy", 0);
-
-// Disable DNS over HTTPS (important for pentesting)
-user_pref("network.trr.mode", 5);
-
-// Cache configuration (memory only, no disk writes)
-user_pref("browser.cache.disk.enable", false);
-user_pref("browser.cache.memory.enable", true);
-user_pref("browser.cache.memory.capacity", 524288);
-
-// Privacy settings (disabled for pentesting)
-user_pref("privacy.resistFingerprinting", false);
-user_pref("privacy.trackingprotection.enabled", false);
-user_pref("privacy.donottrackheader.enabled", false);
-
-// Download configuration
-user_pref("browser.download.dir", "$USER_HOME/Downloads");
-user_pref("browser.download.folderList", 1);
-user_pref("browser.download.useDownloadDir", true);
-
-// UI configuration
-user_pref("browser.startup.homepage", "about:blank");
-user_pref("browser.newtabpage.enabled", false);
-user_pref("browser.tabs.warnOnClose", false);
-user_pref("browser.warnOnQuit", false);
-
-// Extension installation (allow unsigned extensions for testing)
-user_pref("xpinstall.signatures.required", false);
-user_pref("extensions.autoDisableScopes", 0);
-user_pref("extensions.enabledScopes", 15);
-USERJS_EOF
-
-        chown "$USERNAME":"$USERNAME" "$PROFILE_DIR/user.js" 2>/dev/null || true
-        log_info "Firefox preferences configured"
-    fi
-
-    # Step 5: Configure enterprise policies
-    FIREFOX_PATH=$(find /usr/lib -maxdepth 1 -type d \( -name 'firefox' -o -name 'firefox-esr' \) 2>/dev/null | head -n1)
-    if [[ -n "$FIREFOX_PATH" ]]; then
-        mkdir -p "$FIREFOX_PATH/distribution"
-
-        cat > "$FIREFOX_PATH/distribution/policies.json" << 'POLICIES_EOF'
-{
-  "policies": {
-    "DisableAppUpdate": true,
-    "ExtensionUpdate": false,
-    "Preferences": {
-      "extensions.autoDisableScopes": {
-        "Value": 0,
-        "Status": "locked"
-      },
-      "xpinstall.signatures.required": {
-        "Value": false,
-        "Status": "locked"
-      }
-    }
-  }
-}
-POLICIES_EOF
-        log_info "Firefox enterprise policies configured"
-    fi
-
-    chown -R "$USERNAME":"$USERNAME" "$USER_HOME/.firefox-extensions" "$PROFILE_DIR" 2>/dev/null || true
-
-    log_info "Firefox configured successfully"
-    log_warn "Extensions will be active on next Firefox launch"
-else
-    log_warn "Firefox not detected - skipping extension installation"
+    
+    log_info "✓ Configured .zshrc"
 fi
 
 # ============================================
-# PHASE 4: PENTESTING TOOLS INSTALLATION
+# PHASE 6: PYTHON TOOLS
 # ============================================
-log_progress "Phase 4: Installing Pentesting Tools"
+log_section "Phase 6: Installing Python Tools"
 
-mkdir -p "$USER_HOME"/tools/{wordlists,scripts,exploits,repos,windows}
+# Ensure pipx in PATH
+export PATH="$USER_HOME/.local/bin:$PATH"
 
-# Python tools via pip
-log_progress "Installing Python tools..."
-
-# Ensure pipx is installed
-if ! command_exists pipx; then
-    log_info "Installing pipx..."
-    DEBIAN_FRONTEND=noninteractive apt install -y python3-pip pipx 2>&1 | tee -a /var/log/shellshock-install.log || true
-    pipx ensurepath || true
-    sudo -u "$USERNAME" pipx ensurepath || true
-    export PATH="$PATH:/root/.local/bin:$USER_HOME/.local/bin"
-fi
-
-# Python packages via pip3 (System-wide)
-log_info "Installing system-wide Python dependencies..."
-# NOTE: Responder/Certipy-ad are in PIPX or Git, impacket/coercer have version conflicts - handle carefully
-
-# Install in specific order to avoid conflicts
-log_info "Installing impacket (latest version)..."
-pip3 install --break-system-packages "impacket" 2>&1 | tee -a /var/log/shellshock-install.log || log_warn "impacket install had issues"
-
-# Install coercer separately (it wants old impacket, but we'll use latest)
-log_info "Installing coercer (may conflict with impacket - non-critical)..."
-pip3 install --break-system-packages "coercer" 2>&1 | tee -a /var/log/shellshock-install.log || log_warn "coercer install had issues (expected with latest impacket)"
-
-# Other Python tools
-PIP_TOOLS=(
-    "hashid" "bloodhound" "bloodyAD" "mitm6" 
-    "pypykatz" "lsassy" "dnsrecon" "git-dumper"
-    "roadrecon" "manspider" "mitmproxy" "pwntools" "ROPgadget" "truffleHog"
+# System-wide Python tools
+PYTHON_TOOLS=(
+    "impacket"
+    "bloodhound"
+    "netexec"
+    "bloodyAD"
+    "mitm6"
 )
 
-for tool in "${PIP_TOOLS[@]}"; do
-    if ! pip3 list 2>/dev/null | grep -qi "^${tool} "; then
-        log_info "Installing: $tool"
-        pip3 install --break-system-packages "$tool" 2>&1 | tee -a /var/log/shellshock-install.log || log_warn "Failed to install $tool"
-    else
+log_info "Installing Python tools (system-wide)..."
+for tool in "${PYTHON_TOOLS[@]}"; do
+    if python3 -c "import $tool" 2>/dev/null; then
         log_skip "$tool already installed"
+    else
+        if pip3 install --break-system-packages "$tool" 2>&1 | tee -a "$LOG_FILE"; then
+            log_info "Installed: $tool"
+        else
+            log_warn "Failed to install: $tool"
+        fi
     fi
 done
 
-# enum4linux-ng - install from GitHub directly due to PyPI issues
-# (Reconciled: enum4linux-ng pipx -> enum4linux-ng git)
-if ! command_exists enum4linux-ng; then
-    log_info "Installing enum4linux-ng from GitHub (not on PyPI)..."
-    ENUM4LINUXNG_DIR="$USER_HOME/tools/repos/enum4linux-ng"
-    if [[ ! -d "$ENUM4LINUXNG_DIR/.git" ]]; then
-        safe_clone "https://github.com/cddmp/enum4linux-ng.git" "$ENUM4LINUXNG_DIR"
-        if [[ -d "$ENUM4LINUXNG_DIR" ]]; then
-            # Install Python dependencies for enum4linux-ng
-            cd "$ENUM4LINUXNG_DIR"
-            # NOTE: We use --break-system-packages here as required by the script's philosophy
-            pip3 install --break-system-packages -r requirements.txt 2>&1 | tee -a /var/log/shellshock-install.log || log_warn "enum4linux-ng dependencies may have issues"
-            log_info "enum4linux-ng installed to ~/tools/repos/enum4linux-ng/"
-            log_info "Use: python3 ~/tools/repos/enum4linux-ng/enum4linux-ng.py"
-        fi
-    else
-        log_skip "enum4linux-ng already cloned"
-    fi
-fi
-# End of new enum4linux-ng install logic
-
-
-# Pipx tools (User-isolated)
-log_progress "Installing pipx-isolated tools as $USERNAME (Includes NetExec/Certipy)..."
+# pipx-based tools (isolated)
+log_info "Installing pipx tools..."
+su - "$USERNAME" -c "pipx ensurepath"
 
 PIPX_TOOLS=(
-    "git+https://github.com/Pennyw0rth/NetExec"
-    "ldapdomaindump" # Used as replacement for windapsearch
+    "ldapdomaindump"
     "sprayhound"
-    "certipy-ad" # Works
+    "certipy-ad"
 )
-
-# RsaCtfTool - install from repo instead (pipx version is broken)
-# Removed: PIPX_PROBLEMATIC array definition, as it included tools now installed via git clone.
 
 for tool in "${PIPX_TOOLS[@]}"; do
-    tool_name=$(basename "$tool" | cut -d'@' -f1 | sed 's/git+https:\/\/github.com\///' | cut -d'/' -f2 | awk '{print tolower($0)}')
-    
-    if ! sudo -u "$USERNAME" pipx list 2>/dev/null | grep -qi "$tool_name"; then
-        log_info "Installing $tool_name via pipx..."
-        sudo -u "$USERNAME" bash -c "export PATH=\$PATH:\$HOME/.local/bin; pipx install '$tool' --force" 2>&1 | tee -a /var/log/shellshock-install.log || log_warn "Failed to install $tool_name via pipx"
+    if su - "$USERNAME" -c "pipx list" | grep -q "$tool"; then
+        log_skip "$tool already installed via pipx"
     else
-        log_skip "$tool_name already installed"
+        if su - "$USERNAME" -c "pipx install $tool" 2>&1 | tee -a "$LOG_FILE"; then
+            log_info "Installed via pipx: $tool"
+        else
+            log_warn "Failed to install via pipx: $tool"
+        fi
     fi
 done
 
-# Responder - install from GitHub directly due to build issues
-# (Reconciled: responder pipx -> responder git)
-log_info "Installing Responder from GitHub (pipx version has build issues)..."
-RESPONDER_DIR="$USER_HOME/tools/repos/Responder"
-if [[ ! -d "$RESPONDER_DIR/.git" ]]; then
-    safe_clone "https://github.com/lgandx/Responder.git" "$RESPONDER_DIR"
-    if [[ -d "$RESPONDER_DIR" ]]; then
-        # Install Python dependencies for Responder
-        cd "$RESPONDER_DIR"
-        pip3 install --break-system-packages -r requirements.txt 2>&1 | tee -a /var/log/shellshock-install.log || log_warn "Responder dependencies may have issues"
-        chmod +x Responder.py
-        log_info "Responder installed to ~/tools/repos/Responder/"
-        log_info "Use: python3 ~/tools/repos/Responder/Responder.py"
-    fi
-else
-    log_skip "Responder already cloned"
-fi
+# ============================================
+# PHASE 7: RUBY TOOLS
+# ============================================
+log_section "Phase 7: Installing Ruby Tools"
 
-# Note: RsaCtfTool is cloned in the repos section, which works fine
-log_info "RsaCtfTool will be available in ~/tools/repos/RsaCtfTool"
+RUBY_TOOLS=(
+    "evil-winrm"
+    "one_gadget"
+    "haiti-hash"
+)
 
-# Go tools - FIXED: Proper paths for installation
-if command_exists go; then
-    log_progress "Installing Go-based tools as $USERNAME..."
-
-    # Working Go tools
-    GO_TOOLS_WORKING=(
-        "github.com/projectdiscovery/httpx/cmd/httpx@latest"
-        "github.com/projectdiscovery/subfinder/v2/cmd/subfinder@latest"
-        "github.com/projectdiscovery/dnsx/cmd/dnsx@latest"
-        "github.com/ffuf/ffuf/v2@latest" 
-        "github.com/OJ/gobuster/v3@latest" 
-        "github.com/ropnop/kerbrute@latest"
-        "github.com/jpillora/chisel@latest" 
-        # Removed: "github.com/bp0lr/gauplus@latest" (Not essential, replaced by Burp/Manual)
-        # Removed: "github.com/projectdiscovery/naabu/v2/cmd/naabu@latest" (Replaced by masscan/apt)
-        "github.com/nicocha30/ligolo-ng/cmd/proxy@latest"
-        "github.com/nicocha30/ligolo-ng/cmd/agent@latest"
-    )
-    
-    # Problematic Go tools (require newer Go or have issues)
-    GO_TOOLS_PROBLEMATIC=(
-        "github.com/projectdiscovery/nuclei/v3/cmd/nuclei@latest"  # Requires Go 1.24+
-        # Removed: "github.com/projectdiscovery/katana/cmd/katana@latest" (Dependency conflict, replaced by httpx/gospider)
-    )
-
-    export GOPATH="$USER_HOME/go"
-    mkdir -p "$GOPATH"/{bin,pkg,src}
-    chown -R "$USERNAME":"$USERNAME" "$GOPATH"
-
-    # Install working tools first
-    for tool_path in "${GO_TOOLS_WORKING[@]}"; do
-        tool_name=$(basename "$tool_path" | cut -d'@' -f1 | awk -F'/' '{print $NF}')
-        if [[ ! -f "$GOPATH/bin/$tool_name" ]]; then
-            log_info "Installing $tool_name..."
-            sudo -u "$USERNAME" bash -c "export GOPATH='$GOPATH'; export PATH='/usr/local/go/bin:\$PATH:\$GOPATH/bin'; go install -v '$tool_path'" 2>&1 | tee -a /var/log/shellshock-install.log || log_warn "Failed to install $tool_name"
-        else
-            log_skip "$tool_name already installed"
-        fi
-    done
-    
-    # Try problematic tools with better error handling
-    log_info "Attempting to install tools that may require newer Go..."
-    for tool_path in "${GO_TOOLS_PROBLEMATIC[@]}"; do
-        tool_name=$(basename "$tool_path" | cut -d'@' -f1 | awk -F'/' '{print $NF}')
-        if [[ ! -f "$GOPATH/bin/$tool_name" ]]; then
-            log_info "Installing $tool_name (may fail with Go 1.21)..."
-            sudo -u "$USERNAME" bash -c "export GOPATH='$GOPATH'; export PATH='/usr/local/go/bin:\$PATH:\$GOPATH/bin'; go install -v '$tool_path'" 2>&1 | tee -a /var/log/shellshock-install.log || log_warn "$tool_name failed (likely needs Go 1.24+)"
-        else
-            log_skip "$tool_name already installed"
-        fi
-    done
-    
-    # Removed: windapsearch custom installation logic (Replaced by ldap-utils/ldapdomaindump)
-
-    chown -R "$USERNAME":"$USERNAME" "$GOPATH" 2>/dev/null || true
-else
-    log_warn "Go not available - skipping Go-based tools"
-fi
-
-# Ruby tools
-if command_exists gem; then
-    log_progress "Installing Ruby-based tools..."
-
-    RUBY_TOOLS=("one_gadget" "haiti-hash" "evil-winrm")
-
-    for tool in "${RUBY_TOOLS[@]}"; do
-        if ! gem list -i "^${tool}$" &>/dev/null; then
-            gem install "$tool" 2>&1 | tee -a /var/log/shellshock-install.log || log_warn "Failed to install $tool"
-        else
-            log_skip "$tool already installed"
-        fi
-    done
-else
-    log_warn "Ruby not available - skipping Ruby-based tools"
-fi
-
-# Ysoserial
-if command_exists java; then
-    if [[ ! -f "$USER_HOME/tools/ysoserial.jar" ]]; then
-        log_info "Downloading ysoserial.jar..."
-        safe_download "https://github.com/frohoff/ysoserial/releases/latest/download/ysoserial-all.jar" "$USER_HOME/tools/ysoserial.jar"
+for tool in "${RUBY_TOOLS[@]}"; do
+    if gem list -i "$tool" &>/dev/null; then
+        log_skip "$tool already installed"
     else
-        log_skip "ysoserial.jar already exists"
-    fi
-else
-    log_warn "Java not detected - skipping ysoserial download"
-fi
-
-# ============================================
-# PHASE 4.5: WINDOWS BINARIES (ROBUST DOWNLOADS)
-# ============================================
-log_progress "Phase 4.5: Compiling & Downloading Windows Binaries"
-
-mkdir -p "$USER_HOME"/tools/windows
-
-# --- RunasCs.exe (Download ZIP via API for reliability) ---
-RUNASCS_EXE="$USER_HOME/tools/windows/RunasCs.exe"
-RUNASCS_DIR="$USER_HOME/tools/windows/RunasCs-temp"
-
-if [[ ! -f "$RUNASCS_EXE" ]]; then
-    log_info "Downloading RunasCs.exe using GitHub API lookup..."
-    
-    # Use API lookup to get the latest ZIP URL
-    ZIP_URL=$(curl -s https://api.github.com/repos/antonioCoco/RunasCs/releases/latest | grep browser_download_url | grep RunasCs.zip | cut -d '"' -f 4)
-    
-    if [[ -n "$ZIP_URL" ]]; then
-        if safe_download "$ZIP_URL" "/tmp/RunasCs.zip"; then
-            mkdir -p "$RUNASCS_DIR"
-            unzip -qq "/tmp/RunasCs.zip" -d "$RUNASCS_DIR" 2>&1 | tee -a /var/log/shellshock-install.log || log_warn "Failed to unzip RunasCs"
-            rm -f "/tmp/RunasCs.zip"
-            
-            # Use the pre-compiled EXE if present, otherwise try to compile the C source
-            if [[ -f "$RUNASCS_DIR/RunasCs.exe" ]]; then
-                 cp "$RUNASCS_DIR/RunasCs.exe" "$USER_HOME/tools/windows/"
-                 log_info "RunasCs.exe installed from pre-compiled binary."
-            elif [[ -f "$RUNASCS_DIR/RunasCs.c" ]]; then
-                 # Fallback to compilation if binary isn't in the zip
-                 log_warn "Pre-compiled RunasCs.exe not found in ZIP. Falling back to source compilation..."
-                 if command_exists x86_64-w64-mingw32-gcc; then
-                     if x86_64-w64-mingw32-gcc "$RUNASCS_DIR/RunasCs.c" -o "$RUNASCS_EXE" -lwininet -lws2_32 -static -s -O2 2>&1 | tee -a /var/log/shellshock-install.log; then
-                         log_info "RunasCs.exe compiled successfully."
-                     else
-                         log_warn "RunasCs compilation failed (non-critical)."
-                     fi
-                 fi
-            fi
-            rm -rf "$RUNASCS_DIR"
+        if gem install "$tool" 2>&1 | tee -a "$LOG_FILE"; then
+            log_info "Installed: $tool"
         else
-            log_warn "RunasCs download failed (Non-Critical)"
+            log_warn "Failed to install: $tool"
         fi
-    else
-        log_warn "RunasCs GitHub API URL lookup failed. Skipping."
     fi
-else
-    log_skip "RunasCs.exe already exists"
-fi
+done
 
-# --- SharpHound.exe (Try multiple sources) ---
-SHARPHOUND_EXE="$USER_HOME/tools/windows/SharpHound.exe"
-if [[ ! -f "$SHARPHOUND_EXE" ]]; then
-    # Try 1: APT package location
-    SHARPHOUND_APT_PATH="/usr/share/sharphound/SharpHound.exe"
-    if [[ -f "$SHARPHOUND_APT_PATH" ]]; then
-        log_info "Copying SharpHound.exe from APT share location..."
-        cp "$SHARPHOUND_APT_PATH" "$USER_HOME/tools/windows/" 2>/dev/null || log_warn "Failed to copy SharpHound.exe from APT directory."
+# ============================================
+# PHASE 8: GO TOOLS (OFFICIAL SOURCES ONLY)
+# ============================================
+log_section "Phase 8: Installing Go Security Tools"
+
+# Array of Go tools with full package paths
+declare -A GO_TOOLS=(
+    ["httpx"]="github.com/projectdiscovery/httpx/cmd/httpx@latest"
+    ["subfinder"]="github.com/projectdiscovery/subfinder/v2/cmd/subfinder@latest"
+    ["dnsx"]="github.com/projectdiscovery/dnsx/cmd/dnsx@latest"
+    ["nuclei"]="github.com/projectdiscovery/nuclei/v3/cmd/nuclei@latest"
+    ["ffuf"]="github.com/ffuf/ffuf/v2@latest"
+    ["gobuster"]="github.com/OJ/gobuster/v3@latest"
+    ["kerbrute"]="github.com/ropnop/kerbrute@latest"
+    ["chisel"]="github.com/jpillora/chisel@latest"
+    ["ligolo-ng"]="github.com/nicocha30/ligolo-ng/cmd/proxy@latest"
+)
+
+log_info "Installing Go tools (this may take a while)..."
+for tool_name in "${!GO_TOOLS[@]}"; do
+    tool_path="${GO_TOOLS[$tool_name]}"
+    if [[ -f "$USER_HOME/go/bin/$tool_name" ]]; then
+        log_skip "$tool_name already installed"
     else
-        # Try 2: Download from GitHub releases
-        log_info "Downloading SharpHound.exe from GitHub releases..."
-        SHARPHOUND_URL=$(curl -s https://api.github.com/repos/BloodHoundAD/SharpHound/releases/latest | grep "browser_download_url.*SharpHound-v.*\.zip" | cut -d '"' -f 4 | head -n1)
-        
-        if [[ -n "$SHARPHOUND_URL" ]]; then
-            if safe_download "$SHARPHOUND_URL" "/tmp/SharpHound.zip"; then
-                unzip -qq -o "/tmp/SharpHound.zip" -d "/tmp/sharphound-extract" 2>&1 | tee -a /var/log/shellshock-install.log
-                
-                # Find the exe in the extracted files
-                SHARPHOUND_EXTRACTED=$(find /tmp/sharphound-extract -name "SharpHound.exe" | head -n1)
-                if [[ -n "$SHARPHOUND_EXTRACTED" ]]; then
-                    cp "$SHARPHOUND_EXTRACTED" "$USER_HOME/tools/windows/"
-                    log_info "SharpHound.exe downloaded and installed"
-                else
-                    log_warn "SharpHound.exe not found in downloaded archive"
-                fi
-                
-                rm -rf /tmp/SharpHound.zip /tmp/sharphound-extract
-            fi
+        log_info "Installing $tool_name..."
+        if su - "$USERNAME" -c "export PATH=/usr/local/go/bin:\$HOME/go/bin:\$PATH && go install -v $tool_path" 2>&1 | tee -a "$LOG_FILE"; then
+            log_info "✓ $tool_name installed"
         else
-            log_warn "Could not find SharpHound download URL"
-        fi
-        
-        # Try 3: Fallback to known compiled binaries repo
-        if [[ ! -f "$SHARPHOUND_EXE" ]]; then
-            log_info "Trying fallback: Ghostpack compiled binaries repo..."
-            safe_download "https://github.com/r3motecontrol/Ghostpack-CompiledBinaries/raw/master/SharpHound.exe" "$USER_HOME/tools/windows/SharpHound.exe" || log_warn "Fallback download also failed"
+            log_warn "Failed to install $tool_name"
         fi
     fi
-else
-    log_skip "SharpHound.exe already exists"
-fi
-
-# --- Seatbelt.exe (Build from Source) ---
-SEATBELT_EXE="$USER_HOME/tools/windows/Seatbelt.exe"
-if [[ ! -f "$SEATBELT_EXE" ]]; then
-    log_info "Attempting to build Seatbelt from source..."
-    
-    # Check if dotnet is available
-    if command_exists dotnet; then 
-        SEATBELT_SRC_DIR="$USER_HOME/tools/windows/Seatbelt-src"
-        if safe_clone "https://github.com/GhostPack/Seatbelt.git" "$SEATBELT_SRC_DIR"; then
-            cd "$SEATBELT_SRC_DIR"
-            
-            # Try to build
-            log_info "Building Seatbelt (this may take a minute)..."
-            if dotnet build -c Release 2>&1 | tee -a /var/log/shellshock-install.log; then
-                # Find the built executable (check multiple possible locations)
-                SEATBELT_BUILT=$(find "$SEATBELT_SRC_DIR" -name "Seatbelt.exe" -type f | head -n1)
-                
-                if [[ -n "$SEATBELT_BUILT" ]]; then
-                    cp "$SEATBELT_BUILT" "$USER_HOME/tools/windows/"
-                    log_info "Seatbelt.exe successfully built and copied"
-                else
-                    log_warn "Seatbelt built but EXE not found in expected location"
-                fi
-            else
-                log_warn "Seatbelt compilation failed"
-            fi
-            
-            rm -rf "$SEATBELT_SRC_DIR"
-        fi
-    else
-        log_warn ".NET SDK not installed - cannot build Seatbelt"
-        log_warn "Install with: sudo apt install dotnet-sdk-8.0"
-        
-        # Try to download pre-compiled version
-        log_info "Attempting to download pre-compiled Seatbelt..."
-        SEATBELT_URL="https://github.com/r3motecontrol/Ghostpack-CompiledBinaries/raw/master/Seatbelt.exe"
-        if safe_download "$SEATBELT_URL" "$SEATBELT_EXE"; then
-            log_info "Downloaded pre-compiled Seatbelt.exe"
-        else
-            log_warn "Could not download Seatbelt"
-        fi
-    fi
-else
-    log_skip "Seatbelt.exe already exists"
-fi
-
-
-# Download PowerView.ps1 (Still stable, keeping original link)
-safe_download "https://github.com/PowerShellMafia/PowerSploit/raw/master/Recon/PowerView.ps1" "$USER_HOME/tools/windows/PowerView.ps1"
-
-# Rubeus URL check (Keeping original for integrity, assumes stability)
-safe_download "https://github.com/r3motecontrol/Ghostpack-CompiledBinaries/raw/master/Rubeus.exe" "$USER_HOME/tools/windows/Rubeus.exe"
-
-chown -R "$USERNAME":"$USERNAME" "$USER_HOME/tools/windows" 2>/dev/null || true
+done
 
 # ============================================
-# PHASE 5: WORDLISTS
+# PHASE 9: GIT-BASED TOOLS (TOOL SWAPS)
 # ============================================
-log_progress "Phase 5: Downloading Wordlists"
+log_section "Phase 9: Installing Git-Based Tools"
 
-# Clone SecLists
-if [[ ! -d "$USER_HOME/tools/wordlists/SecLists/.git" ]]; then
-    log_info "Cloning SecLists (Shallow clone, SSL ignored)..."
-    safe_clone "https://github.com/danielmiessler/SecLists.git" "$USER_HOME/tools/wordlists/SecLists"
+# Responder (git clone instead of pipx)
+if [[ ! -d "$USER_HOME/tools/repos/Responder" ]]; then
+    log_info "Installing Responder..."
+    safe_clone "https://github.com/lgandx/Responder.git" "$USER_HOME/tools/repos/Responder"
 else
-    safe_clone "https://github.com/danielmiessler/SecLists.git" "$USER_HOME/tools/wordlists/SecLists"
+    log_skip "Responder already installed"
 fi
 
-# Decompress rockyou.txt
-ROCKYOU_GZ="/usr/share/wordlists/rockyou.txt.gz"
-ROCKYOU_TXT="/usr/share/wordlists/rockyou.txt"
-
-if [[ -f "$ROCKYOU_GZ" ]] && [[ ! -f "$ROCKYOU_TXT" ]]; then
-    log_info "Decompressing rockyou.txt..."
-    gunzip "$ROCKYOU_GZ" || true
-elif [[ -f "$ROCKYOU_TXT" ]]; then
-    log_skip "rockyou.txt already decompressed"
+# enum4linux-ng (git clone instead of pipx)
+if [[ ! -d "$USER_HOME/tools/repos/enum4linux-ng" ]]; then
+    log_info "Installing enum4linux-ng..."
+    safe_clone "https://github.com/cddmp/enum4linux-ng.git" "$USER_HOME/tools/repos/enum4linux-ng"
+    su - "$USERNAME" -c "cd $USER_HOME/tools/repos/enum4linux-ng && pip3 install -r requirements.txt --break-system-packages" 2>&1 | tee -a "$LOG_FILE" || true
 else
-    log_warn "rockyou.txt.gz not found in /usr/share/wordlists"
+    log_skip "enum4linux-ng already installed"
 fi
-
-# Create convenience symlinks
-if [[ ! -L "$USER_HOME/SecLists" ]] && [[ -d "$USER_HOME/tools/wordlists/SecLists" ]]; then
-    ln -sf "$USER_HOME/tools/wordlists/SecLists" "$USER_HOME/SecLists" 2>/dev/null || true
-fi
-if [[ ! -L "$USER_HOME/tools/wordlists/rockyou.txt" ]] && [[ -f "$ROCKYOU_TXT" ]]; then
-    ln -sf "$ROCKYOU_TXT" "$USER_HOME/tools/wordlists/rockyou.txt" 2>/dev/null || true
-fi
-
-chown -R "$USERNAME":"$USERNAME" "$USER_HOME/tools/wordlists" 2>/dev/null || true
 
 # ============================================
-# PHASE 6: REPOSITORY CLONING
+# PHASE 10: ESSENTIAL REPOSITORIES
 # ============================================
-log_progress "Phase 6: Cloning Essential Repositories (Shallow clone, SSL ignored)"
+log_section "Phase 10: Cloning Essential Repositories"
 
 REPOS=(
-    "https://github.com/swisskyrepo/PayloadsAllTheThings.git"
-    "https://github.com/peass-ng/PEASS-ng.git"
-    "https://github.com/HackTricks-wiki/HackTricks.git"
-    "https://github.com/Tib3rius/AutoRecon.git"
-    "https://github.com/fortra/impacket.git"
-    "https://github.com/projectdiscovery/nuclei-templates.git"
-    "https://github.com/internetwache/GitTools.git"
-    "https://github.com/AonCyberLabs/Windows-Exploit-Suggester.git"
-    "https://github.com/PowerShellMafia/PowerSploit.git"
-    "https://github.com/GTFOBins/GTFOBins.github.io.git"
-    "https://github.com/LOLBAS-Project/LOLBAS.git"
-    "https://github.com/RsaCtfTool/RsaCtfTool.git"
-    "https://github.com/brightio/penelope.git"
-    # Removed: "https://github.com/lgandx/Responder.git" - Handled via dedicated install block in Phase 4
+    "https://github.com/danielmiessler/SecLists.git|SecLists"
+    "https://github.com/carlospolop/PEASS-ng.git|PEASS-ng"
+    "https://github.com/brightio/penelope.git|penelope"
+    "https://github.com/swisskyrepo/PayloadsAllTheThings.git|PayloadsAllTheThings"
 )
 
-for repo in "${REPOS[@]}"; do
-    name=$(basename "$repo" .git)
-    safe_clone "$repo" "$USER_HOME/tools/repos/$name"
+for repo_entry in "${REPOS[@]}"; do
+    IFS='|' read -r url name <<< "$repo_entry"
+    safe_clone "$url" "$USER_HOME/tools/repos/$name"
 done
 
-# Create convenience symlinks
-if [[ -f "$USER_HOME/tools/repos/PEASS-ng/linPEAS/linpeas.sh" ]] && [[ ! -L "$USER_HOME/linpeas.sh" ]]; then
-    ln -sf "$USER_HOME/tools/repos/PEASS-ng/linPEAS/linpeas.sh" "$USER_HOME/linpeas.sh" 2>/dev/null || true
-    log_info "Created linpeas.sh symlink"
-fi
-
-WINPEAS_PATH=""
-# Check multiple possible locations for winPEAS
-if [[ -f "$USER_HOME/tools/repos/PEASS-ng/winPEAS/winPEASx64.exe" ]]; then
-    WINPEAS_PATH="$USER_HOME/tools/repos/PEASS-ng/winPEAS/winPEASx64.exe"
-elif [[ -f "$USER_HOME/tools/repos/PEASS-ng/winPEAS/winPEAS.exe" ]]; then
-    WINPEAS_PATH="$USER_HOME/tools/repos/PEASS-ng/winPEAS/winPEAS.exe"
-elif [[ -f "$USER_HOME/tools/repos/PEASS-ng/winPEAS/winPEASx64_ofs.exe" ]]; then
-    WINPEAS_PATH="$USER_HOME/tools/repos/PEASS-ng/winPEAS/winPEASx64_ofs.exe"
-fi
-
-if [[ -n "$WINPEAS_PATH" ]] && [[ ! -L "$USER_HOME/winpeas.exe" ]]; then
-    ln -sf "$WINPEAS_PATH" "$USER_HOME/winpeas.exe" 2>/dev/null || true
-    log_info "Created winpeas.exe symlink"
-elif [[ -z "$WINPEAS_PATH" ]]; then
-    log_warn "winPEAS.exe not found in PEASS-ng repository - symlink not created"
-fi
-
-if [[ -f "$USER_HOME/tools/repos/penelope/penelope.py" ]] && [[ ! -L "$USER_HOME/penelope.py" ]]; then
-    ln -sf "$USER_HOME/tools/repos/penelope/penelope.py" "$USER_HOME/penelope.py" 2>/dev/null || true
-    chmod +x "$USER_HOME/tools/repos/penelope/penelope.py" 2>/dev/null || true
-    log_info "Created penelope.py symlink"
-fi
-
-chown -R "$USERNAME":"$USERNAME" "$USER_HOME/tools/repos" 2>/dev/null || true
-
 # ============================================
-# PHASE 7: DOTFILES & CONFIGURATION
+# PHASE 11: WINDOWS BINARIES
 # ============================================
-log_progress "Phase 7: Creating Shell Configuration & Scripts"
-
-mkdir -p "$USER_HOME/scripts" "$USER_HOME/Desktop" "$USER_HOME/engagements"
-
-# Create .zshrc
-if [[ ! -f "$USER_HOME/.zshrc" ]] || ! grep -q "ShellShock v1.01" "$USER_HOME/.zshrc"; then
-    log_info "Creating .zshrc configuration..."
-    cat > "$USER_HOME/.zshrc" << 'ZSHRC_EOF'
-# ============================================
-# ShellShock v1.05 - Zsh Configuration (NTP/SSL Fixed)
-# ============================================
-
-export ZSH="$HOME/.oh-my-zsh"
-ZSH_THEME="powerlevel10k/powerlevel10k"
-
-# Zsh plugins
-plugins=(
-    git
-    zsh-autosuggestions
-    zsh-syntax-highlighting
-    docker
-    sudo
-    history
-    command-not-found
-)
-
-if [[ -f "$ZSH/oh-my-zsh.sh" ]]; then
-    source $ZSH/oh-my-zsh.sh
-fi
-
-# Load Powerlevel10k configuration
-[[ -f ~/.p10k.zsh ]] && source ~/.p10k.zsh
-
-# Environment variables
-# PATH is updated here to include the official Go path
-export PATH=/usr/local/go/bin:$HOME/go/bin:$HOME/.local/bin:$PATH
-export EDITOR=vim
-export GOPATH=$HOME/go
-
-# Auto-update nuclei templates in background (silent)
-(nuclei -update-templates -silent &>/dev/null &)
-
-# Welcome banner (interactive shells only, not in tmux)
-if [[ -o interactive ]] && [[ -z "$TMUX" ]]; then
-    echo -e "\033[1;36m"
-    cat << 'BANNER'
-    ╔════════════════════════════════════════════════════════╗
-    ║           SHELLSHOCK v1.05 - LOCKED & LOADED           ║
-    ║                                                        ║
-    ║ Quick:     tools | repos | win | update | timesync     ║
-    ║ Engage:    newengagement <name>                        ║
-    ║ Scan:      quickscan <target>                          ║
-    ║ Reset:     ~/Desktop/RESET_SHELLSHOCK.sh               ║
-    ╚════════════════════════════════════════════════════════╝
-BANNER
-    echo -e "\033[0m"
-fi
-
-# ============================================
-# SYSTEM ALIASES
-# ============================================
-alias ll='ls -lah --color=auto'
-alias ...='cd ../..'
-alias ..='cd ..'
-alias c='clear'
-alias h='history'
-alias please='sudo'
-alias rl='rlwrap nc'
-alias python='python3'
-alias timesync='sudo chronyc makestep; timedatectl'
-
-# ============================================
-# PENTESTING ALIASES
-# ============================================
-alias nmap-quick='nmap -sV -sC -O'
-alias nmap-full='nmap -sV -sC -O -p- --min-rate 1000'
-alias nmap-udp='nmap -sU -sV'
-alias serve='python3 -m http.server'
-alias serve80='sudo python3 -m http.server 80'
-alias myip='curl -s ifconfig.me && echo'
-alias ports='netstat -tulanp'
-alias listening='lsof -i -P -n | grep LISTEN'
-alias hash='hashid'
-alias shell='python3 ~/penelope.py'
-
-# ============================================
-# CRACKING TOOLS
-# ============================================
-alias john='john --wordlist=~/tools/wordlists/rockyou.txt'
-alias hashcat='hashcat'
-alias sqlmap='sqlmap'
-
-# ============================================
-# EXPLOIT DATABASE
-# ============================================
-alias searchsploit='searchsploit'
-alias ss='searchsploit'
-alias ssx='searchsploit -x'
-alias ssm='searchsploit -m'
-alias ssu='searchsploit -u'
-
-# ============================================
-# TOOL SHORTCUTS
-# ============================================
-alias nxc='netexec'
-alias cme='netexec'
-alias smb='netexec smb'
-alias winrm='netexec winrm'
-alias bloodhound='bloodhound-python'
-alias peas='linpeas.sh'
-alias ysoserial='java -jar ~/tools/ysoserial.jar'
-alias evil='evil-winrm'
-alias ldump='ldapdomaindump'
-alias runas='wine ~/tools/windows/RunasCs.exe'
-
-# ============================================
-# WINDOWS TOOLS
-# ============================================
-alias rubeus='wine ~/tools/windows/Rubeus.exe'
-alias sharphound='wine ~/tools/windows/SharpHound.exe'
-alias seatbelt='wine ~/tools/windows/Seatbelt.exe'
-
-# ============================================
-# IMPACKET SHORTCUTS
-# ============================================
-alias secretsdump='secretsdump.py'
-alias getnpusers='GetNPUsers.py'
-alias getuserspns='GetUserSPNs.py'
-alias psexec='psexec.py'
-alias smbexec='smbexec.py'
-alias wmiexec='wmiexec.py'
-alias ntlmrelayx='ntlmrelayx.py'
-
-# ============================================
-# WORDLIST SHORTCUTS
-# ============================================
-alias wl-common='~/tools/wordlists/SecLists/Discovery/Web-Content/common.txt'
-alias wl-dir='~/tools/wordlists/SecLists/Discovery/Web-Content/directory-list-2.3-medium.txt'
-alias wl-users='~/tools/wordlists/SecLists/Usernames/Names/names.txt'
-alias wl-pass='~/tools/wordlists/rockyou.txt'
-alias wl-params='~/tools/wordlists/SecLists/Discovery/Web-Content/burp-parameter-names.txt'
-
-# ============================================
-# CHISEL TUNNELING
-# ============================================
-alias chisel-server='chisel server --reverse --port 8000'
-alias chisel-client='chisel client'
-
-# ============================================
-# COMBO ATTACKS
-# ============================================
-alias mitm-relay='sudo mitm6 -d DOMAIN & ntlmrelayx.py -t ldaps://DC-IP -wh attacker-ip --delegate-access'
-
-# ============================================
-# NAVIGATION SHORTCUTS
-# ============================================
-alias tools='cd ~/tools'
-alias repos='cd ~/tools/repos'
-alias wordlists='cd ~/tools/wordlists'
-alias scripts='cd ~/tools/scripts'
-alias engagements='cd ~/engagements'
-alias win='cd ~/tools/windows'
-
-# VirtualBox shared folder (if present)
-[[ -d "/media/sf_ctf-tools" ]] && alias host='cd /media/sf_ctf-tools'
-[[ -d "/media/ctf-tools" ]] && alias host='cd /media/ctf-tools'
-
-# ============================================
-# CUSTOM FUNCTIONS
-# ============================================
-
-# Create new engagement directory structure
-newengagement() {
-    if [[ -z "$1" ]]; then
-        echo "Usage: newengagement <name>"
-        return 1
-    fi
-    
-    local name=$(echo "$1" | tr '[:upper:]' '[:lower:]' | tr -c '[:alnum:]_-' '-')
-    local path="$HOME/engagements/$name"
-
-    mkdir -p "$path"/{recon,scans,exploits,loot,notes,screenshots}
-    cd "$path" || return 1
-    echo "# $1 Engagement" > notes/README.md
-    echo "Created: $(date)" >> notes/README.md
-    echo "[+] Created engagement: $1"
-    ls -la
-}
-
-# Quick nmap scan with timestamped output
-quickscan() {
-    if [[ -z "$1" ]]; then
-        echo "Usage: quickscan <target>"
-        return 1
-    fi
-    
-    local timestamp=$(date +%Y%m%d_%H%M%S)
-    local output_file="quickscan_${timestamp}_$1"
-    nmap -sV -sC -O -oA "$output_file" "$1"
-}
-
-# Universal archive extractor
-extract() {
-    if [[ ! -f $1 ]]; then
-        echo "'$1' is not a valid file" >&2
-        return 1
-    fi
-    
-    local file="$1"
-
-    case "$file" in
-        *.tar.bz2) tar xjf "$file" ;;
-        *.tar.gz) tar xzf "$file" ;;
-        *.bz2) bunzip2 "$file" ;;
-        *.rar) unrar e "$file" ;;
-        *.gz) gunzip "$file" ;;
-        *.tar) tar xf "$file" ;;
-        *.tbz2) tar xjf "$file" ;;
-        *.tgz) tar xzf "$file" ;;
-        *.zip) unzip "$file" ;;
-        *.Z) uncompress "$file" ;;
-        *.7z) 7z x "$file" ;;
-        *) echo "'$1' cannot be extracted via extract()" >&2; return 1 ;;
-    esac
-}
-ZSHRC_EOF
-
-    chown "$USERNAME":"$USERNAME" "$USER_HOME/.zshrc"
-    log_info ".zshrc created with comprehensive configuration"
-else
-    log_skip ".zshrc already configured"
-fi
-
-# Create update-tools.sh script
-if [[ ! -f "$USER_HOME/scripts/update-tools.sh" ]]; then
-    log_info "Creating update-tools.sh..."
-    cat > "$USER_HOME/scripts/update-tools.sh" << 'UPDATE_SCRIPT_EOF'
-#!/bin/bash
-set -euo pipefail
-# ShellShock v1.05 - Tool Update Script
-
-RED='\033[0;31m'
-GREEN='\033[0;32m'
-YELLOW='\033[1;33m'
-NC='\033[0m'
-
-log_info() { echo -e "${GREEN}[+]${NC} $1"; }
-log_warn() { echo -e "${YELLOW}[!]${NC} $1"; }
-
-echo -e "\n${GREEN}========================================${NC}"
-echo -e "${GREEN}    SHELLSHOCK TOOL & SYSTEM UPDATE      ${NC}"
-echo -e "${GREEN}========================================${NC}"
-
-# Set Git to temporarily ignore SSL errors for updates
-git config --global http.sslVerify false
-
-log_info "Updating system packages..."
-sudo apt update && sudo apt upgrade -y || log_warn "System update partially failed"
-
-log_info "Updating Python tools (pip3 system-wide)..."
-# NOTE: Responder/Certipy-ad are now managed by PIPX below
-pip3 install -U --break-system-packages \
-    impacket bloodhound bloodyAD \
-    pypykatz lsassy pwntools ROPgadget truffleHog || log_warn "pip3 update partially failed"
-
-log_info "Updating pipx tools..."
-pipx upgrade-all || log_warn "pipx update failed"
-
-log_info "Updating Go tools (Requires GOPATH set)..."
-# Use the official path set during bootstrap
-export GOPATH=$HOME/go
-export PATH=/usr/local/go/bin:$PATH:$GOPATH/bin
-
-GO_TOOLS=(
-    "github.com/projectdiscovery/httpx/cmd/httpx@latest"
-    "github.com/projectdiscovery/nuclei/v3/cmd/nuclei@latest"
-    "github.com/projectdiscovery/subfinder/v2/cmd/subfinder@latest"
-    "github.com/projectdiscovery/dnsx/cmd/dnsx@latest"
-    "github.com/ffuf/ffuf/v2@latest"
-    "github.com/OJ/gobuster/v3@latest"
-    "github.com/ropnop/kerbrute@latest"
-    "github.com/jpillora/chisel@latest"
-    # Removed: naabu, katana, gauplus, windapsearch (swapped/deprecated)
-    "github.com/nicocha30/ligolo-ng/cmd/proxy@latest"
-    "github.com/nicocha30/ligolo-ng/cmd/agent@latest"
-)
-
-for tool_path in "${GO_TOOLS[@]}"; do
-    tool_name=$(basename "$tool_path" | cut -d'@' -f1 | awk -F'/' '{print $NF}')
-    echo "  > Updating $tool_name..."
-    go install -v "$tool_path" || log_warn "Failed to update $tool_name"
-done
-
-log_info "Updating nuclei templates..."
-nuclei -update-templates || log_warn "Nuclei template update failed"
-
-log_info "Updating Ruby tools..."
-gem update one_gadget haiti-hash evil-winrm || log_warn "Ruby tools update failed"
-
-log_info "Updating searchsploit database..."
-searchsploit -u -v || log_warn "searchsploit update failed"
-
-log_info "Updating git repositories (Shallow pull, SSL ignored)..."
-cd ~/tools/repos || { log_warn "Could not find ~/tools/repos"; exit 1; }
-
-find . -maxdepth 1 -type d -name ".*" -prune -o -type d ! -name . | while read -r dir; do
-    if [[ -d "$dir/.git" ]]; then
-        echo -e "[*] Updating $(basename "$dir")"
-        ( cd "$dir" && git pull --depth 1 ) || log_warn "Failed to update $(basename "$dir")"
-    fi
-done
-
-log_info "Forcing immediate system time synchronization..."
-sudo chronyc makestep || log_warn "chronyc makestep failed. Check network connection."
-
-log_info "Restoring Git SSL verification setting..."
-git config --global --unset http.sslVerify || true
-
-echo -e "\n${GREEN}Update complete! Please check log for warnings.${NC}"
-UPDATE_SCRIPT_EOF
-
-    chmod +x "$USER_HOME/scripts/update-tools.sh"
-    chown "$USERNAME":"$USERNAME" "$USER_HOME/scripts/update-tools.sh"
-    log_info "update-tools.sh created"
-else
-    log_skip "update-tools.sh already exists"
-fi
-
-# ============================================
-# PHASE 8: RESET SCRIPT
-# ============================================
-log_progress "Phase 8: Creating System Reset Script"
-
-if [[ ! -f "$USER_HOME/Desktop/RESET_SHELLSHOCK.sh" ]]; then
-    log_info "Creating RESET_SHELLSHOCK.sh..."
-    cat > "$USER_HOME/Desktop/RESET_SHELLSHOCK.sh" << 'RESET_SCRIPT_EOF'
-#!/bin/bash
-set -euo pipefail
-# ShellShock v1.02 - System Reset Script
-
-RED='\033[0;31m'
-GREEN='\033[0;32m'
-YELLOW='\033[1;33m'
-CYAN='\033[0;36m'
-NC='\033[0m'
-
-echo -e "${CYAN}SHELLSHOCK v1.02 — SYSTEM RESET${NC}\n"
-echo -e "${YELLOW}This will:${NC}"
-echo "  • Archive Zsh history and live terminal buffers"
-echo "  • Backup and clear engagement directories"
-echo "  • Reset /etc/hosts to defaults"
-echo "  • Clear Kerberos tickets"
-echo "  • Wipe cached credentials (Responder, NetExec)"
-echo "  • Clear SSH known_hosts"
-echo "  • Restore APT and Git SSL verification"
-echo ""
-read -rp "Continue? (type 'yes' to confirm): " confirm
-[[ "$confirm" != "yes" ]] && exit 0
-
-ARCHIVE_DIR="$HOME/archives/$(date +%Y%m%d_%H%M%S)"
-mkdir -p "$ARCHIVE_DIR/history"
-
-log() { echo -e "${GREEN}[+]${NC} $1"; }
-
-# Capture Zsh history
-log "Archiving Zsh command history..."
-if [[ -f "$HOME/.zsh_history" ]]; then
-    cp "$HOME/.zsh_history" "$ARCHIVE_DIR/history/zsh_history.txt"
-    perl -pe 's/^: \d+:\d+;//' "$HOME/.zsh_history" > "$ARCHIVE_DIR/history/zsh_clean.txt" 2>/dev/null || true
-    log "Zsh history archived and decoded"
-fi
-
-# Capture all live PTY buffers
-log "Capturing live terminal buffers..."
-pty_count=0
-for pty in /dev/pts/[0-9]*; do
-    [[ ! -e "$pty" ]] && continue
-    owner=$(stat -c %U "$pty" 2>/dev/null || echo "")
-    [[ "$owner" != "$USER" ]] && continue
-    pty_name=$(basename "$pty")
-    timeout 2 sudo script -q -c "cat $pty" /dev/null > "$ARCHIVE_DIR/history/pty_${pty_name}.txt" 2>/dev/null || true
-    ((pty_count++))
-done
-[[ $pty_count -gt 0 ]] && log "Captured $pty_count live terminal buffers"
-
-# Archive engagements
-if [[ -d "$HOME/engagements" ]] && ls -A "$HOME/engagements" &>/dev/null; then
-    log "Archiving engagement directories..."
-    tar -czf "$ARCHIVE_DIR/engagements_backup.tar.gz" -C "$HOME" engagements
-    rm -rf "$HOME/engagements"/*
-    log "Engagements archived and cleared"
-fi
-
-# Reset /etc/hosts
-log "Resetting /etc/hosts..."
-sudo cp /etc/hosts "$ARCHIVE_DIR/hosts.backup" 2>/dev/null || true
-sudo bash -c "cat > /etc/hosts << 'HOSTS_EOF'
-127.0.0.1 localhost
-127.0.1.1 $(hostname)
-::1 localhost ip6-localhost ip6-loopback
-ff02::1 ip6-allnodes
-ff02::2 ip6-allrouters
-HOSTS_EOF"
-log "/etc/hosts reset to defaults"
-
-# Clear Kerberos tickets
-log "Clearing Kerberos tickets..."
-kdestroy -A 2>/dev/null || true
-sudo rm -f /tmp/krb5cc_* 2>/dev/null || true
-log "Kerberos tickets cleared"
-
-# Clear Zsh history
-log "Clearing Zsh history..."
-: > "$HOME/.zsh_history" 2>/dev/null
-history -c 2>/dev/null || true
-log "Zsh history cleared"
-
-# Clear cached credentials
-log "Wiping cached credentials..."
-rm -rf "$HOME/.responder"/* "$HOME/.nxc"/* "$HOME/.cme"/* "$HOME/.netexec"/* 2>/dev/null || true
-log "Cached credentials cleared"
-
-# Clear SSH known_hosts
-log "Clearing SSH known_hosts..."
-: > "$HOME/.ssh/known_hosts" 2>/dev/null || true
-log "SSH known_hosts cleared"
-
-# RESTORE SSL VERIFICATION
-log "Restoring APT and Git SSL verification..."
-sudo rm -f /etc/apt/apt.conf.d/99no-verify-ssl || true
-git config --global --unset http.sslVerify || true
-log "SSL verification restored (Reboot recommended for full effect)"
-
-echo -e "\n${GREEN}RESET COMPLETE${NC}"
-echo -e "Archive location: ${CYAN}$ARCHIVE_DIR${NC}"
-echo -e "History backup: ${CYAN}$ARCHIVE_DIR/history/${NC}\n"
-
-if [[ $pty_count -gt 0 ]]; then
-    echo -e "${YELLOW}Preview of captured terminals (last 10 lines):${NC}"
-    tail -n 10 "$ARCHIVE_DIR/history"/pty_*.txt 2>/dev/null | tail -n 10 || echo "(empty)"
-    echo
-fi
-
-read -rp "Reboot system now? (y/n): " reboot_choice
-[[ "$reboot_choice" =~ ^[Yy]$ ]] && sudo reboot
-RESET_SCRIPT_EOF
-
-    chmod +x "$USER_HOME/Desktop/RESET_SHELLSHOCK.sh"
-    chown "$USERNAME":"$USERNAME" "$USER_HOME/Desktop/RESET_SHELLSHOCK.sh"
-    log_info "RESET_SHELLSHOCK.sh created"
-else
-    log_skip "RESET_SHELLSHOCK.sh already exists"
-fi
-
-# ============================================
-# PHASE 9: VIRTUALBOX GUEST ADDITIONS INSTALLER
-# ============================================
-log_progress "Phase 9: Creating VirtualBox Guest Additions Installer"
-
-if [[ ! -f "$USER_HOME/Desktop/INSTALL_VBOX_ADDITIONS.sh" ]]; then
-    log_info "Creating INSTALL_VBOX_ADDITIONS.sh..."
-    cat > "$USER_HOME/Desktop/INSTALL_VBOX_ADDITIONS.sh" << 'VBOX_INSTALLER_EOF'
-#!/bin/bash
-set -euo pipefail
-# ShellShock v1.02 - VirtualBox Guest Additions Installer
-
-RED='\033[0;31m'
-GREEN='\033[0;32m'
-YELLOW='\033[1;33m'
-BLUE='\033[0;34m'
-CYAN='\033[0;36m'
-NC='\033[0m'
-
-log_info() { echo -e "${GREEN}[+]${NC} $1"; }
-log_warn() { echo -e "${YELLOW}[!]${NC} $1"; }
-log_error() { echo -e "${RED}[-]${NC} $1" >&2; }
-log_progress() { echo -e "${BLUE}[*]${NC} $1"; }
-
-clear
-echo -e "${CYAN}"
-cat << 'BANNER'
-╔══════════════════════════════════════════════════════════╗
-║     VIRTUALBOX GUEST ADDITIONS INSTALLER                  ║
-║     Official ISO Method - Direct from Oracle              ║
-║     ShellShock v1.02                                      ║
-╚══════════════════════════════════════════════════════════╝
-BANNER
-echo -e "${NC}\n"
-
-# Verify VirtualBox environment
-if ! systemd-detect-virt 2>/dev/null | grep -qi "oracle"; then
-    log_error "Not running in VirtualBox environment!"
-    log_error "This installer is only for VirtualBox VMs."
-    exit 1
-fi
-
-# Check if already installed
-if command -v VBoxClient &>/dev/null && VBoxClient --version &>/dev/null 2>&1; then
-    log_info "Guest Additions already installed: $(VBoxClient --version 2>&1 | head -n1)"
-    echo ""
-    read -rp "Reinstall anyway? (y/n): " reinstall
-    [[ "$reinstall" != "y" ]] && [[ "$reinstall" != "Y" ]] && exit 0
-fi
-
-# Install required dependencies
-log_progress "Installing build dependencies..."
-sudo apt update -qq
-sudo apt install -y build-essential dkms linux-headers-"$(uname -r)" wget
-
-# Detect VirtualBox version
-VBOX_VERSION=""
-
-# Fallback to latest from Oracle
-if [[ -z "$VBOX_VERSION" ]]; then
-    log_warn "Could not reliably detect VirtualBox version, fetching latest..."
-    VBOX_VERSION=$(wget -qO- https://download.virtualbox.org/virtualbox/LATEST.TXT 2>/dev/null || echo "7.0.12")
-fi
-
-log_info "Target VirtualBox version: ${GREEN}$VBOX_VERSION${NC}"
-
-ISO_URL="https://download.virtualbox.org/virtualbox/${VBOX_VERSION}/VBoxGuestAdditions_${VBOX_VERSION}.iso"
-ISO_FILE="/tmp/VBoxGuestAdditions_${VBOX_VERSION}.iso"
-MOUNT_POINT="/mnt/vbox-additions"
-
-# Download ISO
-log_progress "Downloading Guest Additions ISO from Oracle..."
-echo "URL: $ISO_URL"
-if ! wget --progress=bar:force --timeout=60 --tries=3 "$ISO_URL" -O "$ISO_FILE"; then
-    log_error "Failed to download ISO! Check version or network."
-    log_warn "Manual download: https://download.virtualbox.org/virtualbox/"
-    exit 1
-fi
-
-log_info "Downloaded: $(du -h "$ISO_FILE" | cut -f1)"
-
-# Prepare mount point
-sudo mkdir -p "$MOUNT_POINT"
-sudo umount "$MOUNT_POINT" 2>/dev/null || true
-
-# Mount ISO
-log_progress "Mounting ISO..."
-sudo mount -o loop "$ISO_FILE" "$MOUNT_POINT"
-
-# Verify installer exists
-if [[ ! -f "$MOUNT_POINT/VBoxLinuxAdditions.run" ]]; then
-    log_error "Installer script not found in ISO! Unmounting and cleaning up."
-    sudo umount "$MOUNT_POINT" 2>/dev/null || true
-    rm -f "$ISO_FILE"
-    exit 1
-fi
-
-# Run installer
-log_progress "Running Guest Additions installer..."
-log_warn "This may take 2-3 minutes and produce warnings (normal)"
-echo ""
-
-sudo "$MOUNT_POINT/VBoxLinuxAdditions.run" || {
-    EXIT_CODE=$?
-    if [[ $EXIT_CODE -eq 2 ]]; then
-        log_warn "Installer returned exit code 2 (this is often normal on success)"
+log_section "Phase 11: Installing Windows Binaries"
+
+mkdir -p "$USER_HOME/tools/windows"
+cd "$USER_HOME/tools/windows"
+
+# SharpHound
+if [[ ! -f "SharpHound.exe" ]]; then
+    log_info "Downloading SharpHound..."
+    SHARPHOUND_URL=$(curl -s https://api.github.com/repos/BloodHoundAD/SharpHound/releases/latest | grep "browser_download_url.*SharpHound.*zip" | head -n 1 | cut -d '"' -f 4)
+    if [[ -n "$SHARPHOUND_URL" ]]; then
+        wget -q "$SHARPHOUND_URL" -O SharpHound.zip
+        unzip -q SharpHound.zip
+        rm SharpHound.zip
+        log_info "✓ SharpHound.exe downloaded"
     else
-        log_error "Installer failed with exit code: $EXIT_CODE"
-        log_warn "Check /var/log/vboxadd-install.log for details"
+        log_warn "Could not fetch SharpHound from GitHub"
     fi
-}
-
-# Cleanup
-log_progress "Cleaning up temporary files..."
-sudo umount "$MOUNT_POINT" 2>/dev/null || true
-sudo rmdir "$MOUNT_POINT" 2>/dev/null || true
-rm -f "$ISO_FILE"
-
-# Verify installation
-if command -v VBoxClient &>/dev/null; then
-    echo ""
-    log_info "${GREEN}Installation successful!${NC}"
-    VBoxClient --version 2>&1 | head -n1
-    
-    # Start VBoxClient services
-    log_progress "Starting VBoxClient services..."
-    
-    pkill -9 -u "$(id -u)" -f VBoxClient 2>/dev/null || true
-    sleep 1
-    
-    VBoxClient --clipboard &>/dev/null &
-    VBoxClient --draganddrop &>/dev/null &
-    VBoxClient --seamless &>/dev/null &
-    VBoxClient --display &>/dev/null &
-    
-    # Configure autostart
-    mkdir -p "$HOME/.config/autostart"
-    
-    cat > "$HOME/.config/autostart/vboxclient-clipboard.desktop" << 'AUTOSTART_CLIPBOARD'
-[Desktop Entry]
-Type=Application
-Exec=/usr/bin/VBoxClient --clipboard
-Hidden=false
-X-GNOME-Autostart-enabled=true
-Name=VBoxClient Clipboard
-Comment=Enable bidirectional clipboard
-AUTOSTART_CLIPBOARD
-
-    cat > "$HOME/.config/autostart/vboxclient-dnd.desktop" << 'AUTOSTART_DND'
-[Desktop Entry]
-Type=Application
-Exec=/usr/bin/VBoxClient --draganddrop
-Hidden=false
-X-GNOME-Autostart-enabled=true
-Name=VBoxClient Drag and Drop
-Comment=Enable drag and drop
-AUTOSTART_DND
-
-    log_info "Autostart configured"
-    
-    echo ""
-    log_info "${GREEN}✓ Bidirectional clipboard${NC}"
-    log_info "${GREEN}✓ Drag & drop${NC}"
-    log_info "${GREEN}✓ Auto-resize display${NC}"
-    log_info "${GREEN}✓ Seamless mode${NC}"
-    
-    echo ""
-    log_warn "${YELLOW}Reboot recommended for full functionality${NC}"
-    echo ""
-    read -rp "Reboot now? (y/n): " reboot_choice
-    [[ "$reboot_choice" =~ ^[Yy]$ ]] && sudo reboot
-    
 else
-    echo ""
-    log_error "Installation verification failed!"
-    log_warn "VBoxClient command not found"
-    log_warn "Check /var/log/vboxadd-install.log for details"
-    exit 1
+    log_skip "SharpHound.exe already present"
 fi
+
+# Seatbelt
+if [[ ! -f "Seatbelt.exe" ]]; then
+    log_info "Downloading Seatbelt..."
+    wget -q https://github.com/r3motecontrol/Ghostpack-CompiledBinaries/raw/master/Seatbelt.exe -O Seatbelt.exe 2>&1 || \
+    log_warn "Could not fetch Seatbelt.exe"
+    [[ -f "Seatbelt.exe" ]] && log_info "✓ Seatbelt.exe downloaded"
+else
+    log_skip "Seatbelt.exe already present"
+fi
+
+# Rubeus
+if [[ ! -f "Rubeus.exe" ]]; then
+    log_info "Downloading Rubeus..."
+    wget -q https://github.com/r3motecontrol/Ghostpack-CompiledBinaries/raw/master/Rubeus.exe -O Rubeus.exe 2>&1 || \
+    log_warn "Could not fetch Rubeus.exe"
+    [[ -f "Rubeus.exe" ]] && log_info "✓ Rubeus.exe downloaded"
+else
+    log_skip "Rubeus.exe already present"
+fi
+
+# PowerView
+if [[ ! -f "PowerView.ps1" ]]; then
+    log_info "Downloading PowerView..."
+    wget -q https://raw.githubusercontent.com/PowerShellMafia/PowerSploit/master/Recon/PowerView.ps1 -O PowerView.ps1
+    [[ -f "PowerView.ps1" ]] && log_info "✓ PowerView.ps1 downloaded"
+else
+    log_skip "PowerView.ps1 already present"
+fi
+
+# ============================================
+# PHASE 12: WORDLISTS
+# ============================================
+log_section "Phase 12: Setting Up Wordlists"
+
+# Symlink SecLists
+if [[ ! -L "$USER_HOME/wordlists/SecLists" ]]; then
+    ln -s "$USER_HOME/tools/repos/SecLists" "$USER_HOME/wordlists/SecLists"
+    log_info "Symlinked SecLists to wordlists directory"
+fi
+
+# Extract rockyou.txt
+if [[ -f "/usr/share/wordlists/rockyou.txt.gz" ]] && [[ ! -f "$USER_HOME/wordlists/rockyou.txt" ]]; then
+    log_info "Extracting rockyou.txt..."
+    gunzip -c /usr/share/wordlists/rockyou.txt.gz > "$USER_HOME/wordlists/rockyou.txt"
+    log_info "✓ rockyou.txt extracted"
+elif [[ -f "$USER_HOME/wordlists/rockyou.txt" ]]; then
+    log_skip "rockyou.txt already present"
+fi
+
+# ============================================
+# PHASE 13: SYMLINKS FOR QUICK ACCESS
+# ============================================
+log_section "Phase 13: Creating Symlinks for PEAS Tools"
+
+mkdir -p "$USER_HOME/tools/scripts"
+
+# linPEAS
+if [[ -f "$USER_HOME/tools/repos/PEASS-ng/linPEAS/linpeas.sh" ]]; then
+    ln -sf "$USER_HOME/tools/repos/PEASS-ng/linPEAS/linpeas.sh" "$USER_HOME/tools/scripts/linpeas.sh"
+    log_info "✓ linpeas.sh symlinked"
+else
+    log_warn "linpeas.sh not found in PEASS-ng repo"
+fi
+
+# winPEAS (check multiple locations)
+WINPEAS_FOUND=false
+for winpeas_path in \
+    "$USER_HOME/tools/repos/PEASS-ng/winPEAS/winPEASx64.exe" \
+    "$USER_HOME/tools/repos/PEASS-ng/winPEAS/winPEASx64_ofs.exe"; do
+    
+    if [[ -f "$winpeas_path" ]]; then
+        ln -sf "$winpeas_path" "$USER_HOME/tools/scripts/winpeas.exe"
+        log_info "✓ winpeas.exe symlinked"
+        WINPEAS_FOUND=true
+        break
+    fi
+done
+[[ "$WINPEAS_FOUND" == false ]] && log_warn "winpeas.exe not found in PEASS-ng repo"
+
+# Penelope
+if [[ -f "$USER_HOME/tools/repos/penelope/penelope.py" ]]; then
+    ln -sf "$USER_HOME/tools/repos/penelope/penelope.py" "$USER_HOME/tools/scripts/penelope.py"
+    chmod +x "$USER_HOME/tools/repos/penelope/penelope.py"
+    log_info "✓ penelope.py symlinked"
+else
+    log_warn "penelope.py not found"
+fi
+
+# ============================================
+# PHASE 14: CUSTOM ENVIRONMENT FILE
+# ============================================
+log_section "Phase 14: Creating Custom Environment"
+
+cat > "$USER_HOME/.shellshock_env" << 'EOFENV'
+# ShellShock Environment Variables
+# Automatically sourced by .bashrc and .zshrc
+
+# Go configuration
+export GOROOT=/usr/local/go
+export GOPATH=$HOME/go
+export PATH=$GOROOT/bin:$GOPATH/bin:$PATH
+
+# Tool shortcuts
+alias responder='cd ~/tools/repos/Responder && python3 Responder.py'
+alias enum4linux-ng='~/tools/repos/enum4linux-ng/enum4linux-ng.py'
+alias penelope='~/tools/scripts/penelope.py'
+alias linpeas='~/tools/scripts/linpeas.sh'
+
+# Engagement workflow
+export HTB_ENGAGEMENTS="$HOME/engagements"
+alias htb-new='mkdir -p $HTB_ENGAGEMENTS/$1 && cd $HTB_ENGAGEMENTS/$1'
+
+# Color aliases
+alias ls='ls --color=auto'
+alias grep='grep --color=auto'
+
+EOFENV
+
+# Add to shell configs
+for shell_rc in "$USER_HOME/.bashrc" "$USER_HOME/.zshrc"; do
+    if [[ -f "$shell_rc" ]] && ! grep -q ".shellshock_env" "$shell_rc"; then
+        cat >> "$shell_rc" << 'EOF'
+
+# ShellShock environment
+[[ -f ~/.shellshock_env ]] && source ~/.shellshock_env
+EOF
+        log_info "Added ShellShock env to $(basename $shell_rc)"
+    fi
+done
+
+# ============================================
+# PHASE 15: DOCUMENTATION
+# ============================================
+log_section "Phase 15: Generating Documentation"
+
+cat > "$USER_HOME/TOOLS_REFERENCE.md" << 'EOFDOC'
+# ShellShock v2.0 - Tools Reference
+
+## Environment Variables
+```bash
+export GOROOT=/usr/local/go
+export GOPATH=$HOME/go
+export PATH=$GOROOT/bin:$GOPATH/bin:$PATH
+```
+
+## Installed Tools
+
+### Go Tools
+- **httpx** - HTTP toolkit and probing
+- **subfinder** - Subdomain discovery
+- **dnsx** - DNS toolkit
+- **nuclei** - Vulnerability scanner
+- **ffuf** - Fast web fuzzer
+- **gobuster** - Directory/DNS brute-forcer
+- **kerbrute** - Kerberos username enumeration
+- **chisel** - TCP/UDP tunneling tool
+- **ligolo-ng** - Advanced network pivoting
+
+### Python Tools
+- **impacket** - Network protocol implementations
+- **bloodhound** - Active Directory visualization
+- **netexec** - Network service exploitation
+- **bloodyAD** - Active Directory privilege escalation
+- **mitm6** - IPv6 man-in-the-middle
+- **ldapdomaindump** - LDAP domain dumping
+- **sprayhound** - Password spraying
+- **certipy-ad** - AD CS exploitation
+
+### Ruby Tools
+- **evil-winrm** - WinRM shell
+- **one_gadget** - Libc gadget finder
+- **haiti-hash** - Hash identifier
+
+### Windows Binaries
+- **SharpHound.exe** - BloodHound data collector
+- **Seatbelt.exe** - Host enumeration
+- **Rubeus.exe** - Kerberos abuse toolkit
+- **PowerView.ps1** - AD enumeration
+
+## Tool Swaps (v2.0 Changes)
+
+### Why We Swapped
+Some tools have upstream issues. We replaced them with working alternatives:
+
+| Old Tool | Issue | New Tool | Command |
+|----------|-------|----------|---------|
+| naabu | libpcap dependency hell | masscan (apt) | `masscan -p1-65535 IP` |
+| responder (pipx) | httptools compilation fails | responder (git) | `responder` (alias) |
+| enum4linux-ng (pipx) | not on PyPI | enum4linux-ng (git) | `enum4linux-ng` (alias) |
+| windapsearch | upstream package changed | ldapsearch (apt) | `ldapsearch -x -H ldap://...` |
+
+## Directory Structure
+```
+~/tools/
+├── repos/              # Git cloned tools
+│   ├── Responder/
+│   ├── enum4linux-ng/
+│   ├── PEASS-ng/
+│   ├── penelope/
+│   ├── SecLists/
+│   └── PayloadsAllTheThings/
+├── scripts/            # Symlinked scripts
+│   ├── linpeas.sh
+│   ├── winpeas.exe
+│   └── penelope.py
+└── windows/            # Windows binaries
+    ├── SharpHound.exe
+    ├── Seatbelt.exe
+    ├── Rubeus.exe
+    └── PowerView.ps1
+```
+
+## Quick Commands
+
+### Reconnaissance
+```bash
+# Fast web probing
+httpx -u https://target.com -tech-detect
+
+# Subdomain discovery
+subfinder -d target.com -o subdomains.txt
+
+# DNS enumeration
+dnsx -l subdomains.txt -resp
+
+# Vulnerability scanning
+nuclei -u https://target.com
+```
+
+### Web Fuzzing
+```bash
+# Directory fuzzing
+gobuster dir -u https://target.com -w ~/wordlists/SecLists/Discovery/Web-Content/common.txt
+
+# Fast fuzzing
+ffuf -u https://target.com/FUZZ -w wordlist.txt
+```
+
+### Active Directory
+```bash
+# Kerberos username enum
+kerbrute userenum -d domain.local --dc 10.10.10.1 users.txt
+
+# SMB enumeration
+netexec smb 10.10.10.1 -u user -p password
+
+# BloodHound collection
+bloodhound-python -u user -p password -ns 10.10.10.1 -d domain.local -c All
+
+# LDAP enumeration
+enum4linux-ng 10.10.10.1
+```
+
+### Pivoting
+```bash
+# Chisel server
+chisel server --reverse --port 8000
+
+# Ligolo-ng
+ligolo-ng -selfcert
+```
+
+### Windows Tools
+```bash
+# Upload to target, then:
+.\SharpHound.exe -c All
+.\Seatbelt.exe -group=all
+.\Rubeus.exe dump
+```
+
+### Privilege Escalation
+```bash
+# Linux
+linpeas
+
+# Windows (on target)
+.\winpeas.exe
+```
+
+### Reverse Shells
+```bash
+# Start handler
+penelope -i tun0 4444
+```
+
+## Maintenance
+
+### Update Go Tools
+```bash
+cd ~/go/bin
+for tool in httpx subfinder dnsx nuclei ffuf gobuster; do
+    go install -v github.com/*/$tool*@latest 2>/dev/null
+done
+```
+
+### Update Repositories
+```bash
+cd ~/tools/repos
+for repo in */; do cd "$repo" && git pull && cd ..; done
+```
+
+### Update Python Tools
+```bash
+pip3 install -U --break-system-packages impacket bloodhound netexec
+pipx upgrade-all
+```
+
+## Troubleshooting
+
+### Go tools not found?
+```bash
+# Check PATH
+echo $PATH | grep go
+
+# Reload environment
+source ~/.zshrc
+```
+
+### Tool not working?
+```bash
+# Check tool location
+which <tool>
+
+# Check if installed
+ls ~/go/bin/
+pip3 list | grep <tool>
+```
+
+---
+
+**Created:** $(date)
+**Version:** ShellShock v2.0
+EOFDOC
+
+log_info "✓ Created ~/TOOLS_REFERENCE.md"
+
+# ============================================
+# PHASE 16: FIX PERMISSIONS
+# ============================================
+log_section "Phase 16: Fixing Permissions"
+
+chown -R "$USERNAME":"$USERNAME" "$USER_HOME"
+log_info "✓ Set ownership of $USER_HOME to $USERNAME"
+
+# ============================================
+# PHASE 17: VERIFICATION
+# ============================================
+log_section "Phase 17: Verifying Installation"
 
 echo ""
-log_info "Installation complete!"
-log_info "Test clipboard by copying text between host and VM"
-VBOX_INSTALLER_EOF
+log_info "Quick verification..."
 
-    chmod +x "$USER_HOME/Desktop/INSTALL_VBOX_ADDITIONS.sh"
-    chown "$USERNAME":"$USERNAME" "$USER_HOME/Desktop/INSTALL_VBOX_ADDITIONS.sh"
-    log_info "VirtualBox installer script created"
+# Check Go
+if /usr/local/go/bin/go version &>/dev/null; then
+    echo -e "${GREEN}✓${NC} Go: $(/usr/local/go/bin/go version)"
 else
-    log_skip "INSTALL_VBOX_ADDITIONS.sh already exists"
+    echo -e "${RED}✗${NC} Go: Not found"
 fi
 
-# ============================================
-# PHASE 10: DOCUMENTATION
-# ============================================
-log_progress "Phase 10: Creating Desktop Documentation"
-
-# Create comprehensive command reference
-if [[ ! -f "$USER_HOME/Desktop/COMMANDS.txt" ]]; then
-    cat > "$USER_HOME/Desktop/COMMANDS.txt" << 'COMMANDS_DOC_EOF'
-╔═══════════════════════════════════════════════════════════════╗
-║             SHELLSHOCK v1.05 — COMMAND REFERENCE              ║
-╚═══════════════════════════════════════════════════════════════╝
-
-══════════════════════════════════════════════════════════════
-  CUSTOM FUNCTIONS
-══════════════════════════════════════════════════════════════
-newengagement <name>       Create engagement directory structure
-                           → ~/engagements/<name>/{recon,scans,exploits,loot,notes,screenshots}
-
-quickscan <target>         Fast nmap scan with timestamped output
-                           → nmap -sV -sC -O -oA quickscan_TIMESTAMP <target>
-
-extract <file>             Universal archive extractor
-                           → Supports: .tar.gz, .zip, .7z, .rar, .bz2, etc.
-
-══════════════════════════════════════════════════════════════
-  NAVIGATION SHORTCUTS
-══════════════════════════════════════════════════════════════
-tools                      cd ~/tools
-repos                      cd ~/tools/repos
-wordlists                  cd ~/tools/wordlists
-scripts                    cd ~/tools/scripts
-engagements                cd ~/engagements
-win                        cd ~/tools/windows
-host                       cd /media/sf_ctf-tools (VirtualBox shared folder)
-
-══════════════════════════════════════════════════════════════
-  SYSTEM ALIASES
-══════════════════════════════════════════════════════════════
-ll                         ls -lah --color=auto (detailed listing)
-...                        cd ../.. (up two directories)
-..                         cd .. (up one directory)
-c                          clear
-h                          history
-please                     sudo
-rl                         rlwrap nc (netcat with readline)
-python                     python3 (explicit)
-timesync                   sudo chronyc makestep; timedatectl (Instant clock sync)
-
-══════════════════════════════════════════════════════════════
-  PENTESTING TOOLS
-══════════════════════════════════════════════════════════════
-nmap-quick <target>        nmap -sV -sC -O
-nmap-full <target>         nmap -sV -sC -O -p- --min-rate 1000
-nmap-udp <target>          nmap -sU -sV
-
-serve                      python3 -m http.server 8000
-serve80                    sudo python3 -m http.server 80
-
-myip                       Display external IP
-ports                      netstat -tulanp
-listening                  Show listening ports
-
-hash <hash>                Identify hash type
-shell                      Launch penelope reverse shell handler
-
-══════════════════════════════════════════════════════════════
-  EXPLOIT DATABASE (SEARCHSPLOIT)
-══════════════════════════════════════════════════════════════
-searchsploit <term>        Search exploit database
-ss <term>                  Searchsploit shortcut
-ssx <id>                   Examine exploit code
-ssm <id>                   Mirror exploit to current directory
-ssu                        Update exploit database
-
-══════════════════════════════════════════════════════════════
-  CRACKING TOOLS
-══════════════════════════════════════════════════════════════
-john <hashfile>            John with rockyou.txt
-hashcat <hash>             Hashcat
-sqlmap                     sqlmap
-
-══════════════════════════════════════════════════════════════
-  NETWORK TOOLS
-══════════════════════════════════════════════════════════════
-nxc / cme                  NetExec (CrackMapExec fork)
-smb <target>               NetExec SMB enumeration
-winrm <target>             NetExec WinRM
-
-bloodhound                 BloodHound Python ingestor
-ldump                      ldapdomaindump
-evil                       evil-winrm
-ysoserial                  java -jar ~/tools/ysoserial.jar
-runas                      wine ~/tools/windows/RunasCs.exe
-
-══════════════════════════════════════════════════════════════
-  WINDOWS TOOLS
-══════════════════════════════════════════════════════════════
-rubeus                     wine ~/tools/windows/Rubeus.exe
-sharphound                 wine ~/tools/windows/SharpHound.exe
-seatbelt                   wine ~/tools/windows/Seatbelt.exe
-
-══════════════════════════════════════════════════════════════
-  IMPACKET SUITE
-══════════════════════════════════════════════════════════════
-secretsdump                secretsdump.py
-getnpusers                 GetNPUsers.py (ASREPRoast)
-getuserspns                GetUserSPNs.py (Kerberoast)
-psexec                     psexec.py
-smbexec                    smbexec.py
-wmiexec                    wmiexec.py
-ntlmrelayx                 ntlmrelayx.py
-
-══════════════════════════════════════════════════════════════
-  WORDLIST SHORTCUTS
-══════════════════════════════════════════════════════════════
-wl-common                  common.txt
-wl-dir                     directory-list-2.3-medium.txt
-wl-users                   names.txt
-wl-pass                    rockyou.txt
-wl-params                  burp-parameter-names.txt
-
-══════════════════════════════════════════════════════════════
-  CHISEL TUNNELING
-══════════════════════════════════════════════════════════════
-alias chisel-server='chisel server --reverse --port 8000'
-alias chisel-client='chisel client'
-
-══════════════════════════════════════════════════════════════
-  COMBO ATTACKS
-══════════════════════════════════════════════════════════════
-alias mitm-relay='sudo mitm6 -d DOMAIN & ntlmrelayx.py -t ldaps://DC-IP -wh attacker-ip --delegate-access'
-
-══════════════════════════════════════════════════════════════
-  SYSTEM SCRIPTS
-══════════════════════════════════════════════════════════════
-~/Desktop/RESET_SHELLSHOCK.sh
-    Archive history, wipe credentials, reset system, and restore SSL verification.
-
-~/Desktop/INSTALL_VBOX_ADDITIONS.sh
-    Install VirtualBox Guest Additions (clipboard, drag-drop).
-
-~/scripts/update-tools.sh
-    Update all pentesting tools and repositories. Includes time sync.
-
-══════════════════════════════════════════════════════════════
-COMMANDS_DOC_EOF
-    log_info "Created COMMANDS.txt"
-fi
-
-# Ensure all desktop files are owned by target user
-chown -R "$USERNAME":"$USERNAME" "$USER_HOME/Desktop" 2>/dev/null || true
-
-# ============================================
-# PHASE 11: FINAL CLEANUP
-# ============================================
-log_progress "Phase 11: Final Cleanup & Verification"
-
-# Ensure all files are owned by target user
-chown -R "$USERNAME":"$USERNAME" "$USER_HOME" 2>/dev/null || true
-
-# Remove unnecessary packages
-apt autoremove -y -qq 2>/dev/null || true
-apt clean -qq 2>/dev/null || true
-
-# Restore SSL verification
-log_progress "Restoring original SSL configuration..."
-sudo rm -f /etc/apt/apt.conf.d/99no-verify-ssl || true
-git config --global --unset http.sslVerify || true
-log_info "APT and Git SSL verification restored."
-
-# Verify critical installations
-log_info "Verifying critical installations..."
-VERIFY_OK=true
-
-if ! command_exists zsh; then
-    log_warn "Zsh not found!"
-    VERIFY_OK=false
-fi
-
-if ! command_exists docker; then
-    log_warn "Docker not found!"
-    VERIFY_OK=false
-fi
-
-if [[ ! -d "$USER_HOME/.oh-my-zsh" ]]; then
-    log_warn "Oh-My-Zsh not found!"
-    VERIFY_OK=false
-fi
-
-if [[ "$VERIFY_OK" == "true" ]]; then
-    log_info "All critical components verified"
+# Check zsh
+if command -v zsh &>/dev/null; then
+    echo -e "${GREEN}✓${NC} Zsh: $(zsh --version)"
 else
-    log_warn "Some components may have installation issues"
-    log_warn "Check /var/log/shellshock-install.log for details"
+    echo -e "${RED}✗${NC} Zsh: Not found"
 fi
+
+# Check Oh-My-Zsh
+if [[ -d "$USER_HOME/.oh-my-zsh" ]]; then
+    echo -e "${GREEN}✓${NC} Oh-My-Zsh: Installed"
+else
+    echo -e "${RED}✗${NC} Oh-My-Zsh: Not found"
+fi
+
+# Count Go tools
+GO_TOOL_COUNT=$(ls "$USER_HOME/go/bin" 2>/dev/null | wc -l)
+echo -e "${GREEN}✓${NC} Go tools: $GO_TOOL_COUNT installed"
+
+# Count repos
+REPO_COUNT=$(ls -d "$USER_HOME/tools/repos"/*/ 2>/dev/null | wc -l)
+echo -e "${GREEN}✓${NC} Repositories: $REPO_COUNT cloned"
+
+# Count Windows binaries
+WIN_BIN_COUNT=$(ls "$USER_HOME/tools/windows"/*.exe 2>/dev/null | wc -l)
+echo -e "${GREEN}✓${NC} Windows binaries: $WIN_BIN_COUNT files"
 
 # ============================================
 # COMPLETION
 # ============================================
 clear
 echo -e "${GREEN}"
-cat << 'COMPLETION_BANNER'
+cat << 'EOF'
 ╔═══════════════════════════════════════════════════════════════╗
-║             SHELLSHOCK v1.05 — INSTALLATION COMPLETE          ║
+║         SHELLSHOCK v2.0 — INSTALLATION COMPLETE               ║
 ╚═══════════════════════════════════════════════════════════════╝
-COMPLETION_BANNER
+EOF
 echo -e "${NC}\n"
 
 echo -e "${YELLOW}Target User:${NC} ${GREEN}$USERNAME${NC}"
 echo -e "${YELLOW}Home Directory:${NC} ${GREEN}$USER_HOME${NC}"
+echo -e "${YELLOW}Default Password:${NC} ${RED}shellshock${NC} ${YELLOW}(CHANGE THIS!)${NC}"
 echo ""
-echo -e "${CYAN}Installed Features:${NC}"
-echo -e "  ✓ Smart installation (skips existing)"
-echo -e "  ✓ Zsh + Oh-My-Zsh + Powerlevel10k"
-echo "  ✓ Robust time sync (chrony) installed"
-echo "  ✓ HTTPS certificate issues resolved"
-echo -e "  ✓ Firefox with pentesting extensions"
-echo -e "  ✓ Comprehensive tool suite (Python, Go, Ruby)"
-echo -e "  ✓ Windows binaries (Rubeus, SharpHound, RunasCs)"
-echo -e "  ✓ Wordlists (SecLists + rockyou.txt)"
-echo -e "  ✓ Essential repositories (PEASS, HackTricks, PayloadsAllTheThings)"
-echo -e "  ✓ Exploit database (searchsploit)"
+echo -e "${CYAN}What's Installed:${NC}"
+echo -e "  ✓ Go 1.23.3 with proper PATH configuration"
+echo -e "  ✓ Oh-My-Zsh with Powerlevel10k theme"
+echo -e "  ✓ $GO_TOOL_COUNT Go security tools"
+echo -e "  ✓ Python, Ruby, and system tools"
+echo -e "  ✓ $WIN_BIN_COUNT Windows binaries"
+echo -e "  ✓ $REPO_COUNT essential repositories"
+echo -e "  ✓ Custom environment with aliases"
 echo ""
-echo -e "${CYAN}Desktop Scripts:${NC}"
-echo -e "  • ${GREEN}RESET_SHELLSHOCK.sh${NC} - Archive & reset system, restores SSL verification"
-echo -e "  • ${GREEN}INSTALL_VBOX_ADDITIONS.sh${NC} - VirtualBox integration"
-echo -e "  • ${GREEN}COMMANDS.txt${NC} - Complete command reference"
+echo -e "${CYAN}Documentation:${NC}"
+echo -e "  • ${GREEN}~/TOOLS_REFERENCE.md${NC} - Complete tool reference"
+echo -e "  • ${GREEN}~/.shellshock_env${NC} - Custom environment & aliases"
 echo ""
-echo -e "${CYAN}Maintenance:${NC}"
-echo -e "  • ${GREEN}~/scripts/update-tools.sh${NC} - Update all tools and syncs clock"
-echo -e "  • ${GREEN}timesync${NC} - New alias for instant clock correction"
+echo -e "${CYAN}Quick Commands:${NC}"
+echo -e "  ${GREEN}responder${NC}      - Start Responder"
+echo -e "  ${GREEN}enum4linux-ng${NC}  - Run enum4linux-ng"
+echo -e "  ${GREEN}penelope${NC}       - Reverse shell handler"
+echo -e "  ${GREEN}linpeas${NC}        - Linux privilege escalation"
 echo ""
-echo -e "${YELLOW}IMPORTANT:${NC} ${RED}Reboot required${NC}"
-echo -e "${YELLOW}After reboot:${NC} Log in as ${GREEN}$USERNAME${NC}"
+echo -e "${YELLOW}Installation log:${NC} /var/log/shellshock-install.log"
 echo ""
-echo -e "${CYAN}Installation log:${NC} /var/log/shellshock-install.log"
+echo -e "${RED}IMPORTANT:${NC} ${YELLOW}Reboot required for all changes to take effect${NC}"
 echo ""
 
-read -rp "Reboot now? (y/n): " reboot_choice
+read -p "Reboot now? (y/n): " reboot_choice
 if [[ "$reboot_choice" =~ ^[Yy]$ ]]; then
     echo -e "\n${YELLOW}Rebooting in 5 seconds...${NC}"
     sleep 5
     reboot
 else
-    echo -e "\n${YELLOW}Remember to reboot before using:${NC} ${GREEN}sudo reboot${NC}"
+    echo -e "\n${YELLOW}Remember to reboot:${NC} ${GREEN}sudo reboot${NC}"
     echo -e "${CYAN}Happy hunting!${NC}\n"
 fi
