@@ -11,6 +11,13 @@
 # - Go Toolchain: Confirmed clean install and corrected problematic module paths.
 # - Foundational Fixes: Useradd, NTP, Go Toolchain are stable.
 # - Phase 2 Fix: Proper handling of zsh shell and docker group creation
+#
+# RECONCILIATION FOR V2.0:
+# - naabu -> masscan (APT install)
+# - responder (pipx) -> responder (git)
+# - enum4linux-ng (pipx) -> enum4linux-ng (git)
+# - windapsearch -> ldap-utils + ldapdomaindump
+# - katana, gauplus removed (replaced by httpx/Burp)
 # ============================================
 # DISCLAIMER: This tool is for authorized testing only.
 # Request permission before use. Stay legal.
@@ -366,6 +373,7 @@ SECURITY_PACKAGES=(
     neovim jq ripgrep fd-find bat ncdu
     fonts-powerline silversearcher-ag
     rustc cargo docker.io docker-compose
+    masscan ldap-utils # ADDED masscan (replaces naabu) and ldap-utils (supports ldapsearch)
 )
 
 # Optional packages (may not be available on all distros)
@@ -1011,7 +1019,7 @@ fi
 
 # Python packages via pip3 (System-wide)
 log_info "Installing system-wide Python dependencies..."
-# NOTE: Responder/Certipy-ad are in PIPX, impacket/coercer have version conflicts - handle carefully
+# NOTE: Responder/Certipy-ad are in PIPX or Git, impacket/coercer have version conflicts - handle carefully
 
 # Install in specific order to avoid conflicts
 log_info "Installing impacket (latest version)..."
@@ -1037,27 +1045,40 @@ for tool in "${PIP_TOOLS[@]}"; do
     fi
 done
 
-# Note about enum4linux-ng - it's not in PyPI, install from git if needed
+# enum4linux-ng - install from GitHub directly due to PyPI issues
+# (Reconciled: enum4linux-ng pipx -> enum4linux-ng git)
 if ! command_exists enum4linux-ng; then
-    log_warn "enum4linux-ng not in PyPI - install from GitHub if needed"
-    log_warn "git clone https://github.com/cddmp/enum4linux-ng.git"
+    log_info "Installing enum4linux-ng from GitHub (not on PyPI)..."
+    ENUM4LINUXNG_DIR="$USER_HOME/tools/repos/enum4linux-ng"
+    if [[ ! -d "$ENUM4LINUXNG_DIR/.git" ]]; then
+        safe_clone "https://github.com/cddmp/enum4linux-ng.git" "$ENUM4LINUXNG_DIR"
+        if [[ -d "$ENUM4LINUXNG_DIR" ]]; then
+            # Install Python dependencies for enum4linux-ng
+            cd "$ENUM4LINUXNG_DIR"
+            # NOTE: We use --break-system-packages here as required by the script's philosophy
+            pip3 install --break-system-packages -r requirements.txt 2>&1 | tee -a /var/log/shellshock-install.log || log_warn "enum4linux-ng dependencies may have issues"
+            log_info "enum4linux-ng installed to ~/tools/repos/enum4linux-ng/"
+            log_info "Use: python3 ~/tools/repos/enum4linux-ng/enum4linux-ng.py"
+        fi
+    else
+        log_skip "enum4linux-ng already cloned"
+    fi
 fi
+# End of new enum4linux-ng install logic
+
 
 # Pipx tools (User-isolated)
-log_progress "Installing pipx-isolated tools as $USERNAME (Includes Responder/Certipy)..."
+log_progress "Installing pipx-isolated tools as $USERNAME (Includes NetExec/Certipy)..."
 
 PIPX_TOOLS=(
     "git+https://github.com/Pennyw0rth/NetExec"
-    "ldapdomaindump"
+    "ldapdomaindump" # Used as replacement for windapsearch
     "sprayhound"
     "certipy-ad" # Works
 )
 
 # RsaCtfTool - install from repo instead (pipx version is broken)
-PIPX_PROBLEMATIC=(
-    "Responder" # Has build issues with httptools
-    "RsaCtfTool" # Not in PyPI correctly
-)
+# Removed: PIPX_PROBLEMATIC array definition, as it included tools now installed via git clone.
 
 for tool in "${PIPX_TOOLS[@]}"; do
     tool_name=$(basename "$tool" | cut -d'@' -f1 | sed 's/git+https:\/\/github.com\///' | cut -d'/' -f2 | awk '{print tolower($0)}')
@@ -1071,6 +1092,7 @@ for tool in "${PIPX_TOOLS[@]}"; do
 done
 
 # Responder - install from GitHub directly due to build issues
+# (Reconciled: responder pipx -> responder git)
 log_info "Installing Responder from GitHub (pipx version has build issues)..."
 RESPONDER_DIR="$USER_HOME/tools/repos/Responder"
 if [[ ! -d "$RESPONDER_DIR/.git" ]]; then
@@ -1103,16 +1125,16 @@ if command_exists go; then
         "github.com/OJ/gobuster/v3@latest" 
         "github.com/ropnop/kerbrute@latest"
         "github.com/jpillora/chisel@latest" 
-        "github.com/bp0lr/gauplus@latest" 
+        # Removed: "github.com/bp0lr/gauplus@latest" (Not essential, replaced by Burp/Manual)
+        # Removed: "github.com/projectdiscovery/naabu/v2/cmd/naabu@latest" (Replaced by masscan/apt)
         "github.com/nicocha30/ligolo-ng/cmd/proxy@latest"
         "github.com/nicocha30/ligolo-ng/cmd/agent@latest"
     )
     
     # Problematic Go tools (require newer Go or have issues)
     GO_TOOLS_PROBLEMATIC=(
-        "github.com/projectdiscovery/naabu/v2/cmd/naabu@latest"  # Requires Go 1.21+
         "github.com/projectdiscovery/nuclei/v3/cmd/nuclei@latest"  # Requires Go 1.24+
-        "github.com/projectdiscovery/katana/cmd/katana@latest"  # May have issues
+        # Removed: "github.com/projectdiscovery/katana/cmd/katana@latest" (Dependency conflict, replaced by httpx/gospider)
     )
 
     export GOPATH="$USER_HOME/go"
@@ -1142,22 +1164,7 @@ if command_exists go; then
         fi
     done
     
-    # windapsearch - has incorrect path in repo, clone instead
-    log_info "Installing windapsearch from GitHub..."
-    WINDAPSEARCH_DIR="$USER_HOME/tools/repos/windapsearch"
-    if [[ ! -d "$WINDAPSEARCH_DIR/.git" ]]; then
-        safe_clone "https://github.com/ropnop/windapsearch.git" "$WINDAPSEARCH_DIR"
-        if [[ -d "$WINDAPSEARCH_DIR" ]]; then
-            cd "$WINDAPSEARCH_DIR"
-            sudo -u "$USERNAME" bash -c "export GOPATH='$GOPATH'; export PATH='/usr/local/go/bin:\$PATH'; make" 2>&1 | tee -a /var/log/shellshock-install.log || log_warn "windapsearch build failed"
-            if [[ -f "windapsearch" ]]; then
-                cp windapsearch "$GOPATH/bin/"
-                log_info "windapsearch installed"
-            fi
-        fi
-    else
-        log_skip "windapsearch already exists"
-    fi
+    # Removed: windapsearch custom installation logic (Replaced by ldap-utils/ldapdomaindump)
 
     chown -R "$USERNAME":"$USERNAME" "$GOPATH" 2>/dev/null || true
 else
@@ -1394,7 +1401,7 @@ REPOS=(
     "https://github.com/LOLBAS-Project/LOLBAS.git"
     "https://github.com/RsaCtfTool/RsaCtfTool.git"
     "https://github.com/brightio/penelope.git"
-    "https://github.com/lgandx/Responder.git"  # Added for direct install
+    # Removed: "https://github.com/lgandx/Responder.git" - Handled via dedicated install block in Phase 4
 )
 
 for repo in "${REPOS[@]}"; do
@@ -1710,19 +1717,15 @@ export GOPATH=$HOME/go
 export PATH=/usr/local/go/bin:$PATH:$GOPATH/bin
 
 GO_TOOLS=(
-    "github.com/projectdiscovery/naabu/v2/cmd/naabu@latest"
     "github.com/projectdiscovery/httpx/cmd/httpx@latest"
     "github.com/projectdiscovery/nuclei/v3/cmd/nuclei@latest"
     "github.com/projectdiscovery/subfinder/v2/cmd/subfinder@latest"
-    "github.com/projectdiscovery/katana/cmd/katana@latest"
     "github.com/projectdiscovery/dnsx/cmd/dnsx@latest"
     "github.com/ffuf/ffuf/v2@latest"
     "github.com/OJ/gobuster/v3@latest"
     "github.com/ropnop/kerbrute@latest"
     "github.com/jpillora/chisel@latest"
-    "github.com/bp0lr/gauplus@latest"
-    "github.com/ropnop/windapsearch/cmd/windapsearch@latest"
-    # pre2k intentionally excluded
+    # Removed: naabu, katana, gauplus, windapsearch (swapped/deprecated)
     "github.com/nicocha30/ligolo-ng/cmd/proxy@latest"
     "github.com/nicocha30/ligolo-ng/cmd/agent@latest"
 )
