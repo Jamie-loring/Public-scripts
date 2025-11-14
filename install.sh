@@ -639,7 +639,7 @@ if [[ ! -f "SharpHound.exe" ]]; then
     log_info "Downloading SharpHound..."
     SHARPHOUND_URL=$(curl -s https://api.github.com/repos/BloodHoundAD/SharpHound/releases/latest | grep "browser_download_url.*SharpHound.*zip" | head -n 1 | cut -d '"' -f 4)
     if [[ -n "$SHARPHOUND_URL" ]]; then
-        if wget -q "$SHARPHOUND_URL" -O SharpHound.zip 2>&1 | tee -a "$LOG_FILE"; then
+        if wget -q "$SHARPHOUND_URL" -O SharpHound.zip 2>&1 | tee -a "$LOG_FILE" >/dev/null; then
             extract_archive "SharpHound.zip" || unzip -q SharpHound.zip
             rm -f SharpHound.zip
             if [[ -f "SharpHound.exe" ]]; then
@@ -656,7 +656,6 @@ if [[ ! -f "SharpHound.exe" ]]; then
 else
     log_skip "SharpHound.exe already present"
 fi
-
 # Seatbelt
 if [[ ! -f "Seatbelt.exe" ]]; then
     log_info "Downloading Seatbelt..."
