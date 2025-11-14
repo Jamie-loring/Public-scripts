@@ -211,42 +211,56 @@ fi
 # ============================================
 log_section "Phase 1: System Preparation"
 
-# Install chrony if not already installed
-log_info "Installing chrony for time synchronization..."
-DEBIAN_FRONTEND=noninteractive apt-get install -y -qq chrony
+# Ensure package lists are up to date
+log_info "Updating package lists..."
+apt-get update -qq
 
-# Start chrony service
-log_info "Starting chrony service..."
-systemctl enable --now chrony
+# Install chrony if not already installed
+if ! command -v chronyc >/dev/null 2>&1; then
+    log_info "Installing chrony for time synchronization..."
+    DEBIAN_FRONTEND=noninteractive apt-get install -y -qq chrony || log_warn "Chrony install failed, will attempt fallback"
+fi
+
+# Start chrony service if installed
+if command -v chronyc >/dev/null 2>&1; then
+    log_info "Starting chrony service..."
+    systemctl enable --now chrony
+fi
 
 # Time sync with robust NTP (15 attempts)
-log_info "Syncing system time via chrony..."
+log_info "Syncing system time..."
 NTP_SERVERS=("pool.ntp.org" "time.nist.gov" "time.google.com" "time.cloudflare.com" "time.windows.com")
 SYNC_SUCCESS=false
 
 for attempt in {1..3}; do
     for ntp_server in "${NTP_SERVERS[@]}"; do
-        if chronyc -a "server $ntp_server iburst" waitsync 10 2>&1 | tee -a "$LOG_FILE"; then
-            log_info "Time synced successfully via $ntp_server"
-            SYNC_SUCCESS=true
-            break 2
+        if command -v chronyc >/dev/null 2>&1; then
+            if chronyc -a "server $ntp_server iburst" waitsync 10 2>&1 | tee -a "$LOG_FILE"; then
+                log_info "Time synced successfully via $ntp_server (chrony)"
+                SYNC_SUCCESS=true
+                break 2
+            fi
+        else
+            # Fallback to ntpdate if chrony is not available
+            if command -v ntpdate >/dev/null 2>&1; then
+                if timeout 10 ntpdate -u "$ntp_server" 2>&1 | tee -a "$LOG_FILE"; then
+                    log_info "Time synced successfully via $ntp_server (ntpdate fallback)"
+                    SYNC_SUCCESS=true
+                    break 2
+                fi
+            fi
         fi
     done
     log_warn "Attempt $attempt failed. Retrying..."
 done
 
 if [[ "$SYNC_SUCCESS" == "false" ]]; then
-    log_warn "All chrony sync attempts failed. Continuing anyway..."
+    log_warn "All time sync attempts failed. Continuing anyway..."
 fi
 
-# Update package lists
-log_info "Updating package lists..."
-apt-get update -qq
-
-# Upgrade system
+# Upgrade system packages
 log_info "Upgrading system packages..."
 DEBIAN_FRONTEND=noninteractive apt-get upgrade -y -qq
-
 # ============================================
 # PHASE 2: CORE PACKAGES
 # ============================================
