@@ -350,32 +350,58 @@ fi
 
 # Install base packages
 log_info "Installing base packages..."
-PACKAGES=(
-    build-essential git curl wget vim neovim tmux zsh
-    python3-pip python3-venv python3-dev rustc cargo
-    docker.io docker-compose jq ripgrep fd-find bat
-    htop ncdu tree fonts-powerline silversearcher-ag
-    john john-data hashcat sqlmap exploitdb
-    mingw-w64 mingw-w64-tools
+
+# Core packages (must succeed)
+CORE_PACKAGES=(
+    build-essential git curl wget vim tmux zsh
+    python3-pip python3-venv python3-dev
+    htop tree net-tools dnsutils iproute2
     p7zip-full unzip zip
-    net-tools dnsutils iproute2
-    sharphound # Ensure sharphound APT package is installed for Phase 4.5 copy
-    dotnet # Added dotnet for reliable source compilation of Seatbelt
 )
 
-PACKAGES_TO_INSTALL=()
-for pkg in "${PACKAGES[@]}"; do
+# Security tools (best effort)
+SECURITY_PACKAGES=(
+    john john-data hashcat sqlmap exploitdb
+    mingw-w64 mingw-w64-tools
+    neovim jq ripgrep fd-find bat ncdu
+    fonts-powerline silversearcher-ag
+    rustc cargo docker.io docker-compose
+)
+
+# Optional packages (may not be available on all distros)
+OPTIONAL_PACKAGES=(
+    sharphound
+    dotnet-sdk-8.0
+)
+
+# Install core packages first
+log_info "Installing core packages (required)..."
+DEBIAN_FRONTEND=noninteractive apt install -y "${CORE_PACKAGES[@]}" 2>&1 | tee -a /var/log/shellshock-install.log || {
+    log_error "Core packages failed to install. This is critical."
+    exit 1
+}
+
+# Install security packages
+log_info "Installing security packages..."
+for pkg in "${SECURITY_PACKAGES[@]}"; do
     if ! package_installed "$pkg"; then
-        PACKAGES_TO_INSTALL+=("$pkg")
+        log_info "Installing: $pkg"
+        DEBIAN_FRONTEND=noninteractive apt install -y "$pkg" 2>&1 | tee -a /var/log/shellshock-install.log || log_warn "Failed to install $pkg"
+    else
+        log_skip "$pkg already installed"
     fi
 done
 
-if [[ ${#PACKAGES_TO_INSTALL[@]} -gt 0 ]]; then
-    log_info "Installing ${#PACKAGES_TO_INSTALL[@]} new packages..."
-    DEBIAN_FRONTEND=noninteractive apt install -y -qq "${PACKAGES_TO_INSTALL[@]}" 2>&1 | tee -a /var/log/shellshock-install.log || true
-else
-    log_skip "All base packages already installed"
-fi
+# Install optional packages
+log_info "Installing optional packages..."
+for pkg in "${OPTIONAL_PACKAGES[@]}"; do
+    if ! package_installed "$pkg"; then
+        log_info "Installing: $pkg"
+        DEBIAN_FRONTEND=noninteractive apt install -y "$pkg" 2>&1 | tee -a /var/log/shellshock-install.log || log_warn "Optional package $pkg not available"
+    else
+        log_skip "$pkg already installed"
+    fi
+done
 
 # Update searchsploit database
 if command_exists searchsploit; then
@@ -432,6 +458,74 @@ else
 fi
 echo ""
 # End of Phase 1.5
+
+# ============================================
+# PHASE 1.5.5: VERIFICATION & PATH FIXES
+# ============================================
+log_progress "Phase 1.5.5: Verifying installations and fixing PATH..."
+
+# Verify critical packages actually installed
+CRITICAL_MISSING=()
+for pkg in zsh vim git curl wget python3-pip; do
+    if ! package_installed "$pkg"; then
+        CRITICAL_MISSING+=("$pkg")
+        log_warn "Critical package missing: $pkg - attempting reinstall..."
+        DEBIAN_FRONTEND=noninteractive apt install -y "$pkg" 2>&1 | tee -a /var/log/shellshock-install.log || log_error "Failed to install $pkg"
+    fi
+done
+
+if [[ ${#CRITICAL_MISSING[@]} -gt 0 ]]; then
+    log_warn "Some critical packages were missing and have been reinstalled"
+fi
+
+# Fix Go PATH - ensure it's accessible immediately
+if [[ -d "/usr/local/go/bin" ]] && [[ -x "/usr/local/go/bin/go" ]]; then
+    # Add to current session
+    export PATH="/usr/local/go/bin:$PATH"
+    
+    # Ensure it's in system-wide profile
+    if ! grep -q '/usr/local/go/bin' /etc/environment; then
+        # Update /etc/environment for system-wide availability
+        if [[ -f /etc/environment ]]; then
+            # Get current PATH from /etc/environment
+            CURRENT_PATH=$(grep '^PATH=' /etc/environment | cut -d'"' -f2)
+            if [[ -n "$CURRENT_PATH" ]]; then
+                # Prepend Go to existing PATH
+                sed -i 's|^PATH=.*|PATH="/usr/local/go/bin:'"$CURRENT_PATH"'"|' /etc/environment
+            else
+                # No PATH in /etc/environment, add it
+                echo 'PATH="/usr/local/go/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin"' >> /etc/environment
+            fi
+        fi
+        log_info "Added Go to /etc/environment for system-wide PATH"
+    fi
+    
+    # Verify Go is now accessible
+    if command -v go &>/dev/null; then
+        GO_VERSION=$(go version | awk '{print $3}')
+        log_info "Go is accessible: $GO_VERSION"
+    else
+        log_warn "Go binary exists but still not in PATH - may need reboot"
+    fi
+else
+    log_warn "Go installation directory not found or binary not executable"
+fi
+
+# Ensure zsh is actually in PATH before proceeding to Oh-My-Zsh
+if ! command -v zsh &>/dev/null; then
+    log_warn "zsh command not found in PATH despite installation attempt"
+    log_warn "Attempting to locate zsh..."
+    if [[ -x "/bin/zsh" ]]; then
+        log_info "Found zsh at /bin/zsh"
+    elif [[ -x "/usr/bin/zsh" ]]; then
+        log_info "Found zsh at /usr/bin/zsh"
+    else
+        log_error "zsh not found anywhere - Oh-My-Zsh will fail"
+    fi
+fi
+
+log_info "Verification complete"
+echo ""
 
 # ============================================
 # PHASE 1.6: VIRTUALBOX DETECTION
@@ -674,6 +768,15 @@ fi
 # ============================================
 log_progress "Phase 3: Shell Environment (Zsh + Oh-My-Zsh + Powerlevel10k)"
 
+# Ensure zsh is installed
+if ! command_exists zsh; then
+    log_warn "Zsh not found, installing now..."
+    DEBIAN_FRONTEND=noninteractive apt install -y zsh 2>&1 | tee -a /var/log/shellshock-install.log || {
+        log_error "Failed to install zsh. Cannot proceed with Oh-My-Zsh"
+        exit 1
+    }
+fi
+
 if [[ ! -d "$USER_HOME/.oh-my-zsh" ]]; then
     log_info "Installing Oh-My-Zsh..."
 
@@ -682,25 +785,43 @@ if [[ ! -d "$USER_HOME/.oh-my-zsh" ]]; then
     # Install Oh-My-Zsh to temp location in a subshell
     (
         export HOME="$TEMP_HOME"
-        sh -c "RUNZSH=no $(curl -fsSLk https://raw.githubusercontent.com/ohmyzsh/ohmyzsh/master/tools/install.sh)" "" --unattended 2>&1 | tee -a /var/log/shellshock-install.log || true
+        log_info "Downloading Oh-My-Zsh installer..."
+        
+        # Download and run Oh-My-Zsh installer
+        if curl -fsSLk https://raw.githubusercontent.com/ohmyzsh/ohmyzsh/master/tools/install.sh -o /tmp/install-omz.sh; then
+            log_info "Running Oh-My-Zsh installer..."
+            RUNZSH=no bash /tmp/install-omz.sh --unattended 2>&1 | tee -a /var/log/shellshock-install.log || true
+            rm -f /tmp/install-omz.sh
+        else
+            log_error "Failed to download Oh-My-Zsh installer"
+        fi
     )
 
     if [[ -d "$TEMP_HOME/.oh-my-zsh" ]]; then
+        log_info "Oh-My-Zsh downloaded successfully"
+        
         # Install plugins using safe_clone
+        log_info "Installing Oh-My-Zsh plugins..."
         safe_clone "https://github.com/zsh-users/zsh-autosuggestions" "${TEMP_HOME}/.oh-my-zsh/custom/plugins/zsh-autosuggestions"
         safe_clone "https://github.com/zsh-users/zsh-syntax-highlighting.git" "${TEMP_HOME}/.oh-my-zsh/custom/plugins/zsh-syntax-highlighting"
         safe_clone "https://github.com/romkatv/powerlevel10k.git" "${TEMP_HOME}/.oh-my-zsh/custom/themes/powerlevel10k"
 
         # Download Powerlevel10k config
+        log_info "Downloading Powerlevel10k configuration..."
         safe_download "https://raw.githubusercontent.com/Jamie-loring/Public-scripts/main/p10k-jamie-config.zsh" "${TEMP_HOME}/.p10k.zsh"
 
         # Copy to user home using rsync
+        log_info "Installing to user home directory..."
         rsync -a "$TEMP_HOME"/.oh-my-zsh "$USER_HOME/" 2>/dev/null || true
         cp "$TEMP_HOME"/.p10k.zsh "$USER_HOME/" 2>/dev/null || true
 
-        log_info "Oh-My-Zsh installed with plugins and theme"
+        if [[ -d "$USER_HOME/.oh-my-zsh" ]]; then
+            log_info "Oh-My-Zsh installed with plugins and theme"
+        else
+            log_error "Failed to copy Oh-My-Zsh to user home"
+        fi
     else
-        log_error "Oh-My-Zsh installation failed in temporary directory."
+        log_error "Oh-My-Zsh installation failed in temporary directory"
     fi
 
     # Cleanup
@@ -890,20 +1011,37 @@ fi
 
 # Python packages via pip3 (System-wide)
 log_info "Installing system-wide Python dependencies..."
-# NOTE: Responder/Certipy-ad REMOVED from this list and MOVED to PIPX
+# NOTE: Responder/Certipy-ad are in PIPX, impacket/coercer have version conflicts - handle carefully
+
+# Install in specific order to avoid conflicts
+log_info "Installing impacket (latest version)..."
+pip3 install --break-system-packages "impacket" 2>&1 | tee -a /var/log/shellshock-install.log || log_warn "impacket install had issues"
+
+# Install coercer separately (it wants old impacket, but we'll use latest)
+log_info "Installing coercer (may conflict with impacket - non-critical)..."
+pip3 install --break-system-packages "coercer" 2>&1 | tee -a /var/log/shellshock-install.log || log_warn "coercer install had issues (expected with latest impacket)"
+
+# Other Python tools
 PIP_TOOLS=(
-    "impacket" "hashid" "bloodhound" "bloodyAD" "mitm6" 
-    "coercer" "pypykatz" "lsassy" "enum4linux-ng" "dnsrecon" "git-dumper"
+    "hashid" "bloodhound" "bloodyAD" "mitm6" 
+    "pypykatz" "lsassy" "dnsrecon" "git-dumper"
     "roadrecon" "manspider" "mitmproxy" "pwntools" "ROPgadget" "truffleHog"
 )
 
 for tool in "${PIP_TOOLS[@]}"; do
     if ! pip3 list 2>/dev/null | grep -qi "^${tool} "; then
+        log_info "Installing: $tool"
         pip3 install --break-system-packages "$tool" 2>&1 | tee -a /var/log/shellshock-install.log || log_warn "Failed to install $tool"
     else
         log_skip "$tool already installed"
     fi
 done
+
+# Note about enum4linux-ng - it's not in PyPI, install from git if needed
+if ! command_exists enum4linux-ng; then
+    log_warn "enum4linux-ng not in PyPI - install from GitHub if needed"
+    log_warn "git clone https://github.com/cddmp/enum4linux-ng.git"
+fi
 
 # Pipx tools (User-isolated)
 log_progress "Installing pipx-isolated tools as $USERNAME (Includes Responder/Certipy)..."
@@ -912,62 +1050,114 @@ PIPX_TOOLS=(
     "git+https://github.com/Pennyw0rth/NetExec"
     "ldapdomaindump"
     "sprayhound"
-    "RsaCtfTool"
-    "Responder" # <-- MOVED HERE
-    "certipy-ad" # <-- MOVED HERE
+    "certipy-ad" # Works
+)
+
+# RsaCtfTool - install from repo instead (pipx version is broken)
+PIPX_PROBLEMATIC=(
+    "Responder" # Has build issues with httptools
+    "RsaCtfTool" # Not in PyPI correctly
 )
 
 for tool in "${PIPX_TOOLS[@]}"; do
     tool_name=$(basename "$tool" | cut -d'@' -f1 | sed 's/git+https:\/\/github.com\///' | cut -d'/' -f2 | awk '{print tolower($0)}')
-    # Check for installation skipping by checking the environment, not just the path
+    
     if ! sudo -u "$USERNAME" pipx list 2>/dev/null | grep -qi "$tool_name"; then
-        log_info "Installing $tool_name..."
-        # NOTE: We use sudo -u jamie to install into jamie's home/.local/bin
-        sudo -u "$USERNAME" bash -c "export PATH=\$PATH:\$HOME/.local/bin; pipx install '$tool'" 2>&1 | tee -a /var/log/shellshock-install.log || log_warn "Failed to install $tool_name via pipx"
+        log_info "Installing $tool_name via pipx..."
+        sudo -u "$USERNAME" bash -c "export PATH=\$PATH:\$HOME/.local/bin; pipx install '$tool' --force" 2>&1 | tee -a /var/log/shellshock-install.log || log_warn "Failed to install $tool_name via pipx"
     else
         log_skip "$tool_name already installed"
     fi
 done
 
+# Responder - install from GitHub directly due to build issues
+log_info "Installing Responder from GitHub (pipx version has build issues)..."
+RESPONDER_DIR="$USER_HOME/tools/repos/Responder"
+if [[ ! -d "$RESPONDER_DIR/.git" ]]; then
+    safe_clone "https://github.com/lgandx/Responder.git" "$RESPONDER_DIR"
+    if [[ -d "$RESPONDER_DIR" ]]; then
+        # Install Python dependencies for Responder
+        cd "$RESPONDER_DIR"
+        pip3 install --break-system-packages -r requirements.txt 2>&1 | tee -a /var/log/shellshock-install.log || log_warn "Responder dependencies may have issues"
+        chmod +x Responder.py
+        log_info "Responder installed to ~/tools/repos/Responder/"
+        log_info "Use: python3 ~/tools/repos/Responder/Responder.py"
+    fi
+else
+    log_skip "Responder already cloned"
+fi
+
+# Note: RsaCtfTool is cloned in the repos section, which works fine
+log_info "RsaCtfTool will be available in ~/tools/repos/RsaCtfTool"
+
 # Go tools - FIXED: Proper paths for installation
 if command_exists go; then
     log_progress "Installing Go-based tools as $USERNAME..."
 
-    # NOTE: The paths below are critical for finding the correct executable within the Go module.
-    GO_TOOLS=(
-        "github.com/projectdiscovery/naabu/v2/cmd/naabu@latest" 
+    # Working Go tools
+    GO_TOOLS_WORKING=(
         "github.com/projectdiscovery/httpx/cmd/httpx@latest"
-        "github.com/projectdiscovery/nuclei/v3/cmd/nuclei@latest" 
         "github.com/projectdiscovery/subfinder/v2/cmd/subfinder@latest"
-        "github.com/projectdiscovery/katana/cmd/katana@latest" 
         "github.com/projectdiscovery/dnsx/cmd/dnsx@latest"
         "github.com/ffuf/ffuf/v2@latest" 
         "github.com/OJ/gobuster/v3@latest" 
         "github.com/ropnop/kerbrute@latest"
         "github.com/jpillora/chisel@latest" 
         "github.com/bp0lr/gauplus@latest" 
-        # FIX 1: Updated windapsearch path
-        "github.com/ropnop/windapsearch/cmd/windapsearch@latest" 
-        # REMOVED: pre2k is unstable/missing package, skip installation for now
         "github.com/nicocha30/ligolo-ng/cmd/proxy@latest"
         "github.com/nicocha30/ligolo-ng/cmd/agent@latest"
+    )
+    
+    # Problematic Go tools (require newer Go or have issues)
+    GO_TOOLS_PROBLEMATIC=(
+        "github.com/projectdiscovery/naabu/v2/cmd/naabu@latest"  # Requires Go 1.21+
+        "github.com/projectdiscovery/nuclei/v3/cmd/nuclei@latest"  # Requires Go 1.24+
+        "github.com/projectdiscovery/katana/cmd/katana@latest"  # May have issues
     )
 
     export GOPATH="$USER_HOME/go"
     mkdir -p "$GOPATH"/{bin,pkg,src}
     chown -R "$USERNAME":"$USERNAME" "$GOPATH"
 
-    for tool_path in "${GO_TOOLS[@]}"; do
+    # Install working tools first
+    for tool_path in "${GO_TOOLS_WORKING[@]}"; do
         tool_name=$(basename "$tool_path" | cut -d'@' -f1 | awk -F'/' '{print $NF}')
-        # Check if the binary is already in the user's Go bin directory
         if [[ ! -f "$GOPATH/bin/$tool_name" ]]; then
             log_info "Installing $tool_name..."
-            # FIXED: Explicitly pass PATH including /usr/local/go/bin
             sudo -u "$USERNAME" bash -c "export GOPATH='$GOPATH'; export PATH='/usr/local/go/bin:\$PATH:\$GOPATH/bin'; go install -v '$tool_path'" 2>&1 | tee -a /var/log/shellshock-install.log || log_warn "Failed to install $tool_name"
         else
             log_skip "$tool_name already installed"
         fi
     done
+    
+    # Try problematic tools with better error handling
+    log_info "Attempting to install tools that may require newer Go..."
+    for tool_path in "${GO_TOOLS_PROBLEMATIC[@]}"; do
+        tool_name=$(basename "$tool_path" | cut -d'@' -f1 | awk -F'/' '{print $NF}')
+        if [[ ! -f "$GOPATH/bin/$tool_name" ]]; then
+            log_info "Installing $tool_name (may fail with Go 1.21)..."
+            sudo -u "$USERNAME" bash -c "export GOPATH='$GOPATH'; export PATH='/usr/local/go/bin:\$PATH:\$GOPATH/bin'; go install -v '$tool_path'" 2>&1 | tee -a /var/log/shellshock-install.log || log_warn "$tool_name failed (likely needs Go 1.24+)"
+        else
+            log_skip "$tool_name already installed"
+        fi
+    done
+    
+    # windapsearch - has incorrect path in repo, clone instead
+    log_info "Installing windapsearch from GitHub..."
+    WINDAPSEARCH_DIR="$USER_HOME/tools/repos/windapsearch"
+    if [[ ! -d "$WINDAPSEARCH_DIR/.git" ]]; then
+        safe_clone "https://github.com/ropnop/windapsearch.git" "$WINDAPSEARCH_DIR"
+        if [[ -d "$WINDAPSEARCH_DIR" ]]; then
+            cd "$WINDAPSEARCH_DIR"
+            sudo -u "$USERNAME" bash -c "export GOPATH='$GOPATH'; export PATH='/usr/local/go/bin:\$PATH'; make" 2>&1 | tee -a /var/log/shellshock-install.log || log_warn "windapsearch build failed"
+            if [[ -f "windapsearch" ]]; then
+                cp windapsearch "$GOPATH/bin/"
+                log_info "windapsearch installed"
+            fi
+        fi
+    else
+        log_skip "windapsearch already exists"
+    fi
 
     chown -R "$USERNAME":"$USERNAME" "$GOPATH" 2>/dev/null || true
 else
@@ -1052,46 +1242,92 @@ else
     log_skip "RunasCs.exe already exists"
 fi
 
-# --- SharpHound.exe (APT/Parrot default) ---
-SHARPHOUND_APT_PATH="/usr/share/sharphound/SharpHound.exe"
-if [[ ! -f "$USER_HOME/tools/windows/SharpHound.exe" ]]; then
+# --- SharpHound.exe (Try multiple sources) ---
+SHARPHOUND_EXE="$USER_HOME/tools/windows/SharpHound.exe"
+if [[ ! -f "$SHARPHOUND_EXE" ]]; then
+    # Try 1: APT package location
+    SHARPHOUND_APT_PATH="/usr/share/sharphound/SharpHound.exe"
     if [[ -f "$SHARPHOUND_APT_PATH" ]]; then
         log_info "Copying SharpHound.exe from APT share location..."
         cp "$SHARPHOUND_APT_PATH" "$USER_HOME/tools/windows/" 2>/dev/null || log_warn "Failed to copy SharpHound.exe from APT directory."
     else
-        log_warn "SharpHound.exe not found in APT share. Ensure the 'sharphound' package is installed."
+        # Try 2: Download from GitHub releases
+        log_info "Downloading SharpHound.exe from GitHub releases..."
+        SHARPHOUND_URL=$(curl -s https://api.github.com/repos/BloodHoundAD/SharpHound/releases/latest | grep "browser_download_url.*SharpHound-v.*\.zip" | cut -d '"' -f 4 | head -n1)
+        
+        if [[ -n "$SHARPHOUND_URL" ]]; then
+            if safe_download "$SHARPHOUND_URL" "/tmp/SharpHound.zip"; then
+                unzip -qq -o "/tmp/SharpHound.zip" -d "/tmp/sharphound-extract" 2>&1 | tee -a /var/log/shellshock-install.log
+                
+                # Find the exe in the extracted files
+                SHARPHOUND_EXTRACTED=$(find /tmp/sharphound-extract -name "SharpHound.exe" | head -n1)
+                if [[ -n "$SHARPHOUND_EXTRACTED" ]]; then
+                    cp "$SHARPHOUND_EXTRACTED" "$USER_HOME/tools/windows/"
+                    log_info "SharpHound.exe downloaded and installed"
+                else
+                    log_warn "SharpHound.exe not found in downloaded archive"
+                fi
+                
+                rm -rf /tmp/SharpHound.zip /tmp/sharphound-extract
+            fi
+        else
+            log_warn "Could not find SharpHound download URL"
+        fi
+        
+        # Try 3: Fallback to known compiled binaries repo
+        if [[ ! -f "$SHARPHOUND_EXE" ]]; then
+            log_info "Trying fallback: Ghostpack compiled binaries repo..."
+            safe_download "https://github.com/r3motecontrol/Ghostpack-CompiledBinaries/raw/master/SharpHound.exe" "$USER_HOME/tools/windows/SharpHound.exe" || log_warn "Fallback download also failed"
+        fi
     fi
 else
     log_skip "SharpHound.exe already exists"
 fi
 
-# --- Seatbelt.exe (Build from Source for integrity) ---
+# --- Seatbelt.exe (Build from Source) ---
 SEATBELT_EXE="$USER_HOME/tools/windows/Seatbelt.exe"
 if [[ ! -f "$SEATBELT_EXE" ]]; then
-    log_info "Cloning and building Seatbelt from source..."
-    # Ensure dotnet is installed before attempting to build
-    if package_installed "dotnet"; then 
+    log_info "Attempting to build Seatbelt from source..."
+    
+    # Check if dotnet is available
+    if command_exists dotnet; then 
         SEATBELT_SRC_DIR="$USER_HOME/tools/windows/Seatbelt-src"
         if safe_clone "https://github.com/GhostPack/Seatbelt.git" "$SEATBELT_SRC_DIR"; then
-            if ( cd "$SEATBELT_SRC_DIR" && dotnet build -c Release -f net462 ) 2>&1 | tee -a /var/log/shellshock-install.log; then
-                # Find and copy the built executable
-                SEATBELT_BUILT_PATH="$SEATBELT_SRC_DIR/bin/Release/net462/Seatbelt.exe"
-                if [[ -f "$SEATBELT_BUILT_PATH" ]]; then
-                    cp "$SEATBELT_BUILT_PATH" "$USER_HOME/tools/windows/"
-                    log_info "Seatbelt.exe successfully built and copied."
+            cd "$SEATBELT_SRC_DIR"
+            
+            # Try to build
+            log_info "Building Seatbelt (this may take a minute)..."
+            if dotnet build -c Release 2>&1 | tee -a /var/log/shellshock-install.log; then
+                # Find the built executable (check multiple possible locations)
+                SEATBELT_BUILT=$(find "$SEATBELT_SRC_DIR" -name "Seatbelt.exe" -type f | head -n1)
+                
+                if [[ -n "$SEATBELT_BUILT" ]]; then
+                    cp "$SEATBELT_BUILT" "$USER_HOME/tools/windows/"
+                    log_info "Seatbelt.exe successfully built and copied"
                 else
-                    log_warn "Seatbelt built successfully but EXE file was not found in expected path."
+                    log_warn "Seatbelt built but EXE not found in expected location"
                 fi
             else
-                log_warn "Seatbelt compilation failed (non-critical)."
+                log_warn "Seatbelt compilation failed"
             fi
-            rm -rf "$SEATBELT_SRC_DIR" # Cleanup source
+            
+            rm -rf "$SEATBELT_SRC_DIR"
         fi
     else
-        log_warn ".NET (dotnet) package is not installed. Skipping Seatbelt compilation."
+        log_warn ".NET SDK not installed - cannot build Seatbelt"
+        log_warn "Install with: sudo apt install dotnet-sdk-8.0"
+        
+        # Try to download pre-compiled version
+        log_info "Attempting to download pre-compiled Seatbelt..."
+        SEATBELT_URL="https://github.com/r3motecontrol/Ghostpack-CompiledBinaries/raw/master/Seatbelt.exe"
+        if safe_download "$SEATBELT_URL" "$SEATBELT_EXE"; then
+            log_info "Downloaded pre-compiled Seatbelt.exe"
+        else
+            log_warn "Could not download Seatbelt"
+        fi
     fi
 else
-    log_skip "Seatbelt.exe already exists."
+    log_skip "Seatbelt.exe already exists"
 fi
 
 
@@ -1158,6 +1394,7 @@ REPOS=(
     "https://github.com/LOLBAS-Project/LOLBAS.git"
     "https://github.com/RsaCtfTool/RsaCtfTool.git"
     "https://github.com/brightio/penelope.git"
+    "https://github.com/lgandx/Responder.git"  # Added for direct install
 )
 
 for repo in "${REPOS[@]}"; do
@@ -1168,21 +1405,30 @@ done
 # Create convenience symlinks
 if [[ -f "$USER_HOME/tools/repos/PEASS-ng/linPEAS/linpeas.sh" ]] && [[ ! -L "$USER_HOME/linpeas.sh" ]]; then
     ln -sf "$USER_HOME/tools/repos/PEASS-ng/linPEAS/linpeas.sh" "$USER_HOME/linpeas.sh" 2>/dev/null || true
+    log_info "Created linpeas.sh symlink"
 fi
 
 WINPEAS_PATH=""
-if [[ -f "$USER_HOME/tools/repos/PEASS-ng/winPEAS/winPEAS.exe" ]]; then
-    WINPEAS_PATH="$USER_HOME/tools/repos/PEASS-ng/winPEAS/winPEAS.exe"
-elif [[ -f "$USER_HOME/tools/repos/PEASS-ng/winPEAS/winPEASx64.exe" ]]; then
+# Check multiple possible locations for winPEAS
+if [[ -f "$USER_HOME/tools/repos/PEASS-ng/winPEAS/winPEASx64.exe" ]]; then
     WINPEAS_PATH="$USER_HOME/tools/repos/PEASS-ng/winPEAS/winPEASx64.exe"
+elif [[ -f "$USER_HOME/tools/repos/PEASS-ng/winPEAS/winPEAS.exe" ]]; then
+    WINPEAS_PATH="$USER_HOME/tools/repos/PEASS-ng/winPEAS/winPEAS.exe"
+elif [[ -f "$USER_HOME/tools/repos/PEASS-ng/winPEAS/winPEASx64_ofs.exe" ]]; then
+    WINPEAS_PATH="$USER_HOME/tools/repos/PEASS-ng/winPEAS/winPEASx64_ofs.exe"
 fi
 
 if [[ -n "$WINPEAS_PATH" ]] && [[ ! -L "$USER_HOME/winpeas.exe" ]]; then
     ln -sf "$WINPEAS_PATH" "$USER_HOME/winpeas.exe" 2>/dev/null || true
+    log_info "Created winpeas.exe symlink"
+elif [[ -z "$WINPEAS_PATH" ]]; then
+    log_warn "winPEAS.exe not found in PEASS-ng repository - symlink not created"
 fi
 
 if [[ -f "$USER_HOME/tools/repos/penelope/penelope.py" ]] && [[ ! -L "$USER_HOME/penelope.py" ]]; then
     ln -sf "$USER_HOME/tools/repos/penelope/penelope.py" "$USER_HOME/penelope.py" 2>/dev/null || true
+    chmod +x "$USER_HOME/tools/repos/penelope/penelope.py" 2>/dev/null || true
+    log_info "Created penelope.py symlink"
 fi
 
 chown -R "$USERNAME":"$USERNAME" "$USER_HOME/tools/repos" 2>/dev/null || true
