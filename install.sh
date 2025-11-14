@@ -6,18 +6,6 @@
 # Author: Jamie Loring
 # Last updated: 2025-11-14 (Fix applied: 2025-11-14)
 # ============================================
-# v2.0 IMPROVEMENTS:
-# - Three-layer Go PATH configuration
-# - Oh-My-Zsh with robust installation
-# - Smart tool swaps (broken → working alternatives)
-# - Windows binaries with fallback sources
-# - PEAS tool symlinks
-# - Custom environment file
-# - Comprehensive documentation
-# ============================================
-# DISCLAIMER: This tool is for authorized testing only.
-# Request permission before use. Stay legal.
-# ============================================
 
 set -euo pipefail
 
@@ -495,7 +483,7 @@ for tool in "${PYTHON_TOOLS[@]}"; do
             log_info "Installed: $tool"
         else
             log_warn "Failed to install: $tool"
-        fi
+        endif
     fi
 done
 
@@ -634,7 +622,7 @@ for repo_entry in "${REPOS[@]}"; do
 done
 
 # ============================================
-# PHASE 11: WINDOWS BINARIES (FIX APPLIED HERE)
+# PHASE 11: WINDOWS BINARIES (FIX APPLIED)
 # ============================================
 log_section "Phase 11: Installing Windows Binaries"
 
